@@ -1,0 +1,212 @@
+/**
+ * Card Deck Pile — Monte de cartas empilhadas no centro da mesa
+ * Componente: CardDeckPile
+ * Mobile-first · responsivo vertical e horizontal
+ *
+ * Estrutura DOM gerada:
+ *   .card-deck-pile                    (raiz — dimensões de 1 carta)
+ *     ├── .card-back × N              (camadas empilhadas, position:absolute)
+ *     │     └── última = .card-back--top (topo da pilha, glow sutil)
+ *     └── .card-deck-pile__count      (badge com quantidade restante)
+ */
+
+/* ============================================
+   CONSTANTES DE LAYOUT (Custom Properties)
+   Alterar aqui propaga para todos os elementos.
+   ============================================ */
+.card-deck-pile {
+  --card-w:        clamp(44px, 7.5vw, 74px);
+  --card-h:        clamp(66px, 11.2vw, 110px);
+  --card-radius:   clamp(5px, 1vw, 9px);
+  --shadow-a:      0 2px 6px rgba(0, 0, 0, 0.45);
+  --shadow-b:      0 6px 18px rgba(0, 0, 0, 0.30);
+  --shadow-c:      0 0 0 1.5px rgba(255, 255, 255, 0.08);
+}
+
+/* ============================================
+   CONTAINER DO MONTE
+   ============================================ */
+
+/**
+ * .card-deck-pile
+ * Dimensão igual a 1 carta para que as camadas empilhadas
+ * (position:absolute) se alinhem naturalmente ao centro.
+ * Posicionamento gerenciado pelo pai .deck-center-stack.
+ */
+.card-deck-pile {
+  position:       relative;
+  width:          var(--card-w);
+  height:         var(--card-h);
+  flex-shrink:    0;
+  pointer-events: none;
+}
+
+/* ============================================
+   CARTA INDIVIDUAL
+   ============================================ */
+
+/**
+ * .card-back
+ * Cada elemento representa uma camada do monte (verso).
+ * O JS aplica transform: translate(dx,dy) rotate(deg) individualmente.
+ * GPU-accelerated via will-change: transform.
+ */
+.card-back {
+  position:            absolute;
+  top:                 0;
+  left:                0;
+  width:               100%;
+  height:              100%;
+
+  /* verso do baralho — caminho correto relativo ao HTML */
+  background-image:    url("img/carta_verso.png");
+  background-size:     cover;
+  background-position: center;
+  background-repeat:   no-repeat;
+
+  /* fallback enquanto a imagem carrega */
+  background-color:    #1a3a6e;
+
+  border-radius:       var(--card-radius);
+
+  box-shadow:
+    var(--shadow-a),
+    var(--shadow-b),
+    var(--shadow-c);
+
+  /* hint para o GPU — transitions suaves p/ animações futuras */
+  will-change:  transform, opacity;
+  transition:   transform 0.25s ease, opacity 0.2s ease;
+
+  /* borda interna sutil para dar profundidade entre camadas */
+  outline: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* cartas que não são o topo ficam levemente mais escuras */
+.card-back:not(.card-back--top) {
+  filter: brightness(0.91);
+}
+
+/* ── Topo da pilha — destaque visual ──────────────────────── */
+.card-back--top {
+  filter: brightness(1);
+  box-shadow:
+    var(--shadow-a),
+    var(--shadow-b),
+    var(--shadow-c),
+    0 0 14px rgba(255, 210, 80, 0.22),
+    0 0  6px rgba(255, 210, 80, 0.12);
+  outline: 1px solid rgba(255, 215, 0, 0.18);
+
+  /* pulso suave para indicar que o monte está ativo */
+  animation: deck-top-pulse 3.2s ease-in-out infinite;
+}
+
+@keyframes deck-top-pulse {
+  0%,  100% {
+    box-shadow:
+      var(--shadow-a), var(--shadow-b), var(--shadow-c),
+      0 0 14px rgba(255, 210, 80, 0.22),
+      0 0  6px rgba(255, 210, 80, 0.12);
+  }
+  50% {
+    box-shadow:
+      var(--shadow-a), var(--shadow-b), var(--shadow-c),
+      0 0 24px rgba(255, 210, 80, 0.42),
+      0 0 10px rgba(255, 210, 80, 0.28);
+  }
+}
+
+/* ============================================
+   BADGE DE CONTAGEM
+   ============================================ */
+
+/**
+ * .card-deck-pile__count
+ * Badge posicionado abaixo do monte com número de cartas restantes.
+ */
+.card-deck-pile__count {
+  position:       absolute;
+  bottom:         calc(-1 * clamp(18px, 2.8vh, 24px));
+  left:           50%;
+  transform:      translateX(-50%);
+
+  min-width:      26px;
+  padding:        2px 7px;
+
+  font-family:    'Pixelify Sans', monospace, sans-serif;
+  font-size:      clamp(9px, 1.8vw, 12px);
+  font-weight:    700;
+  color:          #fff;
+  text-align:     center;
+  white-space:    nowrap;
+  line-height:    1.4;
+
+  background:     rgba(0, 0, 0, 0.62);
+  border:         1px solid rgba(255, 255, 255, 0.16);
+  border-radius:  999px;
+  box-shadow:     0 2px 6px rgba(0, 0, 0, 0.4);
+
+  transition:     opacity 0.3s ease, content 0.3s ease;
+  pointer-events: none;
+  z-index:        200;
+}
+
+/* ── Estado vazio ─────────────────────────────────────────── */
+.card-deck-pile--empty {
+  opacity: 0.32;
+  filter:  grayscale(0.55);
+}
+
+.card-deck-pile--empty .card-deck-pile__count {
+  opacity: 0;
+}
+
+/* ============================================
+   RESPONSIVIDADE — PORTRAIT (celular vertical)
+   ============================================ */
+
+@media (orientation: portrait) and (max-width: 480px) {
+  .card-deck-pile {
+    --card-w: clamp(38px, 9.5vw, 60px);
+    --card-h: clamp(57px, 14vw,  90px);
+  }
+}
+
+/* ============================================
+   RESPONSIVIDADE — LANDSCAPE (celular horizontal)
+   ============================================ */
+
+@media (orientation: landscape) and (max-height: 480px) {
+  .card-deck-pile {
+    --card-w: clamp(30px, 6vw,  52px);
+    --card-h: clamp(45px, 9vw,  78px);
+  }
+
+  .card-deck-pile__count {
+    font-size: clamp(8px, 1.5vw, 10px);
+    padding:   1px 5px;
+  }
+}
+
+/* ============================================
+   RESPONSIVIDADE — TABLET (768–1024px)
+   ============================================ */
+
+@media (min-width: 768px) and (max-width: 1024px) {
+  .card-deck-pile {
+    --card-w: clamp(52px, 6.5vw, 72px);
+    --card-h: clamp(78px, 9.7vw, 108px);
+  }
+}
+
+/* ============================================
+   RESPONSIVIDADE — DESKTOP (> 1024px)
+   ============================================ */
+
+@media (min-width: 1025px) {
+  .card-deck-pile {
+    --card-w: clamp(62px, 5vw, 82px);
+    --card-h: clamp(93px, 7.5vw, 123px);
+  }
+}

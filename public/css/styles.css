@@ -1,0 +1,873 @@
+/* ============================================================
+   styles.css — Layout, cores, responsividade (mobile-first)
+   ============================================================ */
+
+/* ---------- Reset & Base ---------- */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* Paleta */
+  --color-ice:          #F3F6F8;
+  --color-green:        #1FA34A;
+  --color-green-dark:   #0B6B2A;
+  --color-white:        #FFFFFF;
+  --color-text-muted:   #7A8FA6;
+
+  /* Tipografia */
+  --font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+  /* Transições */
+  --transition-fast:  0.2s ease;
+  --transition-med:   0.4s ease;
+  --transition-slow:  0.6s ease;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-family);
+  background: var(--color-ice);
+  color: var(--color-text-muted);
+  overflow: hidden;          /* Sem scroll inter-telas */
+  height: 100dvh;
+  width: 100vw;
+}
+
+#app {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Variáveis extras */
+:root {
+  --color-green-mid:    #17863C;
+  --color-text-dark:    #1A2E1F;
+  --color-card-shadow:  rgba(0, 0, 0, 0.12);
+  --radius-card:        20px;
+  --radius-btn:         50px;
+}
+
+/* ---------- App Root ---------- */
+#app {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+}
+
+/* ---------- Tela genérica ---------- */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  /* Fade de entrada/saída gerenciado pelo ScreenManager */
+  opacity: 1;
+  transition: opacity var(--transition-slow);
+}
+
+.screen.screen--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---------- Tela de Splash Gelo ---------- */
+.splash-ice {
+  background: var(--color-ice);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.splash-ice__logo {
+  width: clamp(120px, 40vw, 220px);
+  height: auto;
+  object-fit: contain;
+  /* Leve pulse de entrada */
+  animation: logoFadeIn 0.8s ease forwards;
+}
+
+.splash-ice__hint {
+  margin-top: clamp(16px, 4vh, 32px);
+  font-size: clamp(0.85rem, 2.5vw, 1rem);
+  color: var(--color-text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  animation: hintPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes hintPulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 1; }
+}
+
+/* ---------- Tela de Splash Verde ---------- */
+.splash-green {
+  background: var(--color-green);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.splash-green__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: clamp(16px, 4vh, 32px);
+  padding: 0 clamp(16px, 6vw, 48px);
+  width: 100%;
+  max-width: 600px;
+}
+
+.splash-green__logo {
+  width: clamp(160px, 45vw, 280px);
+  height: auto;
+  object-fit: contain;
+  animation: logoFadeIn 0.5s ease forwards;
+}
+
+.splash-green__title {
+  font-size: clamp(2rem, 8vw, 4rem);
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  color: var(--color-green-dark);
+  text-transform: uppercase;
+  line-height: 1;
+  text-align: center;
+  /* overflow: visible para não cortar letras caindo do topo */
+  overflow: visible;
+  padding-top: 12px; /* espaço para as letras caírem */
+}
+
+.splash-green__subtitle {
+  font-size: clamp(1rem, 3.5vw, 1.5rem);
+  font-weight: 400;
+  color: var(--color-white);
+  text-align: center;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+}
+
+/* ---------- Green Screen (placeholder) ---------- */
+.green-screen {
+  background: var(--color-green);
+  gap: 24px;
+}
+
+.green-screen__title {
+  font-size: clamp(1.2rem, 4vw, 2rem);
+  font-weight: 700;
+  color: var(--color-white);
+  text-align: center;
+  padding: 0 16px;
+}
+
+.green-screen__btn {
+  margin-top: 8px;
+  padding: 14px 40px;
+  border: none;
+  border-radius: 50px;
+  background: var(--color-white);
+  color: var(--color-green-dark);
+  font-size: clamp(1rem, 3vw, 1.2rem);
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.green-screen__btn:hover,
+.green-screen__btn:focus-visible {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  outline: none;
+}
+
+.green-screen__btn:active {
+  transform: scale(0.97);
+}
+
+/* ---------- Letter Spans (LetterAnimator) ---------- */
+.letter-span {
+  display: inline-block;
+  /* Estado inicial controlado via CSS/JS */
+}
+
+.letter-span--space {
+  display: inline-block;
+  width: 0.3em;
+}
+
+/* ---------- Loading Dots ---------- */
+.loading-dots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.loading-dots__dot {
+  width: clamp(8px, 2.5vw, 12px);
+  height: clamp(8px, 2.5vw, 12px);
+  border-radius: 50%;
+  background: var(--color-white);
+}
+
+/* ---------- Responsive tweaks ---------- */
+@media (min-width: 768px) {
+  .splash-green__content {
+    gap: 28px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .splash-green__content {
+    gap: 36px;
+  }
+}
+
+/* ============================================================
+   HOME SCREEN
+   ============================================================ */
+
+/* ============================================================
+   HOME SCREEN — sem header, tudo centralizado
+   ============================================================ */
+
+.home-screen {
+  background: var(--color-green);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+ 
+}
+
+/* ---------- Coluna central ---------- */
+.home-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: clamp(10px, 2.2vh, 22px);
+  padding: clamp(16px, 4vw, 40px) clamp(16px, 6vw, 48px);
+  width: 100%;
+  max-width: 480px;
+}
+
+/* ---------- Badge de usuário (flutuante no topo) ---------- */
+.home-badge {
+  font-size: clamp(0.72rem, 2vw, 0.85rem);
+  color: var(--color-white);
+  background: rgba(255, 255, 255, 0.18);
+  padding: 4px 14px;
+  border-radius: 50px;
+  white-space: nowrap;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  align-self: center;
+}
+
+.home-badge--hidden { display: none; }
+
+/* ---------- Imagem hero (maior, centralizada) ---------- */
+.home-hero {
+  width: min(72vw, 280px);
+  height: auto;
+  max-height: 36vh;
+  object-fit: contain;
+  border-radius: 18px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.32);
+  animation: logoFadeIn 0.6s ease forwards;
+  flex-shrink: 0;
+  margin-top: 1.2rem;
+}
+
+/* ---------- Linha logo + H1 (acima da imagem) ---------- */
+.home-headrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 2vw, 14px);
+  width: 100%;
+}
+
+.home-headrow__logo {
+  width: clamp(52px, 14vw, 76px);
+  height: auto;
+  object-fit: contain;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+/* ---------- Título H1 ---------- */
+.home-title {
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(1.9rem, 8vw, 3rem);
+  font-weight: 700;
+  color: var(--color-white);
+  text-align: left;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-shadow: 0 3px 14px rgba(0, 0, 0, 0.25);
+  line-height: 1;
+  margin: 0;
+}
+
+/* ---------- Descrição ---------- */
+.home-desc {
+  font-size: clamp(0.82rem, 2.2vw, 0.95rem);
+  color: var(--color-text-dark);
+  line-height: 1.55;
+  text-align: center;
+}
+
+/* ---------- Card branco (desc + botão) ---------- */
+.home-card {
+  width: 100%;
+  background: var(--color-white);
+  border-radius: 18px;
+  padding: clamp(14px, 3vw, 24px) clamp(16px, 4vw, 28px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 1.2rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+}
+
+/* ---------- Botão DIVIRTA-SE ---------- */
+.home-btn {
+  width: 100%;
+  max-width: 340px;
+  padding: clamp(13px, 2.5vw, 17px) 24px;
+  border: none;
+  border-radius: var(--radius-btn);
+  background: var(--color-green-dark);
+  color: var(--color-white);
+  font-size: clamp(1rem, 3vw, 1.15rem);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  text-transform: uppercase;
+  font-family: var(--font-family);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+}
+
+.home-btn:hover,
+.home-btn:focus-visible {
+  background: #083f19;
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.36);
+  outline: none;
+}
+
+.home-btn:active {
+  transform: scale(0.97);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+/* ---------- Rodapé da home-body ---------- */
+.home-footer {
+  width: 100%;
+  text-align: center;
+  margin-top: 1.2rem;
+}
+
+.home-footer__tagline {
+  margin: -10px 0 0 0;
+  font-size: clamp(13px, 2.5vw, 15px);
+  color: var(--color-text-dark);
+  line-height: 1.4;
+  font-weight: 500;
+}
+
+/* ---------- Desktop ---------- */
+@media (min-width: 768px) {
+  .home-hero {
+    width: min(55vw, 340px);
+    max-height: 42vh;
+  }
+  .home-body {
+    gap: 20px;
+  }
+}
+
+/* ============================================================
+   AUTH SCREENS  (LoginScreen + RegisterScreen)
+   Componentes reutilizáveis: .auth-page, .auth-container,
+   .auth-logo, .auth-title, .auth-subtitle, .auth-input,
+   .btn-primary, .btn-google, .auth-divider, .auth-footer-link
+   ============================================================ */
+
+/* ---------- Página (fundo verde, scroll) ---------- */
+.auth-page {
+  background: var(--color-green);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  justify-content: flex-start;
+  align-items: center;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: clamp(36px, 8vh, 80px) clamp(16px, 6vw, 48px) clamp(40px, 8vh, 80px);
+}
+
+/* ---------- Coluna central ---------- */
+.auth-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 420px;
+}
+
+/* ---------- Logo ---------- */
+.auth-logo {
+  width: clamp(80px, 20vw, 120px);
+  height: auto;
+  object-fit: contain;
+  margin-bottom: 4px;
+  filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.3));
+  animation: logoFadeIn 0.6s ease forwards;
+}
+
+/* ---------- Título (H1) branco ---------- */
+.auth-title {
+  font-size: clamp(1.7rem, 6vw, 2.3rem);
+  font-weight: 900;
+  color: var(--color-white);
+  text-align: center;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  margin: 0;
+}
+
+/* ---------- Subtítulo branco ---------- */
+.auth-subtitle {
+  font-size: clamp(0.88rem, 2.5vw, 1rem);
+  color: rgba(255, 255, 255, 0.82);
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+/* ---------- Feedback box ---------- */
+.auth-feedback {
+  width: 100%;
+  font-size: 0.9rem;
+  padding: 11px 14px;
+  border-radius: 10px;
+  text-align: center;
+  line-height: 1.45;
+}
+
+.auth-feedback--hidden   { display: none; }
+
+.auth-feedback--error {
+  background: #FEE2E2;
+  color: #B91C1C;
+  border: 1px solid #FCA5A5;
+}
+
+.auth-feedback--success {
+  background: #D1FAE5;
+  color: #065F46;
+  border: 1px solid #6EE7B7;
+}
+
+/* ---------- Inputs ---------- */
+.auth-input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 14px;
+  font-size: 1rem;
+  font-family: var(--font-family);
+  color: var(--color-text-dark);
+  background: var(--color-white);
+  outline: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.auth-input::placeholder {
+  color: #9CA3AF;
+}
+
+.auth-input:focus {
+  border-color: var(--color-green-dark);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.4);
+}
+
+/* ---------- Botão primário (verde escuro, full-width) ---------- */
+.btn-primary {
+  width: 100%;
+  padding: 15px 24px;
+  border: none;
+  border-radius: var(--radius-btn);
+  background: var(--color-green-dark);
+  color: var(--color-white);
+  font-size: clamp(0.95rem, 2.5vw, 1.05rem);
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  cursor: pointer;
+  text-transform: uppercase;
+  font-family: var(--font-family);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-primary:focus-visible:not(:disabled) {
+  background: #083f19;
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.36);
+  outline: none;
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.97);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* ---------- Divisor  ─── ou ─── ---------- */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 2px 0;
+}
+
+.auth-divider__line {
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.auth-divider__text {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+/* ---------- Botão Google (branco, full-width) ---------- */
+.btn-google {
+  width: 100%;
+  padding: 13px 16px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 14px;
+  background: var(--color-white);
+  color: #374151;
+  font-size: clamp(0.9rem, 2.5vw, 1rem);
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-family: var(--font-family);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+}
+
+.btn-google:hover:not(:disabled),
+.btn-google:focus-visible:not(:disabled) {
+  background: #F3F4F6;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  outline: none;
+}
+
+.btn-google:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn-google__icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+/* ---------- Estados de carregamento ---------- */
+.btn-primary.btn--loading,
+.btn-google.btn--loading,
+.btn-primary:disabled,
+.btn-google:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* ---------- Footer / link navegação ---------- */
+.auth-footer {
+  font-size: clamp(0.85rem, 2.2vw, 0.95rem);
+  color: rgba(255, 255, 255, 0.82);
+  text-align: center;
+  margin-top: 6px;
+}
+
+.auth-footer-link {
+  color: var(--color-white);
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.auth-footer-link:hover {
+  opacity: 0.72;
+}
+
+/* ---------- Footer ---------- */
+.footer {
+  background-color: transparent;
+  border-top: none;
+  padding: clamp(16px, 3vw, 24px);
+  text-align: center;
+  margin-top: auto;
+  width: 100%;
+}
+
+.footer__logos {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, 2vw, 16px);
+  margin-bottom: clamp(12px, 2vw, 16px);
+  position: relative;
+}
+
+.footer__logo-marca {
+  margin: 0;
+  height: clamp(120px, 25vw, 250px);
+  width: auto;
+  max-width: 500px;
+  object-fit: contain;
+  transition: opacity 200ms ease;
+}
+
+.footer__logo-marca:hover {
+  opacity: 0.8;
+}
+
+.footer__play-store {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 200ms ease, opacity 200ms ease;
+}
+
+.footer__play-store:hover {
+  transform: scale(1.05);
+  opacity: 0.85;
+}
+
+.footer__play-store:active {
+  transform: scale(0.98);
+}
+
+.footer__play-store-icon {
+  height: clamp(20px, 3vw, 32px);
+  width: auto;
+  max-width: 100px;
+}
+
+.footer__info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, 3vw, 20px);
+  flex-wrap: wrap;
+  padding: 0 clamp(12px, 2vw, 16px);
+}
+
+.footer__copyright {
+  margin: 0;
+  font-size: clamp(11px, 2vw, 13px);
+  color: #999;
+  line-height: 1.4;
+}
+
+.footer__tagline {
+  position: static;
+  z-index: 1;
+  margin: 0;
+  font-size: clamp(13px, 2.5vw, 15px);
+  color: #ffffff;
+  line-height: 1.4;
+  font-weight: 500;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* ---------- Responsividade desktop ---------- */
+/* ---------- Desktop: mais espaço para auth ---------- */
+@media (min-width: 768px) {
+  .auth-page {
+    justify-content: center;
+    padding-top: 48px;
+    padding-bottom: 48px;
+  }
+
+  .auth-container {
+    gap: 18px;
+  }
+
+  .auth-logo {
+    width: 120px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .auth-logo {
+    width: 136px;
+  }
+}
+/* ============================================================
+   Responsividade por Orientação - Portrait & Landscape
+   ============================================================ */
+
+/* Portrait (Altura > Largura) */
+@media (orientation: portrait) {
+  html {
+    font-size: 16px;
+  }
+
+  body {
+    height: 100dvh;
+  }
+
+  #app {
+    height: 100dvh;
+  }
+
+  .screen {
+    height: 100dvh;
+  }
+
+  .home-body {
+    gap: clamp(10px, 2.2vh, 22px);
+  }
+
+  .home-hero {
+    max-height: 36vh;
+  }
+}
+
+/* Landscape (Largura > Altura) */
+@media (orientation: landscape) {
+  html {
+    font-size: 14px;
+  }
+
+  body {
+    height: 100dvh;
+  }
+
+  #app {
+    height: 100dvh;
+  }
+
+  .screen {
+    height: 100dvh;
+  }
+
+  /* Ajusta layouts para aproveitar largura */
+  .home-body {
+    flex-direction: row;
+    gap: clamp(16px, 3vw, 32px);
+    padding: clamp(12px, 2vw, 20px);
+  }
+
+  .home-headrow {
+    flex-direction: column;
+    order: 1;
+    min-width: 120px;
+  }
+
+  .home-hero {
+    max-height: 80vh;
+    order: 2;
+    width: auto;
+    max-width: 30vw;
+  }
+
+  .home-card {
+    order: 3;
+    min-width: 200px;
+  }
+
+  /* Splash em landscape */
+  .splash-green__content,
+  .splash-ice__content {
+    gap: clamp(12px, 2vw, 20px);
+  }
+
+  .splash-green__logo,
+  .splash-ice__logo {
+    max-height: 30vh;
+    width: auto;
+  }
+
+  .splash-green__title,
+  .splash-ice__title {
+    font-size: clamp(1.8rem, 4vw, 2.2rem);
+  }
+
+  .splash-green__subtitle,
+  .splash-ice__subtitle {
+    font-size: clamp(1rem, 2.5vw, 1.3rem);
+  }
+}
+
+/* Extra pequeno em landscape (tablet/mobile landscape) */
+@media (orientation: landscape) and (max-height: 500px) {
+  .home-body {
+    padding: 8px 12px;
+  }
+
+  .home-card {
+    padding: 8px 12px;
+  }
+
+  .home-btn {
+    padding: 8px 16px;
+    font-size: 0.9rem;
+  }
+
+  .splash-green__content,
+  .splash-ice__content {
+    gap: 8px;
+  }
+}

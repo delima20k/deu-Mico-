@@ -1,0 +1,259 @@
+/**
+ * hex-table.css
+ * ============================================================
+ * Estilos da mesa de jogo em formato HEXAGONAL.
+ * Usado em todas as salas: 2p, 3p, 4p, 5p, 6p, tournament.
+ *
+ * Arquitetura:
+ *   .game-table-root  — overlay flex, centraliza a mesa
+ *   .hex-table        — container da mesa (tamanho via --hexSize)
+ *   .hex-table__border — borda externa (verde escuro + sombra)
+ *   .hex-table__inner  — feltro interno (verde claro, clip-path hex)
+ *   .hex-table__slot   — área de conteúdo do jogo
+ *   .hex-table__corner-label — marcações DEBUG (remover em produção)
+ *
+ * Hexágono: polygon(25% 6%, 75% 6%, 95% 50%, 75% 94%, 25% 94%, 5% 50%)
+ * ============================================================
+ */
+
+/* ============================================================
+   VARIÁVEIS DA MESA — width e height independentes por orientação
+
+   PORTRAIT (hex rotado 90° → width CSS vira altura visual):
+     --hexW → CSS width  → vira ALTURA visual após rotate(90deg)
+     --hexH → CSS height → vira LARGURA visual após rotate(90deg)
+     Alvo: visual width = 98vw, visual height = 88dvh
+     Logo:  --hexW = 88dvh,  --hexH = 98vw
+
+   LANDSCAPE (hex sem rotação):
+     --hexW → largura visual direta
+     --hexH → altura visual direta
+     Alvo: 90vw × 88dvh
+   ============================================================ */
+:root {
+  /* Portrait — hex será girado 90° */
+  --hexW:      83dvh;   /* vira ALTURA visual */
+  --hexH:      88vw;    /* vira LARGURA visual */
+  --hexRotate: 90deg;
+}
+
+@media (orientation: landscape) {
+  :root {
+    /* Landscape — sem rotação */
+    --hexW:      90vw;
+    --hexH:      88dvh;
+    --hexRotate: 0deg;
+  }
+}
+
+/* ============================================================
+   GAME TABLE ROOT — overlay que centraliza a mesa na tela
+   ============================================================ */
+
+.game-table-root {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  /* Não bloqueia eventos fora da mesa */
+  pointer-events: none;
+}
+
+.game-table-root > * {
+  pointer-events: auto;
+}
+
+/* ============================================================
+   HEX TABLE — Container da mesa hexagonal
+   ============================================================ */
+
+.hex-table {
+  /* Dimensões independentes — permite preencher a tela em ambos os eixos */
+  width:  var(--hexW);
+  height: var(--hexH);
+  /* aspect-ratio removido: width e height são definidos explicitamente */
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  flex-shrink: 0;
+
+  /* Portrait: gira 90° → hex fica em pé
+     Landscape: sem rotação (0deg) */
+  transform: rotate(var(--hexRotate));
+  transform-origin: center center;
+  transition: transform 0.4s ease;
+}
+
+/* ── Borda da mesa (anel externo, fora do clip-path) ── */
+.hex-table__border {
+  position: absolute;
+  inset: 0;
+
+  clip-path: polygon(25% 6%, 75% 6%, 95% 50%, 75% 94%, 25% 94%, 5% 50%);
+
+  background: linear-gradient(
+    145deg,
+    #5a3510 0%,
+    #3a1f06 40%,
+    #5a3010 70%,
+    #7a4a1e 100%
+  );
+
+  /* Sombra interior simula profundidade da borda */
+  box-shadow:
+    inset 0 0 18px rgba(0, 0, 0, 0.55),
+    inset 0 0 6px  rgba(255, 200, 100, 0.08);
+
+  /* Sombra externa suave */
+  filter: drop-shadow(0 8px 28px rgba(0, 0, 0, 0.60));
+
+  z-index: 1;
+}
+
+/* ── Feltro interno ── */
+.hex-table__inner {
+  position: absolute;
+  inset: 0;
+
+  clip-path: polygon(25% 6%, 75% 6%, 95% 50%, 75% 94%, 25% 94%, 5% 50%);
+
+  /* Escala < 1 descobre a borda externa */
+  transform: scale(0.88);
+
+  background: linear-gradient(
+    135deg,
+    #1e5e1e 0%,
+    #145214 40%,
+    #1a6a1a 70%,
+    #226622 100%
+  );
+
+  /* Brilho sutil no centro da mesa */
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.30);
+
+  z-index: 2;
+}
+
+/* ── Slot: área de conteúdo do jogo ── */
+.hex-table__slot {
+  position: absolute;
+  inset: 0;
+  /* Respeita o clip-path do inner sem clipar o slot separadamente */
+  overflow: hidden;
+}
+
+/* GameTableView dentro do slot: usa 100% em vez de 100vh */
+.hex-table__slot .game-table-view {
+  width:      100%;
+  height:     100%;
+  min-height: unset;
+  background: transparent;
+}
+
+/* ============================================================
+   CORNER DEBUG LABELS — Marcadores de quina
+
+   DEBUG CORNER LABELS
+   These labels are used only during development
+   to identify hexagon corners.
+
+   REMOVE BEFORE PRODUCTION
+   ============================================================ */
+
+.hex-table__corner-label {
+  position: absolute;
+  z-index: 200;
+
+  /* Tamanho responsivo */
+  font-size: clamp(12px, 2.5vw, 18px);
+  min-width: 28px;
+  min-height: 28px;
+  padding: 4px 8px;
+
+  background: rgba(0, 0, 0, 0.45);
+  color: #ffe082;
+  font-weight: 800;
+  font-family: monospace;
+  text-align: center;
+
+  border-radius: 6px;
+  border: 1.5px solid rgba(255, 224, 130, 0.55);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+
+  /* Centraliza o badge sobre a quina e contra-rotaciona o texto
+     para permanecer legível quando a mesa estiver rotacionada */
+  transform: translate(-50%, -50%) rotate(calc(var(--hexRotate) * -1));
+
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+/*
+ * Posições calculadas a partir do polygon:
+ *   polygon(25% 6%, 75% 6%, 95% 50%, 75% 94%, 25% 94%, 5% 50%)
+ *
+ *  Numeração sentido horário — padrão para portrait e landscape:
+ *
+ *  PORTRAIT (rotate 90° → hex pontudo):
+ *    1 → left         (5%, 50%)   = visual BAIXO
+ *    2 → top-left    (25%,  6%)   = visual BAIXO-ESQ
+ *    3 → top-right   (75%,  6%)   = visual CIMA-ESQ
+ *    4 → right       (95%, 50%)   = visual CIMA
+ *    5 → bottom-right(75%, 94%)   = visual CIMA-DIR
+ *    6 → bottom-left (25%, 94%)   = visual BAIXO-DIR
+ *
+ *  LANDSCAPE (0° → hex flat-top):
+ *    1 → left         (5%, 50%)   = visual ESQUERDA
+ *    2 → top-left    (25%,  6%)   = visual CIMA-ESQ
+ *    3 → top-right   (75%,  6%)   = visual CIMA-DIR
+ *    4 → right       (95%, 50%)   = visual DIREITA
+ *    5 → bottom-right(75%, 94%)   = visual BAIXO-DIR
+ *    6 → bottom-left (25%, 94%)   = visual BAIXO-ESQ
+ */
+
+/* Quina 1 — top-left */
+.hex-table__corner-label--top-left {
+  left: 25%;
+  top:  6%;
+}
+
+/* Quina 2 — top-right */
+.hex-table__corner-label--top-right {
+  left: 75%;
+  top:  6%;
+}
+
+/* Quina 3 — right */
+.hex-table__corner-label--right {
+  left: 95%;
+  top:  50%;
+}
+
+/* Quina 4 — bottom-right */
+.hex-table__corner-label--bottom-right {
+  left: 75%;
+  top:  94%;
+}
+
+/* Quina 5 — bottom-left */
+.hex-table__corner-label--bottom-left {
+  left: 25%;
+  top:  94%;
+}
+
+/* Quina 6 — left */
+.hex-table__corner-label--left {
+  left: 5%;
+  top:  50%;
+}

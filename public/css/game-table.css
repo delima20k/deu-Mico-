@@ -1,0 +1,1091 @@
+/**
+ * Game Table Styles
+ * Mobile-first responsive design for game table (2p..6p)
+ * Uses Grid + Flexbox for responsive positioning
+ */
+
+/* ============================================
+   GAME TABLE VIEW - Container Principal
+   ============================================ */
+
+.game-table-view {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #2d5a2d 0%, #1a3a1a 100%);
+  overflow: hidden;
+}
+
+/* Fundo da mesa (verde) */
+.table-background {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.table-background__game-area {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 80%;
+  max-width: 400px;
+  aspect-ratio: 3 / 2;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+/* Container dos badges de jogadores */
+.game-table-view__players {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 300;
+  pointer-events: none;
+}
+
+/* ============================================
+   PLAYER BADGE - Avatar + Nome
+   ============================================ */
+
+.player-badge {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+/* Avatar - círculo */
+.player-badge__avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #f0f0f0;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.player-badge__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.player-badge__initials {
+  font-size: 24px;
+  font-weight: bold;
+  color: #333;
+}
+
+/* Nome do jogador */
+.player-badge__name {
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  text-align: center;
+  max-width: 70px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+/* ========================================
+   POSIÇÕES NA MESA - Cada badge tem posição diferente
+   ======================================== */
+
+/*
+ * BASE (Landscape por padrão):
+ *   bottom → entre posições 5 (75%,94%) e 6 (25%,94%) = midpoint (50%, 94%)
+ *   top    → entre posições 2 (25%, 6%) e 3 (75%, 6%) = midpoint (50%,  6%)
+ *
+ * Portrait (hex rotacionado 90°CW — coordenadas CSS trocadas visualmente):
+ *   bottom → posição 4 (CSS left:95%, top:50%) = visual BAIXO, 1rem para dentro
+ *   top    → posição 1 (CSS left:5%,  top:50%) = visual CIMA,  1rem para dentro
+ */
+
+/* Bottom (usuário logado - sempre embaixo) */
+.player-badge--bottom {
+  left: 50%;
+  top: 90%;
+  bottom: unset;
+  transform: translate(-50%, calc(-50% - 2rem));
+}
+
+.player-badge--bottom .player-badge__avatar {
+
+  border: 3px solid rgba(255, 215, 0, 0.6);
+}
+
+.player-badge--bottom .player-badge__name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffd700;
+}
+
+/* Me highlight (jogador logado) */
+.player-badge--me {
+  filter: drop-shadow(0 0 12px rgba(255, 215, 0, 0.5));
+}
+
+/* Top — entre posições 2 e 3 (landscape) */
+.player-badge--top {
+  left: 50%;
+  top: 10%;
+  bottom: unset;
+  transform: translate(-50%, -50%);
+}
+
+/* Top-left */
+.player-badge--top-left {
+  top: 15%;
+  left: 10%;
+}
+
+/* Top-right */
+.player-badge--top-right {
+  top: 15%;
+  right: 10%;
+}
+
+/* Left */
+.player-badge--left {
+  left: 8%;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Right */
+.player-badge--right {
+  right: 8%;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Upper-left (5p) */
+.player-badge--upper-left {
+  left: 8%;
+  top: 28%;
+}
+
+/* Mid-left (5p) */
+.player-badge--mid-left {
+  left: 8%;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Upper-right (5p) */
+.player-badge--upper-right {
+  right: 8%;
+  top: 28%;
+}
+
+/* Mid-right (5p) */
+.player-badge--mid-right {
+  right: 8%;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Bottom-left (6p) */
+.player-badge--bottom-left {
+  bottom: 26%;
+  left: 12%;
+}
+
+/* Bottom-right (6p) */
+.player-badge--bottom-right {
+  bottom: 26%;
+  right: 12%;
+}
+
+/* ============================================
+   CENTER PILE - Monte central
+   ============================================ */
+
+.center-pile-view {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.center-pile-view__label {
+  font-size: 48px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.center-pile-view__label:hover {
+  transform: scale(1.1);
+}
+
+.center-pile-view__count {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 600;
+  min-width: 24px;
+  text-align: center;
+}
+
+/* ============================================
+   CARDS HAND VIEW - Mão do jogador embaixo
+   ============================================ */
+
+.cards-hand-view {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: auto;
+  background: rgba(0, 0, 0, 0.3);
+  border-top: 2px solid rgba(255, 255, 255, 0.2);
+  padding: 12px 16px;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cards-hand-view__labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: white;
+  font-weight: 600;
+}
+
+.cards-hand-view__title {
+  color: #ffd700;
+}
+
+.cards-hand-view__count {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 11px;
+}
+
+.cards-hand-view__container {
+  display: flex;
+  gap: 6px;
+  height: 60px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 4px;
+}
+
+/* ============================================
+   GAME TABLE SCREEN - Tela completa
+   ============================================ */
+
+.game-table-screen {
+  width: 100%;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  /* Sobrescreve align-items:center herdado da classe .screen base */
+  align-items: stretch;
+  justify-content: flex-start;
+  background: #1a3a1a;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Botão fixo "CORRER" — canto superior esquerdo (fixed: visível em todas as telas de jogo) */
+.game-exit-btn {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 9999;
+  padding: clamp(6px, 1.5vw, 10px) clamp(12px, 2.5vw, 18px);
+  background: rgba(120, 60, 20, 0.82);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: clamp(0.78rem, 2vw, 0.9rem);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.game-exit-btn:hover {
+  background: rgba(160, 70, 20, 0.95);
+}
+
+.game-exit-btn:active {
+  transform: scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-exit-btn {
+    transition: none;
+  }
+}
+
+.game-table-screen__main {
+  flex: 1;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Debug info (matchId) */
+.game-table-screen__debug {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: monospace;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 4px 8px;
+  border-radius: 4px;
+  z-index: 20;
+}
+
+/* Botão Sair */
+.game-table-screen__btn-leave {
+  position: absolute;
+  bottom: 76px;
+  right: 12px;
+  padding: 10px 14px;
+  background: rgba(255, 0, 0, 0.6);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 20;
+  transition: all 0.2s ease;
+}
+
+.game-table-screen__btn-leave:hover {
+  background: rgba(255, 0, 0, 0.8);
+  transform: scale(1.05);
+}
+
+.game-table-screen__btn-leave:active {
+  transform: scale(0.95);
+}
+
+/* ============================================
+   RESPONSIVO - Tablet (640px+)
+   ============================================ */
+
+@media (min-width: 640px) {
+  .player-badge__avatar {
+    width: 70px;
+    height: 70px;
+  }
+
+  .player-badge__name {
+    font-size: 13px;
+    max-width: 80px;
+  }
+
+  .center-pile-view__label {
+    font-size: 56px;
+  }
+
+  .cards-hand-view {
+    padding: 14px 20px;
+  }
+
+  .cards-hand-view__container {
+    height: 70px;
+  }
+}
+
+/* ============================================
+   RESPONSIVO - Desktop (1024px+)
+   ============================================ */
+
+@media (min-width: 1024px) {
+  .player-badge__avatar {
+    width: 80px;
+    height: 80px;
+  }
+
+  .player-badge__name {
+    font-size: 14px;
+    max-width: 90px;
+  }
+
+  .center-pile-view__label {
+    font-size: 64px;
+  }
+
+  .table-background__game-area {
+    max-width: 500px;
+  }
+
+  .cards-hand-view {
+    padding: 16px 24px;
+  }
+
+  .cards-hand-view__container {
+    height: 80px;
+    gap: 8px;
+  }
+}
+
+/* ============================================
+   Landscape Mobile
+   ============================================ */
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .player-badge__avatar {
+    width: 50px;
+    height: 50px;
+  }
+
+  .player-badge__name {
+    font-size: 10px;
+  }
+
+  .center-pile-view__label {
+    font-size: 40px;
+  }
+
+  .cards-hand-view {
+    padding: 8px 12px;
+  }
+
+  .cards-hand-view__container {
+    height: 50px;
+  }
+}
+
+/* ============================================
+   TOURNAMENT MODE - Badges e Layout
+   ============================================ */
+
+/* Badge CAMPEONATO no topo */
+.tournament-badge {
+  position: absolute;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  background: linear-gradient(135deg, #ffd700 0%, #ffb700 100%);
+  padding: 8px 16px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(255, 215, 0, 0.4);
+}
+
+.tournament-badge__text {
+  font-size: 14px;
+  font-weight: 700;
+  color: #333;
+  text-align: center;
+  letter-spacing: 1px;
+}
+
+/* Score embaixo do nome em tournament */
+.player-badge__score {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  background: linear-gradient(135deg, #ffd700 0%, #ffaa00 100%);
+  color: #333;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 30px;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(255, 215, 0, 0.4);
+}
+
+/* Modo tournament da mesamodifica cores sutilmente */
+.game-table-view--tournament {
+  background: linear-gradient(135deg, #1a3a5a 0%, #0f2a3a 100%);
+}
+
+/* Botão Ranking em tournament */
+.game-table-screen__btn-ranking {
+  position: absolute;
+  bottom: 76px;
+  left: 12px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #ffd700 0%, #ffaa00 100%);
+  color: #333;
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 20;
+  transition: all 0.2s ease;
+}
+
+.game-table-screen__btn-ranking:hover {
+  background: linear-gradient(135deg, #ffed4e 0%, #ffb700 100%);
+  transform: scale(1.05);
+}
+
+.game-table-screen__btn-ranking:active {
+  transform: scale(0.95);
+}
+
+/* Responsivo - Tablet */
+@media (min-width: 640px) {
+  .tournament-badge__text {
+    font-size: 16px;
+  }
+
+  .player-badge__score {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+
+  .game-table-screen__btn-ranking {
+    padding: 12px 16px;
+    font-size: 13px;
+  }
+}
+
+/* Responsivo - Desktop */
+@media (min-width: 1024px) {
+  .tournament-badge {
+    top: 70px;
+    padding: 12px 20px;
+  }
+
+  .tournament-badge__text {
+    font-size: 18px;
+  }
+
+  .player-badge__score {
+    font-size: 12px;
+    padding: 4px 10px;
+  }
+
+  .game-table-screen__btn-ranking {
+    padding: 14px 18px;
+    font-size: 14px;
+  }
+}
+
+/* ============================================
+   Responsividade Orientação - Game Table
+   ============================================ */
+
+/* Portrait Mode - Ajustes para altura máxima */
+@media (orientation: portrait) {
+  .game-table-view {
+    height: 100dvh;
+    flex-direction: column;
+  }
+
+  .table-background {
+    height: 100%;
+  }
+
+  .game-table-view__players {
+    height: 100%;
+  }
+
+  .header-bar {
+    max-height: 12vh;
+    padding: 8px 16px;
+  }
+
+  .center-pile-view {
+    max-height: 35vh;
+  }
+
+  .cards-hand-view {
+    max-height: 25vh;
+    padding: 12px;
+  }
+
+  /*
+   * Portrait: hex é rotacionado 90°CW → sistema de coordenadas do slot:
+   *   CSS left  → visual TOP
+   *   CSS right → visual BOTTOM
+   *   CSS X+    → visual DOWN
+   *   CSS X-    → visual UP ("para cima")
+   *
+   *  bottom badge → posição 4 (left:95%, top:50%) = visual BAIXO da mesa
+   *                  translateX(-1rem) = 1rem visual para cima (para dentro)
+   *                  rotate(-90deg)    = contra-rotaciona o conteúdo para ficar legível
+   *
+   *  top badge    → posição 1 (left:5%,  top:50%) = visual CIMA da mesa
+   *                  translateX(+1rem) = 1rem visual para baixo (para dentro)
+   *                  rotate(-90deg)    = contra-rotaciona o conteúdo
+   */
+  .player-badge--bottom {
+    left: calc(95% - 3rem);
+    top: 50%;
+    bottom: unset;
+    transform: translateY(-50%) rotate(-90deg);
+  }
+
+  .player-badge--top {
+    left: calc(5% + 1rem);
+    top: 50%;
+    bottom: unset;
+    transform: translateY(-50%) rotate(-90deg);
+  }
+
+  /*
+   * 3p portrait: jogadores 2 e 3 alinhados às quinas laterais da mesa.
+   *   top-left  (jogador 2) → posição 6 (CSS left:25%, top:94%) + 1rem abaixo visual
+   *   top-right (jogador 3) → posição 2 (CSS left:25%, top: 6%) + 1rem abaixo visual
+   *   Ambos contra-rotacionados para ficarem em vertical (legível).
+   */
+  .player-badge--top-left {
+    left: calc(25% + 1rem);
+    top: 94%;
+    bottom: unset;
+    right: unset;
+    transform: translateY(-50%) rotate(-90deg);
+  }
+
+  .player-badge--top-right {
+    left: calc(25% + 1rem);
+    top: 6%;
+    bottom: unset;
+    right: unset;
+    transform: translateY(-50%) rotate(-90deg);
+  }
+
+  /*
+   * 4p portrait: jogadores com as chaves top / left / right.
+   * O .game-table-view__players--4p garante que esses overrides
+   * só se aplicam ao layout de 4 jogadores.
+   *
+   *  top   (jogador 2) → entre pos 5 (75%,94%) e pos 6 (25%,94%)
+   *                       midpoint CSS: left:50%, top:94%
+   *
+   *  left  (jogador 3) → 1rem abaixo pos 1 (left:5%, top:50%)
+   *                       "abaixo visual" = left diminui 1rem
+   *                       CSS: left:calc(5% - 1rem), top:50%
+   *
+   *  right (jogador 4) → entre pos 2 (25%,6%) e pos 3 (75%,6%)
+   *                       midpoint CSS: left:50%, top:6%
+   *
+   *  Todos contra-rotacionados para ficarem legíveis (verticais na tela).
+   */
+  .game-table-view__players--4p .player-badge--top {
+    left: 50%;
+    top: 94%;
+    bottom: unset;
+    right: unset;
+    transform: translate(-50%, -50%) rotate(-90deg);
+  }
+
+  .game-table-view__players--4p .player-badge--left {
+    left: calc(5% - 1rem);
+    top: 50%;
+    bottom: unset;
+    right: unset;
+    transform: translateY(-50%) rotate(-90deg);
+  }
+
+  .game-table-view__players--4p .player-badge--right {
+    left: 50%;
+    top: 6%;
+    bottom: unset;
+    right: unset;
+    transform: translate(-50%, -50%) rotate(-90deg);
+  }
+
+  /*
+   * 5p portrait: avatares 2, 3, 4 e 5 posicionados na vertical (coluna),
+   * alinhados com as quinas da mesa (hex rotado 90°CW).
+   *
+   * Sistema de coordenadas CSS em portrait (hex rotado 90°CW):
+   *   CSS left+ → visual BAIXO  |  CSS left- → visual CIMA
+   *   CSS top   → posição no eixo horizontal visual
+   *
+   * Jogador 2 (upper-left)  → 1rem acima da pos 5  (CSS: left:75%, top:94%)
+   *   "Acima visual" = CSS left diminui → left: calc(75% - 1rem), top: 94%
+   *
+   * Jogador 3 (mid-left)    → 1rem abaixo da pos 6  (CSS: left:25%, top:94%)
+   *   "Abaixo visual" = CSS left aumenta → left: calc(25% + 1rem), top: 94%
+   *
+   * Jogador 4 (upper-right) → 1rem abaixo da pos 1  (CSS: left:5%, top:50%)
+   *   "Abaixo visual" = CSS left aumenta → left: calc(5% + 1rem), top: 50%
+   *
+   * Jogador 5 (mid-right)   → entre pos 2 (25%,6%) e pos 3 (75%,6%)
+   *   Midpoint CSS: left: 50%, top: 6%
+   *
+   * Todos com rotate(-90deg) para contra-rotacionar e ficar legível/vertical.
+   */
+  .game-table-view__players--5p .player-badge--upper-left {
+    left: calc(75% - 2rem);
+    top: 94%;
+    bottom: unset;
+    right: unset;
+    transform: translateY(-50%) rotate(-90deg);
+  }
+
+  .game-table-view__players--5p .player-badge--mid-left {
+    left: calc(25% + 1rem);
+    top: 94%;
+    bottom: unset;
+    right: unset;
+    transform: translateY(-50%) rotate(-90deg);
+  }
+
+  .game-table-view__players--5p .player-badge--upper-right {
+    left: calc(5% + 1rem);
+    top: 50%;
+    bottom: unset;
+    right: unset;
+    transform: translateY(-50%) rotate(-90deg);
+  }
+
+  .game-table-view__players--5p .player-badge--mid-right {
+    left: 50%;
+    top: 6%;
+    bottom: unset;
+    right: unset;
+    transform: translate(-50%, -50%) rotate(-90deg);
+  }
+
+  /*
+   * 6p portrait: avatares 2-6 posicionados verticalmente (rotate(-90deg)),
+   * alinhados com as quinas da mesa (hex rotado 90°CW).
+   *
+   * Sistema de coordenadas CSS em portrait:
+   *   CSS left+ → visual BAIXO  |  CSS left- → visual CIMA
+   *   CSS top+  → visual ESQ    |  CSS top-  → visual DIR
+   *
+   * Hex corners CSS (portrait):
+   *   Pos 1: left:5%,  top:50%  → visual TOPO-CENTRO
+   *   Pos 2: left:25%, top:6%   → visual SUPERIOR-DIR
+   *   Pos 3: left:75%, top:6%   → visual INFERIOR-DIR
+   *   Pos 5: left:75%, top:94%  → visual INFERIOR-ESQ
+   *   Pos 6: left:25%, top:94%  → visual SUPERIOR-ESQ
+   *
+   * Mapeamento 6p seats (portrait):
+   *   bottom-left  (jogador 2) → 1rem acima da pos 5  → left:calc(75%-1rem), top:94%
+   *   bottom-right (jogador 3) → 1rem abaixo da pos 6 → left:calc(25%+1rem), top:94%
+   *   top          (jogador 4) → 1rem abaixo da pos 1 → left:calc(5%+1rem),  top:50%
+   *   top-left     (jogador 5) → 1rem abaixo da pos 2 → left:calc(25%+1rem), top:6%
+   *   top-right    (jogador 6) → 1rem acima da pos 3  → left:calc(75%-1rem), top:6%
+   */
+  .game-table-view__players--6p .player-badge--bottom-left {
+    left: calc(75% - 1rem);
+    top: 94%;
+    bottom: unset;
+    right: unset;
+    transform: translateY(-50%) rotate(-90deg);
+  }
+
+  .game-table-view__players--6p .player-badge--bottom-right {
+    left: calc(25% + 1rem);
+    top: 94%;
+    bottom: unset;
+    right: unset;
+    transform: translateY(-50%) rotate(-90deg);
+  }
+
+  .game-table-view__players--6p .player-badge--top {
+    left: calc(5% + 1rem);
+    top: 50%;
+    bottom: unset;
+    right: unset;
+    transform: translateY(-50%) rotate(-90deg);
+  }
+
+  .game-table-view__players--6p .player-badge--top-left {
+    left: calc(25% + 1rem);
+    top: 6%;
+    bottom: unset;
+    right: unset;
+    transform: translateY(-50%) rotate(-90deg);
+  }
+
+  .game-table-view__players--6p .player-badge--top-right {
+    left: calc(75% - 1rem);
+    top: 6%;
+    bottom: unset;
+    right: unset;
+    transform: translateY(-50%) rotate(-90deg);
+  }
+}
+
+/* Landscape Mode - Ajustes para largura máxima */
+@media (orientation: landscape) {
+  .game-table-view {
+    height: 100dvh;
+    flex-direction: row;
+  }
+
+  .table-background {
+    height: 100%;
+    width: 100%;
+  }
+
+  .game-table-view__players {
+    height: 100%;
+  }
+
+  .header-bar {
+    padding: 6px 12px;
+    font-size: clamp(12px, 2vw, 14px);
+    gap: 8px;
+  }
+
+  .center-pile-view {
+    width: 45vw;
+    height: auto;
+    max-height: 70vh;
+  }
+
+  .center-pile-view__label {
+    font-size: clamp(24px, 3vw, 48px);
+  }
+
+  .cards-hand-view {
+    width: 100%;
+    max-height: 25vh;
+    padding: 8px 12px;
+  }
+
+  .player-badge {
+    min-width: 60px;
+  }
+
+  .player-badge__avatar {
+    width: 50px;
+    height: 50px;
+  }
+
+  .player-badge__name {
+    font-size: clamp(10px, 1.5vw, 12px);
+  }
+
+  /*
+   * Landscape: sem rotação → coordenadas CSS normais.
+   * bottom → midpoint entre pos 5 (75%,94%) e pos 6 (25%,94%) = centro (50%, 94%)
+   * top    → midpoint entre pos 2 (25%, 6%) e pos 3 (75%, 6%) = centro (50%,  6%)
+   */
+  .player-badge--bottom {
+    left: 50%;
+    top: 94%;
+    bottom: unset;
+    transform: translate(-50%, calc(-50% + 1rem));
+  }
+
+  .player-badge--top {
+    left: 50%;
+    top: 10%;
+    bottom: unset;
+    transform: translate(-50%, -50%);
+  }
+
+  /*
+   * 5p landscape: igual ao 4p (jogadores 3 e 4 nas laterais esq/dir),
+   * mais 2 jogadores no topo — nas quinas 2 e 3 da mesa.
+   *
+   * Hex corners landscape (coordenadas CSS, sem rotação):
+   *   2 = top-left  (25%,  6%)  |  3 = top-right (75%,  6%)
+   *   1 = left      ( 5%, 50%)  |  4 = right     (95%, 50%)
+   *
+   * Mapeamento:
+   *   upper-left  (jogador 2) → quina 2   (left:25%, top:6%)
+   *   mid-left    (jogador 3) → lateral esq, igual 4p left (left:8%, top:50%)
+   *   upper-right (jogador 4) → lateral dir, igual 4p right (right:8%, top:50%)
+   *   mid-right   (jogador 5) → quina 3   (left:75%, top:6%)
+   */
+  .game-table-view__players--5p .player-badge--upper-left {
+    left: 25%;
+    top: 6%;
+    right: unset;
+    bottom: unset;
+    transform: translate(-50%, -50%);
+  }
+
+  .game-table-view__players--5p .player-badge--mid-left {
+    left: 8%;
+    top: 50%;
+    right: unset;
+    bottom: unset;
+    transform: translateY(-50%);
+  }
+
+  .game-table-view__players--5p .player-badge--upper-right {
+    left: unset;
+    right: 8%;
+    top: 50%;
+    bottom: unset;
+    transform: translateY(-50%);
+  }
+
+  .game-table-view__players--5p .player-badge--mid-right {
+    left: 75%;
+    right: unset;
+    top: 6%;
+    bottom: unset;
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* Landscape muito curto (alturas < 500px) */
+@media (orientation: landscape) and (max-height: 500px) {
+  .header-bar {
+    max-height: 10vh;
+    padding: 4px 8px;
+  }
+
+  .cards-hand-view {
+    max-height: 20vh;
+    padding: 6px 8px;
+  }
+
+  .player-badge__avatar {
+    width: 40px;
+    height: 40px;
+  }
+
+  .center-pile-view__label {
+    font-size: 32px;
+    padding: 8px;
+  }
+
+  .player-badge__name {
+    font-size: 9px;
+  }
+
+  .player-badge__score {
+    font-size: 10px;
+  }
+}
+
+/* ============================================
+   NOTIFICAÇÃO EM NUVEM — Jogador saiu da partida
+   ============================================ */
+
+/* Overlay escuro por trás */
+.game-exit-notification {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10001;
+  background: rgba(0, 0, 0, 0.45);
+  animation: geNotifFadeIn 0.25s ease;
+}
+
+@keyframes geNotifFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Balão / nuvem */
+.game-exit-notification__bubble {
+  position: relative;
+  background: #fff;
+  border-radius: 24px;
+  padding: 28px 32px 20px;
+  max-width: 300px;
+  width: 88vw;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+  animation: geNotifPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Rabo da nuvem (seta para baixo) */
+.game-exit-notification__bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 14px 12px 0;
+  border-style: solid;
+  border-color: #fff transparent transparent;
+  filter: drop-shadow(0 3px 2px rgba(0,0,0,0.08));
+}
+
+/* Sombra extra para o rabo */
+.game-exit-notification__bubble::before {
+  content: '';
+  position: absolute;
+  bottom: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 16px 14px 0;
+  border-style: solid;
+  border-color: rgba(0,0,0,0.08) transparent transparent;
+}
+
+@keyframes geNotifPop {
+  from { transform: scale(0.7); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+
+/* Ícone */
+.game-exit-notification__icon {
+  display: block;
+  font-size: 40px;
+  line-height: 1;
+  margin-bottom: 10px;
+}
+
+/* Texto */
+.game-exit-notification__text {
+  margin: 0 0 16px;
+  font-size: 15px;
+  color: #333;
+  line-height: 1.5;
+}
+
+.game-exit-notification__text strong {
+  color: #111;
+}
+
+/* Botão OK / Ver Salas */
+.game-exit-notification__close {
+  background: #2d5a2d;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 28px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.game-exit-notification__close:hover {
+  background: #3a7a3a;
+}
+
+.game-exit-notification__close:active {
+  transform: scale(0.96);
+}
+

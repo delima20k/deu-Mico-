@@ -1,0 +1,146 @@
+/**
+ * Deck Action Panel — Painel de ação abaixo do monte de cartas
+ * Inclui também o wrapper .deck-center-stack que centra o conjunto
+ * (monte + painel) na mesa.
+ * Mobile-first · responsivo vertical e horizontal
+ */
+
+/* ============================================
+   WRAPPER CENTRAL — monte + painel
+   ============================================ */
+
+/**
+ * .deck-center-stack
+ * Centra o conjunto (monte de cartas + painel de ação) na mesa.
+ * position:absolute + translate(-50%,-50%) garante centralização
+ * independente do tamanho do pai.
+ */
+.deck-center-stack {
+  position: absolute;
+  left:  50%;
+  top:   50%;
+  transform: translate(-50%, -50%);
+
+  display:         flex;
+  flex-direction:  column;
+  align-items:     center;
+
+  /* z-index acima do fundo, abaixo dos badges */
+  z-index: 50;
+
+  /* pointer-events herdado pelos filhos conforme necessidade */
+  pointer-events: none;
+}
+
+/* ============================================
+   PAINEL DE AÇÃO
+   ============================================ */
+
+.deck-action-panel {
+  margin-top: 2rem;
+  display:        flex;
+  flex-direction: column;
+  align-items:    center;
+  /* permite receber cliques (override do none do pai) */
+  pointer-events: auto;
+}
+
+/* ============================================
+   BOTÃO — EMBARALHAR AS CARTAS
+   ============================================ */
+
+.deck-action-panel__btn {
+  padding:       0.55rem 1.2rem;
+  font-size:     clamp(0.7rem, 2.2vw, 0.85rem);
+  font-weight:   700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color:         #fff;
+
+  background:    linear-gradient(135deg, #e8a020 0%, #c47010 100%);
+  border:        none;
+  border-radius: 999px;
+  cursor:        pointer;
+
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.45),
+    0 1px 3px rgba(0, 0, 0, 0.25);
+
+  transition:
+    transform      0.15s ease,
+    box-shadow     0.15s ease,
+    background     0.15s ease;
+
+  /* evita que o texto quebre */
+  white-space: nowrap;
+}
+
+.deck-action-panel__btn:hover {
+  background: linear-gradient(135deg, #f0b030 0%, #d08020 100%);
+  box-shadow:
+    0 5px 12px rgba(0, 0, 0, 0.5),
+    0 2px 4px  rgba(0, 0, 0, 0.3);
+  transform: translateY(-1px);
+}
+
+.deck-action-panel__btn:active {
+  transform:  translateY(1px);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+}
+
+/* ============================================
+   MENSAGEM DE AGUARDO
+   ============================================ */
+
+.deck-action-panel__waiting {
+  font-size:   clamp(0.6rem, 1.8vw, 0.75rem);
+  font-weight: 500;
+  color:       rgba(255, 255, 255, 0.75);
+  text-align:  center;
+  max-width:   160px;
+  line-height: 1.35;
+  margin:      0;
+
+  /* sutil brilho para legibilidade sobre o feltro */
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+/* ============================================
+   RESPONSIVIDADE — PORTRAIT (celular vertical)
+   ============================================ */
+
+@media (orientation: portrait) and (max-width: 480px) {
+  .deck-action-panel {
+    margin-top: 1.5rem;
+  }
+
+  .deck-action-panel__btn {
+    font-size: clamp(0.65rem, 3vw, 0.78rem);
+    padding:   0.5rem 1rem;
+  }
+
+  .deck-action-panel__waiting {
+    font-size: clamp(0.55rem, 2.2vw, 0.68rem);
+    max-width: 130px;
+  }
+}
+
+/* ============================================
+   RESPONSIVIDADE — LANDSCAPE (celular horizontal)
+   ============================================ */
+
+@media (orientation: landscape) and (max-height: 480px) {
+  .deck-action-panel {
+    margin-top: 1rem;
+  }
+
+  .deck-action-panel__btn {
+    font-size: clamp(0.6rem, 1.8vw, 0.72rem);
+    padding:   0.4rem 0.9rem;
+  }
+
+  .deck-action-panel__waiting {
+    font-size: clamp(0.5rem, 1.5vw, 0.62rem);
+    max-width: 110px;
+  }
+}
