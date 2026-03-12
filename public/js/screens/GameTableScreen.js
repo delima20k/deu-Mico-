@@ -25,6 +25,7 @@ import { MatchService } from '../services/MatchService.js';
 import { DeckShuffleAnimator } from '../components/DeckShuffleAnimator.js';
 import { AuthService } from '../services/AuthService.js';
 import { UserRepository } from '../repositories/UserRepository.js';
+import { buildAndShuffleDeck } from '../services/deck.js';
 
 export class GameTableScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
@@ -65,6 +66,9 @@ export class GameTableScreen extends Screen {
 
   /** @type {DeckShuffleAnimator|null} */
   #deckShuffleAnimator = null;
+
+  /** @type {import('../domain/Card.js').Card[]|null} Baralho embaralhado da partida */
+  #deck = null;
 
   /** @type {Function|null} Unsubscriber do monitor de presença */
   #presenceUnsub = null;
@@ -172,12 +176,18 @@ export class GameTableScreen extends Screen {
       // ── Monte de cartas + painel de ação (wrapper centralizado) ──
       const deckStack = Dom.create('div', { classes: 'deck-center-stack' });
 
+      // Constrói o baralho real embaralhado (69 cartas)
+      this.#deck = buildAndShuffleDeck();
+
       this.#deckPile = new CardDeckPile(tableEl);
       const deckEl = this.#deckPile.create();
+      // Sincroniza contagem visual com o deck real
+      this.#deckPile.renderCentralDeck(this.#deck);
       deckStack.append(deckEl);
       this.#deckShuffleAnimator = new DeckShuffleAnimator(deckEl);
-      console.log('[DeckPile] criado no centro da mesa');
-      console.log(`[DeckPile] cartas empilhadas: ${36}`);
+      console.log('[CardDeckPile] ✅ Monte renderizado no centro da mesa');
+      console.log(`[CardDeckPile] 🃏 Camadas visíveis: 6`);
+      console.log(`[CardDeckPile] 📦 Total de cartas no deck: ${this.#deck.length}`);
 
       // Descobre o jogador mais novo para definir quem embaralha
       const dealerResult = await DealerSelectionService.getInstance()
