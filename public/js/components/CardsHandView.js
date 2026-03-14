@@ -44,10 +44,6 @@ export class CardsHandView {
     labelsEl.append(titleEl, countEl);
     wrapper.append(labelsEl);
 
-    // Container placeholder para as cartas
-    const containerEl = Dom.create('div', { classes: 'cards-hand-view__container' });
-    wrapper.append(containerEl);
-
     return wrapper;
   }
 }

@@ -623,6 +623,60 @@ export class MatchService {
     }
   }
 
+  // -------------------------------------------------------
+  // Estado de Jogo (Embaralhar / Entregar)
+  // -------------------------------------------------------
+
+  /**
+   * Escreve um evento de estado de jogo no RTDB.
+   * Path: /matches/{matchId}/gameState
+   * Chamado pelo dealer; todos os clientes subscribeGameState recebem o evento.
+   *
+   * @param {string} matchId
+   * @param {{ phase: string, ts: number, [key: string]: any }} state
+   * @returns {Promise<void>}
+   */
+  async writeGameState(matchId, state) {
+    const db    = this.#matchRepository.getDatabase();
+    const dbMod = this.#matchRepository.getDbModules();
+    if (!db) throw new Error('[GameState] Database não inicializado');
+
+    const ref = dbMod.ref(db, `matches/${matchId}/gameState`);
+    await dbMod.set(ref, state);
+    console.log(`[GameState] escrito phase=${state.phase} matchId=${matchId}`);
+  }
+
+  /**
+   * Escuta mudanças no estado de jogo em tempo real.
+   * Retorna unsubscriber.
+   *
+   * @param {string} matchId
+   * @param {(state: Object) => void} callback
+   * @returns {Function} unsubscribe
+   */
+  subscribeGameState(matchId, callback) {
+    try {
+      const db    = this.#matchRepository.getDatabase();
+      const dbMod = this.#matchRepository.getDbModules();
+      if (!db) {
+        console.warn('[GameState] Database não disponível — sincronização desativada');
+        return () => {};
+      }
+
+      const ref   = dbMod.ref(db, `matches/${matchId}/gameState`);
+      const unsub = dbMod.onValue(ref, (snap) => {
+        if (snap.exists()) callback(snap.val());
+      }, (err) => {
+        console.error('[GameState] Erro no listener:', err);
+      });
+
+      return unsub;
+    } catch (err) {
+      console.error('[GameState] Erro ao iniciar subscribeGameState:', err);
+      return () => {};
+    }
+  }
+
   /**
    * Remove todos os listeners ativos e limpa cache.
    */

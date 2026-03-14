@@ -18,7 +18,9 @@
  * Sem manipulação de DOM.
  */
 
-import { UserRepository } from '../repositories/UserRepository.js';
+import { UserRepository }         from '../repositories/UserRepository.js';
+import { Player }                  from '../domain/Player.js';
+import { YoungestPlayerResolver }  from '../domain/YoungestPlayerResolver.js';
 
 export class DealerSelectionService {
   /** @type {DealerSelectionService|null} */
@@ -68,19 +70,18 @@ export class DealerSelectionService {
     // Carrega perfis em paralelo para minimizar latência
     const candidates = await this.#buildCandidates(players);
 
-    // Ordena conforme as regras de desempate e pega o primeiro
-    candidates.sort(DealerSelectionService.#compareByAge);
-
-    const winner = candidates[0];
+    // Delega ao resolver de domínio puro (sem Firebase)
+    const winner = YoungestPlayerResolver.findYoungest(candidates);
 
     console.log(
-      `[DealerSelection] youngest uid=${winner.uid} age=${winner.age}`
+      `[DealerSelection] youngest uid=${winner.id} age=${winner.resolvedAge}`
     );
 
     return {
-      youngestPlayerUid:  winner.uid,
+      youngestPlayerUid:  winner.id,
       youngestPlayerName: winner.name,
-      youngestAge:        winner.age,
+      youngestAge:        winner.resolvedAge,
+      youngestPlayer:     winner,   // Player instance para uso no ShuffleController
     };
   }
 
@@ -98,37 +99,9 @@ export class DealerSelectionService {
     const profiles = await Promise.all(profilePromises);
 
     return profiles.map((profile, index) => {
-      const rawAge = profile.age;
-      // Idade ausente → Infinity (nunca será o mais novo)
-      const age = (rawAge !== null && rawAge !== undefined && Number.isFinite(rawAge))
-        ? rawAge
-        : Infinity;
-
-      console.log(`[DealerSelection] candidate uid=${profile.uid} age=${age}`);
-
-      return {
-        uid:      profile.uid,
-        name:     profile.name,
-        age,
-        joinedAt: players[index].joinedAt ?? 0,
-      };
+      const player = Player.fromProfile(profile, { joinedAt: players[index].joinedAt ?? 0 });
+      console.log(`[DealerSelection] candidate uid=${player.id} age=${player.resolvedAge}`);
+      return player;
     });
-  }
-
-  /**
-   * Função de comparação para ordenar candidatos.
-   * Critérios em ordem de prioridade:
-   *   1. Menor idade
-   *   2. Menor joinedAt (entrou primeiro na sala)
-   *   3. uid em ordem alfabética crescente
-   *
-   * @param {{ uid: string, age: number, joinedAt: number }} a
-   * @param {{ uid: string, age: number, joinedAt: number }} b
-   * @returns {number}
-   */
-  static #compareByAge(a, b) {
-    if (a.age !== b.age)           return a.age      - b.age;
-    if (a.joinedAt !== b.joinedAt) return a.joinedAt - b.joinedAt;
-    return a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0;
   }
 }

@@ -19,12 +19,12 @@
  *     ⚠️ carta_conponato.png → adicionada automaticamente; nome incomum
  *                              (possível typo — verifique se o asset está correto)
  *
- *   Com as 2 cartas adicionadas: 32 + 2 = 34 cartas normais
+ *   Com a carta adicionada (pato): 32 + 1 = 33 cartas normais
  *   Resultado final do baralho:
- *     34 pares  = 68 cartas normais
+ *     33 pares  = 66 cartas normais
  *     + 1 mico único
  *     ─────────────────
- *     TOTAL = 69 cartas ✅
+ *     TOTAL = 67 cartas ✅
  *
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -35,8 +35,8 @@ export class DeckConfig {
   static #BACK_IMG  = 'img/carta_verso.png';
   static #MICO_KEY  = 'mico';
 
-  static #EXPECTED_PAIRS  = 34;
-  static #EXPECTED_TOTAL  = 69; // 68 normais + 1 mico
+  static #EXPECTED_PAIRS  = 33;
+  static #EXPECTED_TOTAL  = 67; // 66 normais + 1 mico
 
   // -------------------------------------------------------
   // Lista base de cartas NORMAIS (formam pares)
@@ -82,7 +82,6 @@ export class DeckConfig {
     { key: 'polvo',       label: 'Polvo'        },
     // ── Adicionadas por varredura dos assets (não estavam na lista) ──
     { key: 'pato',        label: 'Pato',        addedByAssetScan: true },
-    { key: 'conponato',   label: 'Conponato',   addedByAssetScan: true, possibleTypo: true },
   ];
 
   // Carta especial — existe UMA ÚNICA vez no baralho

@@ -232,24 +232,74 @@
   pointer-events: auto;
 }
 
+/* ── Carta de descarte (imagem central) ──────────────────── */
+.center-pile-view__card {
+  display:   block;
+  width:     clamp(40px, 7vw, 70px);
+  height:    clamp(60px, 10.5vw, 104px);
+  object-fit:      cover;
+  object-position: center;
+  border-radius:   clamp(4px, 0.9vw, 8px);
+  pointer-events:  none;
+  user-select:     none;
+  -webkit-user-drag: none;
+}
+
 .center-pile-view__label {
-  font-size: 48px;
-  line-height: 1;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
-  cursor: pointer;
-  transition: transform 0.2s ease;
+  --card-w:      clamp(40px, 7vw, 70px);
+  --card-h:      clamp(60px, 10.5vw, 104px);
+  --card-radius: clamp(4px, 0.9vw, 8px);
+
+  position:    relative;
+  width:       var(--card-w);
+  height:      var(--card-h);
+  flex-shrink: 0;
+  cursor:      pointer;
+  filter:      drop-shadow(0 3px 10px rgba(0, 0, 0, 0.5));
+  transition:  transform 0.2s ease;
 }
 
 .center-pile-view__label:hover {
-  transform: scale(1.1);
+  transform: scale(1.08);
+}
+
+/* ── Imagens do monte (3 <img>: 2 traseiras + 1 topo) ───────────── */
+.center-pile-view__label img {
+  position:          absolute;
+  inset:             0;
+  width:             100%;
+  height:            100%;
+  object-fit:        cover;
+  object-position:   center;
+  border-radius:     var(--card-radius);
+  user-select:       none;
+  pointer-events:    none;
+  -webkit-user-drag: none;
+}
+
+.center-pile-view__label img:nth-child(1) {
+  transform: translate(-3px, -3px) rotate(-2deg);
+  filter:    brightness(0.82);
+  z-index:   1;
+}
+
+.center-pile-view__label img:nth-child(2) {
+  transform: translate(2px, -2px) rotate(1.5deg);
+  filter:    brightness(0.88);
+  z-index:   2;
+}
+
+.center-pile-view__label img:nth-child(3) {
+  z-index: 3;
+}
+
+/* Carta virada para cima — sem sombra */
+.center-pile-view__top-card--revealed {
+  box-shadow: none !important;
 }
 
 .center-pile-view__count {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
-  font-weight: 600;
-  min-width: 24px;
-  text-align: center;
+  display: none;
 }
 
 /* ============================================
@@ -289,14 +339,7 @@
   font-size: 11px;
 }
 
-.cards-hand-view__container {
-  display: flex;
-  gap: 6px;
-  height: 60px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  padding-bottom: 4px;
-}
+
 
 /* ============================================
    GAME TABLE SCREEN - Tela completa
@@ -410,16 +453,8 @@
     max-width: 80px;
   }
 
-  .center-pile-view__label {
-    font-size: 56px;
-  }
-
   .cards-hand-view {
     padding: 14px 20px;
-  }
-
-  .cards-hand-view__container {
-    height: 70px;
   }
 }
 
@@ -438,21 +473,12 @@
     max-width: 90px;
   }
 
-  .center-pile-view__label {
-    font-size: 64px;
-  }
-
   .table-background__game-area {
     max-width: 500px;
   }
 
   .cards-hand-view {
     padding: 16px 24px;
-  }
-
-  .cards-hand-view__container {
-    height: 80px;
-    gap: 8px;
   }
 }
 
@@ -470,16 +496,8 @@
     font-size: 10px;
   }
 
-  .center-pile-view__label {
-    font-size: 40px;
-  }
-
   .cards-hand-view {
     padding: 8px 12px;
-  }
-
-  .cards-hand-view__container {
-    height: 50px;
   }
 }
 
@@ -864,10 +882,6 @@
     max-height: 70vh;
   }
 
-  .center-pile-view__label {
-    font-size: clamp(24px, 3vw, 48px);
-  }
-
   .cards-hand-view {
     width: 100%;
     max-height: 25vh;
@@ -968,11 +982,6 @@
   .player-badge__avatar {
     width: 40px;
     height: 40px;
-  }
-
-  .center-pile-view__label {
-    font-size: 32px;
-    padding: 8px;
   }
 
   .player-badge__name {

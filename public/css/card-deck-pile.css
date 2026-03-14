@@ -15,12 +15,9 @@
    Alterar aqui propaga para todos os elementos.
    ============================================ */
 .card-deck-pile {
-  --card-w:        clamp(44px, 7.5vw, 74px);
-  --card-h:        clamp(66px, 11.2vw, 110px);
-  --card-radius:   clamp(5px, 1vw, 9px);
-  --shadow-a:      0 2px 6px rgba(0, 0, 0, 0.45);
-  --shadow-b:      0 6px 18px rgba(0, 0, 0, 0.30);
-  --shadow-c:      0 0 0 1.5px rgba(255, 255, 255, 0.08);
+  --card-w:        clamp(58px, 10vw, 96px);
+  --card-h:        clamp(87px, 15vw, 144px);
+  --card-radius:   clamp(6px, 1.2vw, 11px);
 }
 
 /* ============================================
@@ -58,28 +55,17 @@
   width:               100%;
   height:              100%;
 
-  /* verso do baralho — caminho correto relativo ao HTML */
-  background-image:    url("img/carta_verso.png");
+  /* verso do baralho */
+  background-image:    url("../img/carta_verso.png");
   background-size:     cover;
   background-position: center;
   background-repeat:   no-repeat;
 
-  /* fallback enquanto a imagem carrega */
-  background-color:    #1a3a6e;
-
   border-radius:       var(--card-radius);
-
-  box-shadow:
-    var(--shadow-a),
-    var(--shadow-b),
-    var(--shadow-c);
 
   /* hint para o GPU — transitions suaves p/ animações futuras */
   will-change:  transform, opacity;
   transition:   transform 0.25s ease, opacity 0.2s ease;
-
-  /* borda interna sutil para dar profundidade entre camadas */
-  outline: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 /* cartas que não são o topo ficam levemente mais escuras */
@@ -90,31 +76,14 @@
 /* ── Topo da pilha — destaque visual ──────────────────────── */
 .card-back--top {
   filter: brightness(1);
-  box-shadow:
-    var(--shadow-a),
-    var(--shadow-b),
-    var(--shadow-c),
-    0 0 14px rgba(255, 210, 80, 0.22),
-    0 0  6px rgba(255, 210, 80, 0.12);
-  outline: 1px solid rgba(255, 215, 0, 0.18);
 
   /* pulso suave para indicar que o monte está ativo */
   animation: deck-top-pulse 3.2s ease-in-out infinite;
 }
 
 @keyframes deck-top-pulse {
-  0%,  100% {
-    box-shadow:
-      var(--shadow-a), var(--shadow-b), var(--shadow-c),
-      0 0 14px rgba(255, 210, 80, 0.22),
-      0 0  6px rgba(255, 210, 80, 0.12);
-  }
-  50% {
-    box-shadow:
-      var(--shadow-a), var(--shadow-b), var(--shadow-c),
-      0 0 24px rgba(255, 210, 80, 0.42),
-      0 0 10px rgba(255, 210, 80, 0.28);
-  }
+  0%,  100% { box-shadow: none; }
+  50%       { box-shadow: none; }
 }
 
 /* ============================================
@@ -168,8 +137,8 @@
 
 @media (orientation: portrait) and (max-width: 480px) {
   .card-deck-pile {
-    --card-w: clamp(38px, 9.5vw, 60px);
-    --card-h: clamp(57px, 14vw,  90px);
+    --card-w: clamp(50px, 12.5vw, 78px);
+    --card-h: clamp(75px, 18.5vw, 117px);
   }
 }
 
@@ -179,8 +148,8 @@
 
 @media (orientation: landscape) and (max-height: 480px) {
   .card-deck-pile {
-    --card-w: clamp(30px, 6vw,  52px);
-    --card-h: clamp(45px, 9vw,  78px);
+    --card-w: clamp(40px, 7.5vw, 68px);
+    --card-h: clamp(60px, 11.5vw, 102px);
   }
 
   .card-deck-pile__count {
@@ -195,8 +164,8 @@
 
 @media (min-width: 768px) and (max-width: 1024px) {
   .card-deck-pile {
-    --card-w: clamp(52px, 6.5vw, 72px);
-    --card-h: clamp(78px, 9.7vw, 108px);
+    --card-w: clamp(68px, 8.5vw, 94px);
+    --card-h: clamp(102px, 12.5vw, 141px);
   }
 }
 
@@ -206,7 +175,100 @@
 
 @media (min-width: 1025px) {
   .card-deck-pile {
-    --card-w: clamp(62px, 5vw, 82px);
-    --card-h: clamp(93px, 7.5vw, 123px);
+    --card-w: clamp(80px, 6.5vw, 106px);
+    --card-h: clamp(120px, 9.5vw, 159px);
+  }
+}
+
+/* ============================================================
+   ANIMAÇÃO DE ENTRADA DO MONTE
+   Keyframes modulares — cada fase com responsabilidade clara.
+   ============================================================ */
+
+/**
+ * @keyframes deckEntry
+ *
+ * Fase 1  (0–35%) — surgimento: opacity + scale de longe
+ * Fase 2 (35–70%) — descida leve: translateY orgânico
+ * Fase 3 (70–88%) — assentamento: overshoot suave (scale 1.04)
+ * Fase 4 (88–100%) — repouso: retorno ao estado natural
+ *
+ * Usa apenas opacity + transform → 100% GPU, zero reflow.
+ */
+@keyframes deckEntry {
+  0%   { opacity: 0;    transform: scale(0.55) translateY(-12px) rotate(-3deg); }
+  35%  { opacity: 0.85; transform: scale(0.92) translateY(-4px)  rotate(-1deg); }
+  70%  { opacity: 1;    transform: scale(1.04) translateY(2px)   rotate(0.4deg); }
+  88%  { opacity: 1;    transform: scale(0.98) translateY(-1px)  rotate(-0.2deg); }
+  100% { opacity: 1;    transform: scale(1)    translateY(0px)   rotate(0deg); }
+}
+
+/**
+ * @keyframes deckEntryBadge
+ *
+ * Badge de contagem aparece depois do monte para não poluir
+ * a animação principal. Fade in simples com leve translação.
+ */
+@keyframes deckEntryBadge {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0);   }
+}
+
+/* ============================================================
+   CLASSE DE ATIVAÇÃO — aplicada pelo DeckEntryAnimator
+   ============================================================ */
+
+/**
+ * .deck-entry-animating
+ *
+ * Adicionada via JS ao .card-deck-pile antes de inserir no DOM.
+ * Removida pelo DeckEntryAnimator após animationend.
+ *
+ * transform-origin: center bottom → simula carta "pousando" na mesa.
+ * will-change prepara a layer de compositing antes do primeiro frame,
+ * eliminando jank de inicialização.
+ *
+ * A animação é interrompível: se removida antes do fim,
+ * o estado não fica preso — pois fill-mode é 'both' (mantém
+ * o estado final até a classe ser removida pelo JS).
+ */
+.deck-entry-animating {
+  animation:        deckEntry 0.55s cubic-bezier(0.22, 0.68, 0, 1.2) both;
+  transform-origin: center bottom;
+  will-change:      transform, opacity;
+}
+
+/**
+ * .deck-entry-animating .card-deck-pile__count
+ *
+ * O badge de contagem aparece 300ms após o início do monte,
+ * quando o assentamento já está visível.
+ */
+.deck-entry-animating .card-deck-pile__count {
+  animation:        deckEntryBadge 0.3s ease-out 0.38s both;
+}
+
+/* ── Preferência por movimento reduzido (acessibilidade) ──── */
+@media (prefers-reduced-motion: reduce) {
+  .deck-entry-animating {
+    animation: none;
+    opacity:   1;
+    transform: none;
+  }
+  .deck-entry-animating .card-deck-pile__count {
+    animation: none;
+    opacity:   1;
+    transform: translateX(-50%);
+  }
+}
+
+/* ── Portrait mobile: keyframe com translate menor ────────── */
+@media (orientation: portrait) and (max-width: 480px) {
+  @keyframes deckEntry {
+    0%   { opacity: 0;    transform: scale(0.55) translateY(-8px)  rotate(-3deg); }
+    35%  { opacity: 0.85; transform: scale(0.92) translateY(-3px)  rotate(-1deg); }
+    70%  { opacity: 1;    transform: scale(1.04) translateY(1.5px) rotate(0.4deg); }
+    88%  { opacity: 1;    transform: scale(0.98) translateY(-0.5px) rotate(-0.2deg); }
+    100% { opacity: 1;    transform: scale(1)    translateY(0px)   rotate(0deg); }
   }
 }

@@ -20,7 +20,10 @@
  *   shuffleAnimation()                → reservado para fase futura
  */
 
-import { Dom } from '../utils/Dom.js';
+import { Dom }                 from '../utils/Dom.js';
+import { DeckEntryAnimator }   from './DeckEntryAnimator.js';
+import { ShuffleAnimator }     from './ShuffleAnimator.js';
+import { DeckDealAnimator }    from './DeckDealAnimator.js';
 
 // ─── Constantes visuais ────────────────────────────────────────────────────
 
@@ -81,12 +84,27 @@ export default class CardDeckPile {
   /** @type {number} Contagem atual de cartas no monte */
   #currentCount = 0;
 
+  /** @type {DeckEntryAnimator|null} Animador de entrada (novas rodadas) */
+  #entryAnimator = null;
+
+  /** @type {ShuffleAnimator|null} Animador de embaralhamento */
+  #shuffleAnimator = null;
+
+  /** @type {DeckDealAnimator|null} Animador de distribuição inicial (69 cartas voando) */
+  #dealAnimator = null;
+
   /**
    * @param {HTMLElement} tableElement - Elemento pai da mesa (game-table-view).
+   * @param {Object}  [options]
+   * @param {boolean} [options.animate=true] - Habilita animação de entrada.
    */
-  constructor(tableElement) {
+  constructor(tableElement, { animate = true } = {}) {
     this.#tableElement = tableElement;
+    this.#animateEntry = animate;
   }
+
+  /** @type {boolean} Cache da flag de animação */
+  #animateEntry = true;
 
   // ─────────────────────────────────────────────────────────────────────────
   // PUBLIC API
@@ -94,7 +112,7 @@ export default class CardDeckPile {
 
   /**
    * Cria o DOM do monte sem inserir na página.
-   * @returns {HTMLElement} .card-deck-pile pronto para insertir.
+   * @returns {HTMLElement} .card-deck-pile pronto para inserir.
    */
   create() {
     const container = Dom.create('div', { classes: 'card-deck-pile' });
@@ -109,6 +127,12 @@ export default class CardDeckPile {
     container.append(this.#countEl);
 
     this.#containerEl = container;
+
+    // Instancia os animadores
+    this.#entryAnimator   = new DeckEntryAnimator(container);    // novas rodadas
+    this.#shuffleAnimator = new ShuffleAnimator(container);      // embaralhar
+    this.#dealAnimator    = new DeckDealAnimator(container);     // distribuição inicial
+
     return container;
   }
 
@@ -124,16 +148,32 @@ export default class CardDeckPile {
   }
 
   /**
-   * Sincroniza o componente visual com o deck de jogo real.
-   * Atualiza contagem e estado vazio/cheio.
+   * Sincroniza o componente visual com o deck de jogo real
+   * e dispara a animação de entrada (se habilitada).
    *
    * @param {import('../domain/Card.js').Card[]|null} deck - Array de cartas restantes.
    *   Pode ser null/undefined para usar contagem padrão (69).
+   * @returns {Promise<void>} Resolvida após a animação de entrada concluir.
    */
-  renderCentralDeck(deck) {
-    const count = Array.isArray(deck) ? deck.length : 69;
+  async renderCentralDeck(deck) {
+    const count = Array.isArray(deck) ? deck.length : 67;
     this.updateCentralDeckCount(count);
     console.log(`[CardDeckPile] 🔄 Deck sincronizado: ${count} cartas`);
+
+    // Distribuição inicial: cada carta voa de fora da tela até o monte
+    if (this.#animateEntry && this.#dealAnimator) {
+      await this.#dealAnimator.animate(count);
+    }
+  }
+
+  /**
+   * Dispara a animação de entrada manualmente.
+   * Útil para reutilizar em nova rodada sem recriar o componente.
+   * @returns {Promise<void>}
+   */
+  animateCentralDeckEntry() {
+    if (!this.#entryAnimator) return Promise.resolve();
+    return this.#entryAnimator.animateCentralDeckEntry();
   }
 
   /**
@@ -147,18 +187,27 @@ export default class CardDeckPile {
 
     if (!this.#countEl) return;
 
-    // Atualiza texto do badge
-    this.#countEl.textContent = count > 0 ? String(count) : '';
+    // Atualiza texto do badge: 00 quando vazio, número com zero-pad de 2 dígitos
+    this.#countEl.textContent = count > 0
+      ? String(count).padStart(2, '0')
+      : '00';
 
     // Toggle de estado vazio
     this.#containerEl?.classList.toggle('card-deck-pile--empty', count === 0);
   }
 
   /**
-   * Animação de embaralhar — reservado para fase futura.
+   * Dispara a animação de embaralhamento por carta individual.
+   * Spam-safe: chamadas simultâneas são ignoradas silenciosamente.
+   *
+   * @param {Object}  [options]
+   * @param {number}  [options.intensity=1]   - Amplitude do fan-out (0.5–2).
+   * @param {number}  [options.duration=1100] - Duração por carta em ms.
+   * @returns {Promise<void>} Resolve quando todas as cartas terminam.
    */
-  shuffleAnimation() {
-    // TODO: implementar animação de embaralhar (DeckShuffleAnimator)
+  animateCentralDeckShuffle(options) {
+    if (!this.#shuffleAnimator) return Promise.resolve();
+    return this.#shuffleAnimator.animateCentralDeckShuffle(options);
   }
 
   /**

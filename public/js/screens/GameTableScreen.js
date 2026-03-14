@@ -22,10 +22,13 @@ import { DeckActionPanel } from '../components/DeckActionPanel.js';
 import { TableLayoutService } from '../services/TableLayoutService.js';
 import { DealerSelectionService } from '../services/DealerSelectionService.js';
 import { MatchService } from '../services/MatchService.js';
-import { DeckShuffleAnimator } from '../components/DeckShuffleAnimator.js';
+import { ShuffleController }   from '../services/ShuffleController.js';
 import { AuthService } from '../services/AuthService.js';
 import { UserRepository } from '../repositories/UserRepository.js';
-import { buildAndShuffleDeck } from '../services/deck.js';
+import { buildAndShuffleDeck, buildDeck } from '../services/deck.js';
+import { CardDealAnimator }   from '../components/CardDealAnimator.js';
+import { HandModal }          from '../components/HandModal.js';
+import { PairsBadge }         from '../components/PairsBadge.js';
 
 export class GameTableScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
@@ -64,11 +67,32 @@ export class GameTableScreen extends Screen {
   /** @type {DeckActionPanel|null} */
   #deckActionPanel = null;
 
-  /** @type {DeckShuffleAnimator|null} */
-  #deckShuffleAnimator = null;
+  /** @type {ShuffleController|null} */
+  #shuffleController = null;
 
   /** @type {import('../domain/Card.js').Card[]|null} Baralho embaralhado da partida */
   #deck = null;
+
+  /** @type {import('../domain/TableLayout.js').TableLayout|null} Layout atual da mesa */
+  #tableLayout = null;
+
+  /** @type {HTMLElement|null} Elemento DOM do monte de cartas */
+  #deckPileEl = null;
+
+  /** @type {HandModal|null} Modal de cartas na mão do jogador */
+  #handModal = null;
+
+  /** @type {Map<string, PairsBadge>} uid → PairsBadge do jogador */
+  #pairsBadges = new Map();
+
+  /** @type {Function|null} Unsubscriber do listener de estado de jogo (Firebase) */
+  #gameStateUnsub = null;
+
+  /** @type {number} Timestamp do último evento de estado de jogo processado */
+  #lastGameEventTs = 0;
+
+  /** @type {boolean} Trava para evitar processamento duplo de eventos */
+  #gameStateLock = false;
 
   /** @type {Function|null} Unsubscriber do monitor de presença */
   #presenceUnsub = null;
@@ -160,6 +184,7 @@ export class GameTableScreen extends Screen {
       console.log(`[GameTableScreen] ✅ Layout criado com sucesso`);
       console.log(`[GameTableScreen] 🎨 Renderizando componentes visuais...`);
 
+      this.#tableLayout = tableLayout;
       this.#gameTableView = new GameTableView(tableLayout, this.#myUid, this.#roomType);
       const tableEl = this.#gameTableView.create();
 
@@ -171,6 +196,16 @@ export class GameTableScreen extends Screen {
       const playersContainerEl = this.#gameTableView.getPlayersContainer();
       if (playersContainerEl) {
         hexEl.append(playersContainerEl);
+
+        // Cria PairsBadge para cada jogador (sobrepostos ao seu player-badge)
+        this.#pairsBadges.clear();
+        for (const seat of tableLayout.seats) {
+          const playerEl = playersContainerEl.querySelector(`[data-uid="${seat.uid}"]`);
+          if (playerEl) {
+            const pb = new PairsBadge(playerEl, seat.uid, seat.uid === this.#myUid);
+            this.#pairsBadges.set(seat.uid, pb);
+          }
+        }
       }
 
       // ── Monte de cartas + painel de ação (wrapper centralizado) ──
@@ -179,13 +214,12 @@ export class GameTableScreen extends Screen {
       // Constrói o baralho real embaralhado (69 cartas)
       this.#deck = buildAndShuffleDeck();
 
-      this.#deckPile = new CardDeckPile(tableEl);
-      const deckEl = this.#deckPile.create();
-      // Sincroniza contagem visual com o deck real
-      this.#deckPile.renderCentralDeck(this.#deck);
-      deckStack.append(deckEl);
-      this.#deckShuffleAnimator = new DeckShuffleAnimator(deckEl);
-      console.log('[CardDeckPile] ✅ Monte renderizado no centro da mesa');
+      this.#deckPile   = new CardDeckPile(tableEl);
+      this.#deckPileEl = this.#deckPile.create();
+      deckStack.append(this.#deckPileEl);
+      // Sincroniza contagem visual e distribui cartas com animação
+      await this.#deckPile.renderCentralDeck(this.#deck);
+      console.log('[CardDeckPile] ✅ Monte renderizado — 69 cartas distribuídas');
       console.log(`[CardDeckPile] 🃏 Camadas visíveis: 6`);
       console.log(`[CardDeckPile] 📦 Total de cartas no deck: ${this.#deck.length}`);
 
@@ -193,12 +227,27 @@ export class GameTableScreen extends Screen {
       const dealerResult = await DealerSelectionService.getInstance()
         .resolveYoungestPlayer(this.#players);
 
+      const youngestPlayer = dealerResult.youngestPlayer;
+
       this.#deckActionPanel = new DeckActionPanel(
         this.#myUid,
-        dealerResult.youngestPlayerUid,
-        () => this.#onShuffleRequested()
+        youngestPlayer.id,
+        () => this.#onShuffleRequested(),
+        youngestPlayer.name,
+        () => this.#onDealRequested()
       );
       deckStack.append(this.#deckActionPanel.create());
+
+      // ShuffleController orquestra autorização, animação e transição de estado
+      this.#shuffleController = new ShuffleController({
+        deckPile:       this.#deckPile,
+        actionPanel:    this.#deckActionPanel,
+        myUid:          this.#myUid,
+        youngestPlayer,
+      });
+
+      console.log(`[ShuffleController] ✅ Dealer: ${youngestPlayer.name} (${youngestPlayer.id.slice(0, 8)}...)`);
+      console.log(`[ShuffleController] 🔑 Autorizado neste cliente: ${this.#shuffleController.isAuthorized}`);
 
       tableEl.append(deckStack);
 
@@ -230,6 +279,9 @@ export class GameTableScreen extends Screen {
 
     // Inicia monitor de presença para detectar quando alguém sai
     this.#startPresenceMonitor();
+
+    // Assina canal de estado de jogo — sincroniza embaralhar+entregar em todos os clientes
+    this.#subscribeGameState();
   }
 
   /**
@@ -373,6 +425,20 @@ export class GameTableScreen extends Screen {
     this.#presenceUnsub = null;
     this.#prevPlayerUids = null;
     this.#presenceMap = {};
+
+    // Para listener de estado de jogo (Firebase)
+    this.#gameStateUnsub?.();
+    this.#gameStateUnsub  = null;
+    this.#gameStateLock   = false;
+    this.#lastGameEventTs = 0;
+
+    // Destroi modal de mão
+    this.#handModal?.destroy();
+    this.#handModal = null;
+
+    // Destroi todos os PairsBadges
+    this.#pairsBadges.forEach(pb => pb.destroy());
+    this.#pairsBadges.clear();
 
     // Limpa monitoramento (listener do GameRoomMonitor)
     if (this.#monitoringUnsubscribe) {
@@ -529,18 +595,196 @@ export class GameTableScreen extends Screen {
 
   /**
    * Handler do botão "EMBARALHAR AS CARTAS".
-   * Orquestra: desabilitar botão → animar monte → trocar para "ENTREGAR CARTAS".
+   * Publica evento no Firebase → todos os clientes recebem e animam simultaneamente.
+   * Fallback local se Firebase indisponível.
    * @private
    */
-  #onShuffleRequested() {
-    console.log('[DeckAction] shuffle requested');
+  async #onShuffleRequested() {
+    if (!this.#shuffleController?.isAuthorized) {
+      this.#deckActionPanel?.showBlockedWarning(
+        `Somente ${this.#shuffleController?.youngestPlayer?.name} pode embaralhar`
+      );
+      return;
+    }
+    if (this.#gameStateLock) return;
+    this.#gameStateLock = true;
 
-    if (!this.#deckShuffleAnimator || !this.#deckActionPanel) return;
+    try {
+      await MatchService.getInstance().writeGameState(this.#matchId, {
+        phase: 'shuffling',
+        triggeredBy: this.#myUid,
+        ts: Date.now(),
+      });
+      // #handleGameState cuida da animação em todos os clientes
+    } catch (err) {
+      console.warn('[GameTableScreen] Firebase indisponível — embaralhamento local', err);
+      this.#gameStateLock = false;
+      this.#deckActionPanel?.setState('shuffling');
+      await this.#deckPile?.animateCentralDeckShuffle();
+      this.#deckActionPanel?.setState('readyToDeal');
+    }
+  }
 
-    this.#deckActionPanel.setState('shuffling');
+  /**
+   * Handler do botão "ENTREGAR CARTAS".
+   * Publica evento no Firebase com a ordem das cartas → todos os clientes recebem e animam.
+   * Fallback local se Firebase indisponível.
+   * @private
+   */
+  async #onDealRequested() {
+    if (!this.#deck || !this.#tableLayout || !this.#deckPileEl) return;
+    if (this.#gameStateLock) return;
+    this.#gameStateLock = true;
 
-    this.#deckShuffleAnimator.play().then(() => {
-      this.#deckActionPanel.setState('readyToDeal');
+    try {
+      await MatchService.getInstance().writeGameState(this.#matchId, {
+        phase: 'dealing',
+        dealerUid: this.#myUid,
+        cardOrder: this.#deck.map(c => c.id),
+        ts: Date.now(),
+      });
+      // #handleGameState cuida da animação em todos os clientes
+    } catch (err) {
+      console.warn('[GameTableScreen] Firebase indisponível — entregando cartas localmente', err);
+      this.#gameStateLock = false;
+      this.#runDealAnimation();
+    }
+  }
+
+  /**
+   * Assina o canal de estado de jogo no Firebase.
+   * Todos os eventos (embaralhar, entregar) chegam por aqui em TODOS os clientes.
+   * @private
+   */
+  #subscribeGameState() {
+    this.#gameStateUnsub?.();
+    const subTs = Date.now();
+
+    this.#gameStateUnsub = MatchService.getInstance().subscribeGameState(
+      this.#matchId,
+      (state) => {
+        // Ignora eventos anteriores à entrada nesta tela (clock skew de 2s permitido)
+        if (!state?.ts || state.ts < subTs - 2000) return;
+        // Ignora eventos já processados
+        if (state.ts <= this.#lastGameEventTs) return;
+        this.#handleGameState(state);
+      }
+    );
+  }
+
+  /**
+   * Processa evento de estado de jogo recebido do Firebase.
+   * Executado em TODOS os clientes quando o dealer aciona embaralhar ou entregar.
+   * @param {{ phase: string, ts: number, cardOrder?: string[] }} state
+   * @private
+   */
+  async #handleGameState(state) {
+    if (!state?.phase) return;
+    this.#lastGameEventTs = state.ts;
+
+    if (state.phase === 'shuffling') {
+      this.#deckActionPanel?.setState('shuffling');
+      await this.#deckPile?.animateCentralDeckShuffle();
+      this.#deckActionPanel?.setState('readyToDeal');
+      this.#gameStateLock = false;
+    }
+
+    if (state.phase === 'dealing') {
+      // Reconstrói o deck na mesma ordem exata que o dealer usou
+      if (Array.isArray(state.cardOrder) && state.cardOrder.length > 0) {
+        const base    = buildDeck();
+        const cardMap = new Map(base.map(c => [c.id, c]));
+        const rebuilt = state.cardOrder.map(id => cardMap.get(id)).filter(Boolean);
+        if (rebuilt.length > 0) this.#deck = rebuilt;
+      }
+      this.#gameStateLock = false;
+      this.#runDealAnimation();
+    }
+  }
+
+  /**
+   * Executa a animação de distribuição de cartas e abre a modal da mão local.
+   * Usa this.#deck como fonte (já deve estar na ordem correta).
+   * @private
+   */
+  #runDealAnimation() {
+    if (!this.#deck || !this.#tableLayout || !this.#deckPileEl) return;
+
+    // ── 1. Ordena assentos no sentido horário ──────────────────────────────
+    const CW = {
+      'bottom': 0,
+      'bottom-right': 1, 'right': 1,
+      'mid-right': 2,
+      'upper-right': 3, 'top-right': 3,
+      'top': 4,
+      'upper-left': 5, 'top-left': 5,
+      'left': 6,       'mid-left': 6,
+      'bottom-left': 7,
+    };
+
+    const sortedSeats = [...this.#tableLayout.seats]
+      .sort((a, b) => (CW[a.positionKey] ?? 0) - (CW[b.positionKey] ?? 0));
+
+    const dealerUid   = this.#shuffleController?.youngestPlayer?.id;
+    const dealerIdx   = sortedSeats.findIndex(s => s.uid === dealerUid);
+    const dealerStart = dealerIdx >= 0 ? dealerIdx : 0;
+
+    const dealOrderSeats = [
+      ...sortedSeats.slice(dealerStart),
+      ...sortedSeats.slice(0, dealerStart),
+    ];
+
+    // ── 2. Distribui cartas em round-robin ─────────────────────────────────
+    const N          = dealOrderSeats.length;
+    const cardsByUid = new Map(dealOrderSeats.map(s => [s.uid, []]));
+    this.#deck.forEach((card, i) => {
+      const uid = dealOrderSeats[i % N].uid;
+      cardsByUid.get(uid).push(card);
+    });
+
+    const dealSequence = dealOrderSeats.map(s => ({
+      uid:   s.uid,
+      cards: cardsByUid.get(s.uid),
+    }));
+
+    // ── 3. Cria modal de mão para o jogador local ─────────────────────────
+    this.#handModal?.destroy();
+    this.#handModal = new HandModal();
+    this.#handModal.create();
+
+    // Callback de par confirmado → atualiza PairsBadge do jogador local
+    this.#handModal.onPairFormed = (pair) => {
+      const badge = this.#pairsBadges.get(this.#myUid);
+      badge?.addPair(pair);
+      console.log(`[GameTableScreen] 🃏 Par formado: ${pair.map(c => c.name).join(' + ')}`);
+    };
+
+    // ── 4. Bloqueia botão durante a distribuição ───────────────────────────
+    this.#deckActionPanel?.setState('dealing');
+
+    // ── 5. Inicia animação de distribuição ────────────────────────────────
+    let remaining = this.#deck.length;
+
+    const animator = new CardDealAnimator({
+      pileEl:       this.#deckPileEl,
+      dealSequence,
+      myUid:        this.#myUid,
+      onCardLeaving: () => {
+        remaining = Math.max(0, remaining - 1);
+        this.#deckPile?.updateCentralDeckCount(remaining);
+      },
+      onCardArrived: (uid, card) => {
+        if (uid === this.#myUid) {
+          this.#handModal?.addCard(card);
+        }
+      },
+      onDone: () => {
+        console.log('[GameTableScreen] ✅ Cartas entregues a todos os jogadores');
+      },
+    });
+
+    animator.start().catch(err => {
+      console.error('[GameTableScreen] Erro durante distribuição de cartas:', err);
     });
   }
 

@@ -61,7 +61,8 @@ export class PlayerBadge {
    */
   create() {
     const wrapper = Dom.create('div', {
-      classes: ['player-badge', `player-badge--${this.#positionKey}`, this.#isMe ? 'player-badge--me' : '']
+      classes: ['player-badge', `player-badge--${this.#positionKey}`, this.#isMe ? 'player-badge--me' : ''],
+      attrs:   { 'data-uid': this.#uid },
     });
 
     // Avatar circular

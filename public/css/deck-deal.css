@@ -1,0 +1,199 @@
+/**
+ * Deck Deal Animation — 69 cartas voando para o centro da mesa
+ * Componente: DeckDealAnimator
+ * Mobile-first · responsivo
+ *
+ * O DeckDealAnimator cria um .deck-deal-stage (overlay fixo) e insere
+ * .deal-card dentro dele. Cada carta recebe data-dir="left|right|top|bottom"
+ * que ativa o keyframe correspondente.
+ *
+ * Fluxo visual:
+ *   0%   → carta parte de fora da tela na direção configurada
+ *   7%   → carte aparece (opacity 1) — sem pop inicial
+ *   62%  → chega ao centro do monte com leve overshoot em escala
+ *   78%  → assenta suavemente (escala 1, rotação 0)
+ *   88%  → começa a encolher (entrando na pilha)
+ *   100% → desaparece completamente (scale ≈ 0, opacity 0)
+ */
+
+/* ============================================
+   DURAÇÃO E EASING — Custom Properties
+   ============================================ */
+
+:root {
+  --deal-dur:  480ms;
+  --deal-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* ============================================
+   OVERLAY DA ANIMAÇÃO
+   Z-index 8500: acima da mesa, abaixo de modais
+   ============================================ */
+
+.deck-deal-stage {
+  position:       fixed;
+  inset:          0;
+  pointer-events: none;
+  z-index:        8500;
+  overflow:       hidden;
+}
+
+/* ============================================
+   CARTA VOANDO
+   Posicionada via JS usando getBoundingClientRect() do pile.
+   Dimensões também definidas por JS.
+   ============================================ */
+
+.deal-card {
+  position:            fixed;
+
+  /* Verso padrão — mesma imagem do .card-back no pile */
+  background-image:    url("../img/carta_verso.png");
+  background-size:     cover;
+  background-position: center;
+
+  border-radius:       clamp(5px, 1vw, 9px);
+
+  /* GPU compositing */
+  will-change:         transform, opacity;
+  transform-origin:    center center;
+  backface-visibility: hidden;
+}
+
+/* ============================================
+   KEYFRAMES — ESQUERDA
+   Carta vem da esquerda, inclina CCW no percurso
+   ============================================ */
+
+@keyframes dealFromLeft {
+  0%   {
+    transform: translateX(calc(-100vw - 180px)) rotate(-18deg) scale(1.1);
+    opacity: 0;
+  }
+  7%   { opacity: 1; }
+  62%  {
+    transform: translateX(5px) rotate(2deg) scale(1.04);
+    opacity: 1;
+  }
+  78%  {
+    transform: translateX(0px) rotate(0deg) scale(1.0);
+    opacity: 1;
+  }
+  88%  { transform: scale(0.68); opacity: 0.65; }
+  100% { transform: scale(0.04); opacity: 0;    }
+}
+
+/* ============================================
+   KEYFRAMES — DIREITA
+   Carta vem da direita, inclina CW no percurso
+   ============================================ */
+
+@keyframes dealFromRight {
+  0%   {
+    transform: translateX(calc(100vw + 180px)) rotate(18deg) scale(1.1);
+    opacity: 0;
+  }
+  7%   { opacity: 1; }
+  62%  {
+    transform: translateX(-5px) rotate(-2deg) scale(1.04);
+    opacity: 1;
+  }
+  78%  {
+    transform: translateX(0px) rotate(0deg) scale(1.0);
+    opacity: 1;
+  }
+  88%  { transform: scale(0.68); opacity: 0.65; }
+  100% { transform: scale(0.04); opacity: 0;    }
+}
+
+/* ============================================
+   KEYFRAMES — TOPO
+   Carta desce de cima com leve inclinação
+   ============================================ */
+
+@keyframes dealFromTop {
+  0%   {
+    transform: translateY(calc(-100vh - 180px)) rotate(-12deg) scale(1.1);
+    opacity: 0;
+  }
+  7%   { opacity: 1; }
+  62%  {
+    transform: translateY(5px) rotate(1deg) scale(1.04);
+    opacity: 1;
+  }
+  78%  {
+    transform: translateY(0px) rotate(0deg) scale(1.0);
+    opacity: 1;
+  }
+  88%  { transform: scale(0.68); opacity: 0.65; }
+  100% { transform: scale(0.04); opacity: 0;    }
+}
+
+/* ============================================
+   KEYFRAMES — BAIXO
+   Carta sobe de baixo com leve inclinação
+   ============================================ */
+
+@keyframes dealFromBottom {
+  0%   {
+    transform: translateY(calc(100vh + 180px)) rotate(12deg) scale(1.1);
+    opacity: 0;
+  }
+  7%   { opacity: 1; }
+  62%  {
+    transform: translateY(-5px) rotate(-1deg) scale(1.04);
+    opacity: 1;
+  }
+  78%  {
+    transform: translateY(0px) rotate(0deg) scale(1.0);
+    opacity: 1;
+  }
+  88%  { transform: scale(0.68); opacity: 0.65; }
+  100% { transform: scale(0.04); opacity: 0;    }
+}
+
+/* ============================================
+   ATIVAÇÃO POR DIREÇÃO
+   Adicionado pelo DeckDealAnimator via data-dir=
+   ============================================ */
+
+.deal-card[data-dir="left"]   {
+  animation: dealFromLeft   var(--deal-dur) var(--deal-ease) both;
+}
+.deal-card[data-dir="right"]  {
+  animation: dealFromRight  var(--deal-dur) var(--deal-ease) both;
+}
+.deal-card[data-dir="top"]    {
+  animation: dealFromTop    var(--deal-dur) var(--deal-ease) both;
+}
+.deal-card[data-dir="bottom"] {
+  animation: dealFromBottom var(--deal-dur) var(--deal-ease) both;
+}
+
+/* ============================================
+   RESPONSIVIDADE — PORTRAIT ≤ 480px
+   ============================================ */
+
+@media (orientation: portrait) and (max-width: 480px) {
+  :root { --deal-dur: 420ms; }
+}
+
+/* ============================================
+   RESPONSIVIDADE — LANDSCAPE ≤ 480px
+   ============================================ */
+
+@media (orientation: landscape) and (max-height: 480px) {
+  :root { --deal-dur: 380ms; }
+}
+
+/* ============================================
+   ACESSIBILIDADE — prefers-reduced-motion
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .deal-card {
+    /* Colapsa duração — carta "aparece" instantaneamente no pile */
+    animation-duration: 1ms !important;
+    animation-delay:    0ms !important;
+  }
+}

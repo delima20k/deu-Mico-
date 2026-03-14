@@ -1,0 +1,414 @@
+/* ── Hand Modal — Modal de cartas na mão do jogador ─────────────── */
+
+.hand-modal {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 9000;
+  background: transparent;
+  border-radius: 18px 18px 0 0;
+  padding-top: 10px;
+  padding-bottom: env(safe-area-inset-bottom, 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transform: translateY(100%);
+  transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+  user-select: none;
+  touch-action: none;
+  max-height: 42vh;
+}
+
+.hand-modal--visible {
+  transform: translateY(0);
+}
+
+/* Handle bar visual */
+.hand-modal::before {
+  display: none;
+}
+
+/* ── Header ─────────────────────────────────────────────────────── */
+
+.hand-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+
+.hand-modal__title {
+  color: #a8e6a8;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(11px, 3.2vw, 15px);
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+
+.hand-modal__count {
+  color: rgba(168, 230, 168, 0.55);
+  font-size: clamp(10px, 2.4vw, 13px);
+  font-family: 'Pixelify Sans', sans-serif;
+}
+
+/* ── Tray (carousel horizontal) ─────────────────────────────────── */
+
+.hand-modal__tray {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: clamp(4px, 1.5vw, 8px);
+  padding: 6px 16px 10px;
+  overflow-x: auto;
+  overflow-y: visible;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  cursor: grab;
+  flex: 1;
+  min-height: 0;
+  /* Hide scrollbar but allow scrolling */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(168, 230, 168, 0.25) transparent;
+}
+
+.hand-modal__tray:active {
+  cursor: grabbing;
+}
+
+.hand-modal__tray::-webkit-scrollbar {
+  height: 3px;
+}
+
+.hand-modal__tray::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.hand-modal__tray::-webkit-scrollbar-thumb {
+  background: rgba(168, 230, 168, 0.25);
+  border-radius: 2px;
+}
+
+/* ── Card wrapper ───────────────────────────────────────────────── */
+
+.hand-modal__card-wrap {
+  flex-shrink: 0;
+  scroll-snap-align: center;
+  width: clamp(44px, 11vw, 72px);
+  height: clamp(66px, 16.5vw, 108px);
+  position: relative;
+  cursor: pointer;
+  transition:
+    transform 0.22s ease,
+    opacity 0.22s ease;
+  transform-origin: center bottom;
+  border-radius: clamp(4px, 1vw, 8px);
+  /* Lift above tray on hover */
+  will-change: transform;
+}
+
+.hand-modal__card-wrap:hover {
+  transform: translateY(-6px);
+}
+
+/* Entry animation */
+.hand-modal__card-wrap--entering {
+  animation: hm-card-arrive 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes hm-card-arrive {
+  from {
+    transform: scale(0.35) translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Enlarged (click to zoom) — sobreposta a TUDO via portal no body */
+.hand-modal__card-wrap--enlarged {
+  transform: translateY(-20px) scale(1.55) !important;
+  z-index: 9010;
+  filter: drop-shadow(0 6px 18px rgba(0, 180, 0, 0.4));
+}
+
+/* Carta ampliada fora do tray — elemento fixo no body */
+.hm-enlarged-overlay {
+  position: fixed;
+  z-index: 99999;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
+  animation: hm-enlarge-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.7);
+  border-radius: clamp(6px, 1.5vw, 12px);
+  cursor: pointer;
+  width: clamp(100px, 28vw, 180px);
+  aspect-ratio: 2/3;
+}
+
+.hm-enlarged-overlay img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+  display: block;
+  pointer-events: none;
+}
+
+/* Backdrop escuro quando carta está ampliada */
+.hm-enlarged-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99998;
+  background: rgba(0,0,0,0.55);
+  animation: hm-fade-in 0.18s ease both;
+  cursor: pointer;
+}
+
+@keyframes hm-enlarge-in {
+  from { transform: translate(-50%, -50%) scale(0.4); opacity: 0; }
+  to   { transform: translate(-50%, -50%) scale(1);   opacity: 1; }
+}
+
+@keyframes hm-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Carta selecionada para formar par */
+.hand-modal__card-wrap--selected {
+  outline: 3px solid #ffdd00;
+  outline-offset: 2px;
+  filter: drop-shadow(0 0 8px rgba(255,220,0,0.7));
+  animation: hm-selected-pulse 1s ease infinite;
+}
+
+@keyframes hm-selected-pulse {
+  0%, 100% { outline-color: #ffdd00; }
+  50%       { outline-color: #ff8c00; }
+}
+
+/* Dragging state */
+.hand-modal__card-wrap--dragging {
+  opacity: 0.5;
+  transform: scale(0.9) !important;
+  transition: none !important;
+}
+
+/* Ghost placeholder while dragging */
+.hand-modal__card-wrap--ghost {
+  opacity: 0.18;
+  background: rgba(100, 200, 100, 0.12);
+  border: 2px dashed rgba(100, 200, 100, 0.35);
+}
+
+/* ── Card image — direto, sem flip 3D ──────────────────────────── */
+
+.hand-modal__card-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  border-radius: inherit;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ── Modal de confirmação de par ────────────────────────────────── */
+
+.hm-pair-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.65);
+  animation: hm-fade-in 0.18s ease both;
+}
+
+.hm-pair-confirm__box {
+  background: #0e2a0e;
+  border: 2px solid rgba(80,180,80,0.5);
+  border-radius: 16px;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: min(88vw, 320px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+  animation: hm-enlarge-in 0.22s cubic-bezier(0.34,1.56,0.64,1) both;
+}
+
+.hm-pair-confirm__cards {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.hm-pair-confirm__card {
+  width: clamp(60px, 18vw, 90px);
+  aspect-ratio: 2/3;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+.hm-pair-confirm__card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hm-pair-confirm__text {
+  color: #c8f0c8;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(13px, 3.5vw, 17px);
+  text-align: center;
+  line-height: 1.4;
+}
+
+.hm-pair-confirm__text strong {
+  color: #7eff7e;
+}
+
+.hm-pair-confirm__btns {
+  display: flex;
+  gap: 10px;
+}
+
+.hm-pair-confirm__btn {
+  padding: 10px 22px;
+  border-radius: 10px;
+  border: none;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(12px, 3vw, 15px);
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+.hm-pair-confirm__btn:active {
+  transform: scale(0.94);
+}
+
+.hm-pair-confirm__btn--confirm {
+  background: #2d8c2d;
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(0,140,0,0.4);
+}
+
+.hm-pair-confirm__btn--confirm:hover {
+  filter: brightness(1.15);
+}
+
+.hm-pair-confirm__btn--cancel {
+  background: rgba(255,255,255,0.08);
+  color: rgba(200,240,200,0.7);
+}
+
+/* ── Pairs badge (ao lado do avatar na mesa) ────────────────────── */
+
+.pairs-badge {
+  position: absolute;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #1a5c1a;
+  border: 2px solid rgba(80,200,80,0.6);
+  color: #7eff7e;
+  font-size: 11px;
+  font-family: 'Pixelify Sans', sans-serif;
+  top: -6px;
+  right: -6px;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+
+.pairs-badge:hover {
+  transform: scale(1.2);
+}
+
+/* ── Pairs modal (lista de pares do jogador) ────────────────────── */
+
+.pairs-modal {
+  position: fixed;
+  z-index: 100001;
+  background: #0e2a0e;
+  border: 2px solid rgba(80,180,80,0.4);
+  border-radius: 14px;
+  padding: 14px 16px;
+  width: min(80vw, 260px);
+  max-height: 60vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.7);
+  animation: hm-enlarge-in 0.2s cubic-bezier(0.34,1.56,0.64,1) both;
+}
+
+.pairs-modal__title {
+  color: #a8e6a8;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(12px, 3vw, 15px);
+  margin: 0 0 10px;
+  text-align: center;
+}
+
+.pairs-modal__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
+  gap: 8px;
+}
+
+.pairs-modal__pair {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.pairs-modal__pair-imgs {
+  display: flex;
+  gap: 2px;
+}
+
+.pairs-modal__pair-img {
+  width: 28px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+
+.pairs-modal__pair-name {
+  color: rgba(200,240,200,0.6);
+  font-size: 9px;
+  font-family: 'Pixelify Sans', sans-serif;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 62px;
+}
+
+/* ── Flying deal card (overlay, matches back image) ─────────────── */
+
+.deal-fly-card {
+  position: fixed;
+  border-radius: clamp(4px, 1vw, 7px);
+  background-image: url('../img/carta_verso.png');
+  background-size: cover;
+  background-position: center;
+  z-index: 8500;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  will-change: transform, opacity;
+}
