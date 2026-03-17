@@ -85,6 +85,39 @@ export class DealerSelectionService {
     };
   }
 
+  /**
+   * Determina o dealer como o jogador que PRIMEIRO entrou na sala de espera.
+   * Critério: menor joinedAt; empate = posição no array (ordem de entrada).
+   * Operação síncrona — não consulta Firebase.
+   *
+   * @param {Array<{ uid: string, name: string, joinedAt?: number }>} players
+   * @returns {{ youngestPlayer: { id: string, name: string }, youngestPlayerUid: string, youngestPlayerName: string }}
+   */
+  resolveFirstJoiner(players) {
+    if (!players || players.length === 0) {
+      throw new Error('[DealerSelection] lista de jogadores vazia ou inválida');
+    }
+
+    const sorted = [...players]
+      .map((p, i) => ({ ...p, _arrayIdx: i }))
+      .sort((a, b) => {
+        const tA = a.joinedAt ?? 0;
+        const tB = b.joinedAt ?? 0;
+        if (tA !== tB) return tA - tB;
+        return a._arrayIdx - b._arrayIdx; // empate: ordem original do array
+      });
+
+    const first = sorted[0];
+    console.log(`[DealerSelection] primeiro a entrar: uid=${first.uid} joinedAt=${first.joinedAt}`);
+
+    const youngestPlayer = { id: first.uid, name: first.name, avatarUrl: first.avatarUrl ?? null };
+    return {
+      youngestPlayer,
+      youngestPlayerUid:  first.uid,
+      youngestPlayerName: first.name,
+    };
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // Private helpers
   // ─────────────────────────────────────────────────────────────────────────

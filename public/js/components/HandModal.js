@@ -1,434 +1,405 @@
-﻿/**
+/**
  * @layer    components
  * @group    game
  * @role     Component
  * @depends  Dom
  * @exports  HandModal
  *
- * Modal fixo no rodapÃ© que exibe as cartas da mÃ£o do jogador local.
+ * Modal fixo no rodape — exibe as cartas da mao do jogador em carrossel.
  *
- * Funcionalidades:
- *  - Desliza de baixo para cima quando a primeira carta chega.
- *  - Clique em carta â†’ abre overlay ampliado sobre todos os elementos.
- *  - SeleÃ§Ã£o de par: clicar em carta com par disponÃ­vel  marca como selecionada;
- *    clicar na segunda carta do par abre modal de confirmaÃ§Ã£o.
- *  - ApÃ³s confirmaÃ§Ã£o, o par Ã© removido da mÃ£o e disparado via onPairFormed().
- *  - Arrastar carta dentro do tray â†’ reordena posiÃ§Ã£o.
+ * Cada carta chega mostrando o verso (carta_verso.png) e executa flip 3D
+ * para revelar o animal/frente um instante depois.
+ *
+ * Interacoes:
+ *  - Arrastar tray  -> rola o carrossel (horizontal)
+ *  - 1 toque/clique -> seleciona carta que tem par disponivel na mao
+ *  - 2 toques/cliques sequenciais no par -> abre modal de confirmacao
+ *  - Confirmar par  -> remove as duas cartas e dispara onPairFormed()
  */
 
 import { Dom } from '../utils/Dom.js';
 
-export class HandModal {
-  /** @type {HTMLElement|null} */
-  #el = null;
-  /** @type {HTMLElement|null} */
-  #trayEl = null;
-  /** @type {HTMLElement|null} */
-  #countEl = null;
+const BACK_IMG  = 'img/carta_verso.png';
+const FLIP_DELAY = 320; // ms apos adicionar a carta antes de virar
 
+export class HandModal {
+  // ── DOM
+  #el       = null;   // .hand-modal
+  #trackEl  = null;   // .hand-modal__track (itens do carrossel)
+  #countEl  = null;   // span de contagem
+
+  // ── Estado de dados
   /** @type {import('../domain/Card.js').Card[]} */
   #cards = [];
+  /** @type {Map<string, HTMLElement>} id -> .hand-modal__item */
+  #itemEls = new Map();
 
-  /** @type {Map<string, HTMLElement>} Card.id â†’ .hand-modal__card-wrap */
-  #cardEls = new Map();
+  // ── Estado de selecao de par
+  #selectedId = null;
 
-  /** @type {string|null} ID da carta atualmente no overlay ampliado */
-  #enlargedCardId = null;
+  // ── Pares ja formados (para o modal de resumo)
+  /** @type {Array<import('../domain/Card.js').Card[]>} */
+  #formedPairs = [];
 
-  /** @type {HTMLElement|null} Backdrop do overlay */
-  #enlargedBackdrop = null;
-  /** @type {HTMLElement|null} Elemento do overlay da carta */
-  #enlargedEl = null;
-
-  /** @type {string|null} ID da carta selecionada aguardando par */
-  #selectedCardId = null;
-
-  /**
-   * Callback disparado quando um par Ã© confirmado.
-   * @type {((pair: import('../domain/Card.js').Card[]) => void)|null}
-   */
+  /** Callback chamado apos confirmar par. */
   onPairFormed = null;
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Public API
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────────────────────────────────────
+  // API publica
+  // ─────────────────────────────────────────────────────────────────────
 
+  /** Cria e insere o modal no body. Retorna o elemento raiz. */
   create() {
+    // Remove instancia anterior se existir
+    document.querySelector('.hand-modal')?.remove();
+
     const modal = Dom.create('div', { classes: 'hand-modal' });
     this.#el = modal;
 
-    const header  = Dom.create('div', { classes: 'hand-modal__header' });
-    const title   = Dom.create('p',    { classes: 'hand-modal__title', text: 'Sua mÃ£o' });
-    this.#countEl = Dom.create('span', { classes: 'hand-modal__count', text: '0 cartas' });
+    // Cabecalho
+    const header = Dom.create('div', { classes: 'hand-modal__header' });
+    const title  = Dom.create('span', { classes: 'hand-modal__title', text: 'Sua mao' });
+    this.#countEl = Dom.create('span', { classes: 'hand-modal__count', text: '0' });
     header.append(title, this.#countEl);
 
-    const tray = Dom.create('div', { classes: 'hand-modal__tray' });
-    this.#trayEl = tray;
-    this.#setupTrayDrag(tray);
+    // Viewport do carrossel
+    const viewport = Dom.create('div', { classes: 'hand-modal__viewport' });
+    const track    = Dom.create('div', { classes: 'hand-modal__track'    });
+    this.#trackEl  = track;
+    viewport.append(track);
 
-    modal.append(header, tray);
+    modal.append(header, viewport);
     document.body.append(modal);
+
+    this.#initDrag(viewport, track);
     return modal;
   }
 
+  /**
+   * Adiciona uma carta ao carrossel com animacao de flip verso->frente.
+   * @param {import('../domain/Card.js').Card} card
+   */
   addCard(card) {
-    if (!this.#el || !this.#trayEl) return;
+    if (!this.#el || !this.#trackEl) return;
 
+    // Exibe o modal na primeira carta
     if (this.#cards.length === 0) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => this.#el.classList.add('hand-modal--visible'));
-      });
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() =>
+          this.#el.classList.add('hand-modal--visible')
+        )
+      );
     }
 
     this.#cards.push(card);
     this.#updateCount();
 
-    const wrap = Dom.create('div', {
-      classes: ['hand-modal__card-wrap', 'hand-modal__card-wrap--entering'],
-    });
-    wrap.dataset.cardId = card.id;
+    const item = this.#buildCardItem(card);
+    this.#trackEl.append(item);
+    this.#itemEls.set(card.id, item);
 
-    const img = Dom.create('img', {
-      classes: 'hand-modal__card-img',
-      attrs: { src: card.faceImage, alt: card.name || '', draggable: 'false' },
-    });
-    wrap.append(img);
-    this.#trayEl.append(wrap);
-    this.#cardEls.set(card.id, wrap);
-
-    setTimeout(() => wrap.classList.remove('hand-modal__card-wrap--entering'), 350);
+    // Flip verso -> frente apos FLIP_DELAY ms
     setTimeout(() => {
-      wrap.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
-    }, 80);
+      item.querySelector('.hand-modal__card-inner')
+          ?.classList.add('hand-modal__card-inner--flipped');
+    }, FLIP_DELAY);
 
-    this.#attachCardInteractions(wrap, card.id);
+    // Rola suavemente ate a carta nova
+    setTimeout(() => {
+      item.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+    }, 60);
+
+    this.#attachItemTap(item, card.id);
   }
 
-  /** Remove uma carta da mÃ£o (apÃ³s confirmar par). */
-  removeCard(cardId) {
-    this.#cardEls.get(cardId)?.remove();
-    this.#cardEls.delete(cardId);
+  /**
+   * Remove uma carta pelo id (chamado apos confirmar par).
+   * @param {string} cardId
+   * @param {boolean} [stolen=false]  true = animação de carta roubada (voo para cima)
+   */
+  removeCard(cardId, stolen = false) {
+    const item = this.#itemEls.get(cardId);
+    if (item) {
+      if (stolen) {
+        item.classList.add('hand-modal__item--stolen');
+        setTimeout(() => item.remove(), 540);
+      } else {
+        item.classList.add('hand-modal__item--removing');
+        setTimeout(() => item.remove(), 280);
+      }
+    }
+    this.#itemEls.delete(cardId);
     this.#cards = this.#cards.filter(c => c.id !== cardId);
     this.#updateCount();
   }
 
+  /** Destroi o modal e limpa o estado. */
   destroy() {
-    this.#closeEnlargedOverlay();
+    document.querySelector('.hm-pair-modal')?.remove();
     this.#el?.remove();
-    this.#el              = null;
-    this.#trayEl          = null;
-    this.#countEl         = null;
-    this.#cards           = [];
-    this.#cardEls         = new Map();
-    this.#enlargedCardId  = null;
-    this.#selectedCardId  = null;
+    this.#el          = null;
+    this.#trackEl     = null;
+    this.#countEl     = null;
+    this.#cards       = [];
+    this.#itemEls     = new Map();
+    this.#selectedId  = null;
+    this.#formedPairs = [];
   }
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Private â€” pair detection helpers
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────────────────────────────────────
+  // Construcao do item de carta
+  // ─────────────────────────────────────────────────────────────────────
 
-  /** Verifica se existe outra carta na mÃ£o com o mesmo pairId. */
-  #hasPairInHand(card) {
-    return this.#cards.some(c => c.id !== card.id && c.pairId === card.pairId);
-  }
+  #buildCardItem(card) {
+    const item  = Dom.create('div', { classes: 'hand-modal__item' });
+    item.dataset.cardId = card.id;
 
-  /** Retorna o par de uma carta na mÃ£o, ou null. */
-  #getPairCard(card) {
-    return this.#cards.find(c => c.id !== card.id && c.pairId === card.pairId) ?? null;
-  }
+    // Caixa 3-D de flip
+    const inner = Dom.create('div', { classes: 'hand-modal__card-inner' });
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Private â€” Tray drag-to-scroll
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-  #setupTrayDrag(tray) {
-    let startX = 0, scrollStart = 0, isDragging = false;
-
-    tray.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('.hand-modal__card-wrap')) return;
-      isDragging  = true;
-      startX      = e.clientX;
-      scrollStart = tray.scrollLeft;
-      tray.setPointerCapture(e.pointerId);
-      tray.style.cursor = 'grabbing';
+    // Verso (carta_verso.png) -- visivel inicialmente
+    const faceBack = Dom.create('div', { classes: ['hand-modal__card-face', 'hand-modal__card-face--back'] });
+    const imgBack  = Dom.create('img', {
+      attrs: { src: BACK_IMG, alt: 'verso', draggable: 'false' },
     });
+    faceBack.append(imgBack);
 
-    tray.addEventListener('pointermove', (e) => {
-      if (!isDragging) return;
-      tray.scrollLeft = scrollStart - (e.clientX - startX);
+    // Frente (animal) -- oculta ate o flip
+    const faceFront = Dom.create('div', { classes: ['hand-modal__card-face', 'hand-modal__card-face--front'] });
+    const imgFront  = Dom.create('img', {
+      attrs: { src: card.faceImage, alt: card.name || '', draggable: 'false' },
     });
+    faceFront.append(imgFront);
 
-    const stop = () => { isDragging = false; tray.style.cursor = ''; };
-    tray.addEventListener('pointerup',     stop);
-    tray.addEventListener('pointercancel', stop);
+    inner.append(faceBack, faceFront);
+    item.append(inner);
+    return item;
   }
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Private â€” Card interactions
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────────────────────────────────────
+  // Drag-to-scroll do carrossel
+  // ─────────────────────────────────────────────────────────────────────
 
-  #attachCardInteractions(wrap, cardId) {
-    let startX = 0, startY = 0, hasMoved = false, isDraggingCard = false;
+  #initDrag(viewport, track) {
+    let startX = 0, scrollStart = 0, panning = false, moved = false;
 
-    wrap.addEventListener('pointerdown', (e) => {
-      e.stopPropagation();
-      startX = e.clientX; startY = e.clientY;
-      hasMoved = false; isDraggingCard = false;
+    const down = (e) => {
+      // Aceita mouse e touch
+      startX      = e.touches ? e.touches[0].clientX : e.clientX;
+      scrollStart = viewport.scrollLeft;
+      panning     = true;
+      moved       = false;
+    };
 
-      const onMove = (ev) => {
-        const dx = ev.clientX - startX;
-        const dy = ev.clientY - startY;
-        if (!hasMoved && Math.hypot(dx, dy) > 10) {
-          hasMoved = isDraggingCard = true;
-          this.#startCardDrag(wrap, cardId, ev);
-        }
-        if (isDraggingCard) {
-          const clone = document.getElementById('hm-drag-clone');
-          if (clone) { clone.style.left = `${ev.clientX}px`; clone.style.top = `${ev.clientY}px`; }
-          this.#updateDropTarget(ev.clientX, cardId);
-        }
-      };
+    const move = (e) => {
+      if (!panning) return;
+      const x   = e.touches ? e.touches[0].clientX : e.clientX;
+      const dx  = startX - x;
+      if (Math.abs(dx) > 4) moved = true;
+      viewport.scrollLeft = scrollStart + dx;
+    };
 
-      const onUp = (ev) => {
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup',   onUp);
+    const up = () => { panning = false; };
 
-        if (isDraggingCard) {
-          this.#finishCardDrag(cardId);
-        } else if (!hasMoved) {
-          this.#onCardClick(cardId, ev);
-        }
-        isDraggingCard = false;
-      };
+    // Mouse
+    viewport.addEventListener('mousedown',  down, { passive: true });
+    window.addEventListener('mousemove',    move, { passive: true });
+    window.addEventListener('mouseup',      up);
 
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup',   onUp);
-    });
+    // Touch
+    viewport.addEventListener('touchstart', down, { passive: true });
+    viewport.addEventListener('touchmove',  move, { passive: true });
+    viewport.addEventListener('touchend',   up,   { passive: true });
+
+    // Guarda referencia ao flag de movimento para os taps
+    this._moved = () => moved;
   }
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Private â€” Click logic (ampliar + selecionar par)
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────────────────────────────────────
+  // Deteccao de tap/clique em carta
+  // ─────────────────────────────────────────────────────────────────────
 
-  #onCardClick(cardId, ev) {
-    const card = this.#cards.find(c => c.id === cardId);
-    if (!card) return;
+  #attachItemTap(item, cardId) {
+    let t0 = 0;
 
-    // Se jÃ¡ tem uma carta selecionada â†’ verificar se esta Ã© o par
-    if (this.#selectedCardId && this.#selectedCardId !== cardId) {
-      const selCard = this.#cards.find(c => c.id === this.#selectedCardId);
-      if (selCard && selCard.pairId === card.pairId) {
-        // Ã‰ o par! Abrir modal de confirmaÃ§Ã£o
-        this.#closeEnlargedOverlay();
-        this.#showPairConfirm(selCard, card);
+    const onTap = () => {
+      // Ignora se foi um arrasto
+      if (this._moved && this._moved()) return;
+
+      const card = this.#cards.find(c => c.id === cardId);
+      if (!card) return;
+
+      // Carta sem par na mao — apenas pisca
+      if (!this.#hasPair(card)) {
+        item.classList.add('hand-modal__item--nopair');
+        setTimeout(() => item.classList.remove('hand-modal__item--nopair'), 500);
         return;
       }
-      // NÃ£o Ã© o par â€” desseleciona o anterior e continua
-      this.#clearSelection();
-    }
 
-    // Verificar se esta carta tem par na mÃ£o â†’ modo seleÃ§Ã£o
-    if (this.#hasPairInHand(card)) {
-      // Toggle seleÃ§Ã£o
-      if (this.#selectedCardId === cardId) {
+      // Ja tem uma carta selecionada?
+      if (this.#selectedId && this.#selectedId !== cardId) {
+        const selCard = this.#cards.find(c => c.id === this.#selectedId);
+        if (selCard && selCard.pairId === card.pairId) {
+          // Eh par! Mostra modal de confirmacao
+          this.#clearSelection();
+          this.#showPairModal(selCard, card);
+          return;
+        }
+        // Nao eh par — desmarca anterior e seleciona este
+        this.#clearSelection();
+      }
+
+      if (this.#selectedId === cardId) {
         this.#clearSelection();
       } else {
-        this.#clearSelection();
-        this.#selectedCardId = cardId;
-        this.#cardEls.get(cardId)?.classList.add('hand-modal__card-wrap--selected');
+        this.#select(cardId);
       }
-      return;
-    }
+    };
 
-    // Carta sem par â†’ abre overlay ampliado
-    this.#openEnlargedOverlay(card, ev);
+    // Touch
+    item.addEventListener('touchstart', () => { t0 = Date.now(); }, { passive: true });
+    item.addEventListener('touchend', (e) => {
+      if (Date.now() - t0 < 300) { e.preventDefault(); onTap(); }
+    });
+
+    // Mouse
+    item.addEventListener('click', onTap);
+  }
+
+  #hasPair(card) {
+    return this.#cards.some(c => c.id !== card.id && c.pairId === card.pairId && card.pairId != null);
+  }
+
+  #select(cardId) {
+    this.#selectedId = cardId;
+    this.#itemEls.get(cardId)?.classList.add('hand-modal__item--selected');
   }
 
   #clearSelection() {
-    if (this.#selectedCardId) {
-      this.#cardEls.get(this.#selectedCardId)?.classList.remove('hand-modal__card-wrap--selected');
+    if (this.#selectedId) {
+      this.#itemEls.get(this.#selectedId)?.classList.remove('hand-modal__item--selected');
     }
-    this.#selectedCardId = null;
+    this.#selectedId = null;
   }
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Private â€” Overlay ampliado (acima de tudo)
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────────────────────────────────────
+  // Modal de confirmacao de par
+  // ─────────────────────────────────────────────────────────────────────
 
-  #openEnlargedOverlay(card, ev) {
-    this.#closeEnlargedOverlay();
+  #showPairModal(cardA, cardB) {
+    document.querySelector('.hm-pair-modal')?.remove();
 
-    const backdrop = Dom.create('div', { classes: 'hm-enlarged-backdrop' });
-    backdrop.addEventListener('click', () => this.#closeEnlargedOverlay());
+    const overlay = Dom.create('div', { classes: 'hm-pair-modal' });
+    const box     = Dom.create('div', { classes: 'hm-pair-modal__box' });
 
-    const overlay = Dom.create('div', { classes: 'hm-enlarged-overlay' });
-    // Posiciona centrado na carte clicada
-    const wrap = this.#cardEls.get(card.id);
-    if (wrap) {
-      const r   = wrap.getBoundingClientRect();
-      const cx  = r.left + r.width  / 2;
-      const cy  = r.top  + r.height / 2;
-      overlay.style.left = `${cx}px`;
-      overlay.style.top  = `${cy - 60}px`; // levanta um pouco
-    } else {
-      overlay.style.left = '50%';
-      overlay.style.top  = '40%';
-    }
+    const titleEl = Dom.create('h3', { classes: 'hm-pair-modal__title' });
+    titleEl.textContent = 'Par encontrado! 🎉';
 
-    const img = Dom.create('img', {
-      attrs: { src: card.faceImage, alt: card.name || '', draggable: 'false' },
-    });
-    overlay.append(img);
-    overlay.addEventListener('click', () => this.#closeEnlargedOverlay());
-
-    document.body.append(backdrop, overlay);
-    this.#enlargedBackdrop = backdrop;
-    this.#enlargedEl       = overlay;
-    this.#enlargedCardId   = card.id;
-  }
-
-  #closeEnlargedOverlay() {
-    this.#enlargedBackdrop?.remove();
-    this.#enlargedEl?.remove();
-    this.#enlargedBackdrop = null;
-    this.#enlargedEl       = null;
-    this.#enlargedCardId   = null;
-  }
-
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Private â€” Modal de confirmaÃ§Ã£o de par
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-  #showPairConfirm(cardA, cardB) {
-    const overlay = Dom.create('div', { classes: 'hm-pair-confirm' });
-
-    const box = Dom.create('div', { classes: 'hm-pair-confirm__box' });
-
-    // Imagens das duas cartas
-    const cardsRow = Dom.create('div', { classes: 'hm-pair-confirm__cards' });
+    // Novo par em destaque
+    const newRow = Dom.create('div', { classes: 'hm-pair-modal__new-row' });
+    const newLbl = Dom.create('p',   { classes: 'hm-pair-modal__lbl--new', text: 'Novo par:' });
+    const cards  = Dom.create('div', { classes: 'hm-pair-modal__cards' });
     [cardA, cardB].forEach(c => {
-      const wrap = Dom.create('div', { classes: 'hm-pair-confirm__card' });
-      const img  = Dom.create('img', { attrs: { src: c.faceImage, alt: c.name || '' } });
-      wrap.append(img);
-      cardsRow.append(wrap);
+      const w = Dom.create('div', { classes: 'hm-pair-modal__card' });
+      const i = Dom.create('img', { attrs: { src: c.faceImage, alt: c.name || '' } });
+      w.append(i);
+      cards.append(w);
     });
+    newRow.append(newLbl, cards);
 
-    const text = Dom.create('p', {
-      classes: 'hm-pair-confirm__text',
-    });
-    text.innerHTML = `<strong>${cardA.name}</strong> faz par!<br>Confirmar e retirar da mÃ£o?`;
+    // Pares anteriores (se houver)
+    let prevSection = null;
+    if (this.#formedPairs.length > 0) {
+      prevSection = Dom.create('div', { classes: 'hm-pair-modal__prev' });
+      const prevLbl = Dom.create('p', { classes: 'hm-pair-modal__lbl--prev', text: 'Pares anteriores:' });
+      const grid = Dom.create('div', { classes: 'hm-pair-modal__prev-grid' });
+      for (const pair of this.#formedPairs) {
+        const pw = Dom.create('div', { classes: 'hm-pair-modal__prev-pair' });
+        for (const c of pair) {
+          const img = Dom.create('img', {
+            classes: 'hm-pair-modal__prev-img',
+            attrs: { src: c.faceImage, alt: c.name || '' },
+          });
+          pw.append(img);
+        }
+        grid.append(pw);
+      }
+      prevSection.append(prevLbl, grid);
+    }
 
-    const btns    = Dom.create('div',    { classes: 'hm-pair-confirm__btns' });
-    const btnOk   = Dom.create('button', { classes: ['hm-pair-confirm__btn', 'hm-pair-confirm__btn--confirm'], text: 'âœ” Confirmar' });
-    const btnCancel = Dom.create('button', { classes: ['hm-pair-confirm__btn', 'hm-pair-confirm__btn--cancel'], text: 'Cancelar' });
+    // Botoes
+    const btns   = Dom.create('div',    { classes: 'hm-pair-modal__btns' });
+    const btnOk  = Dom.create('button', { classes: ['hm-pair-modal__btn', 'hm-pair-modal__btn--ok'],
+                                          text: '✔ Mover par' });
+    const btnNo  = Dom.create('button', { classes: ['hm-pair-modal__btn', 'hm-pair-modal__btn--cancel'],
+                                          text: 'Cancelar' });
 
     const close = () => overlay.remove();
 
-    btnCancel.addEventListener('click', () => {
-      this.#clearSelection();
-      close();
-    });
-
+    btnNo.addEventListener('click', () => { this.#clearSelection(); close(); });
     btnOk.addEventListener('click', () => {
       close();
-      this.#clearSelection();
-      // Remove as duas cartas da mÃ£o
+      this.#formedPairs.push([cardA, cardB]);
       this.removeCard(cardA.id);
       this.removeCard(cardB.id);
-      // Dispara callback para o GameTableScreen lidar com pares
-      if (typeof this.onPairFormed === 'function') {
-        this.onPairFormed([cardA, cardB]);
-      }
+      if (typeof this.onPairFormed === 'function') this.onPairFormed([cardA, cardB]);
     });
 
-    btns.append(btnOk, btnCancel);
-    box.append(cardsRow, text, btns);
+    btns.append(btnOk, btnNo);
+    box.append(titleEl, newRow);
+    if (prevSection) box.append(prevSection);
+    box.append(btns);
     overlay.append(box);
     document.body.append(overlay);
   }
 
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Private â€” Drag-to-reorder helpers
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-  #startCardDrag(wrap, cardId, e) {
-    const ghost = Dom.create('div', {
-      classes: ['hand-modal__card-wrap', 'hand-modal__card-wrap--ghost'],
-    });
-    ghost.style.width  = `${wrap.offsetWidth}px`;
-    ghost.style.height = `${wrap.offsetHeight}px`;
-    ghost.dataset.ghost = cardId;
-    this.#cardEls.set(cardId + '_ghost', ghost);
-    wrap.classList.add('hand-modal__card-wrap--dragging');
-    wrap.after(ghost);
-
-    const clone = wrap.cloneNode(true);
-    clone.id = 'hm-drag-clone';
-    clone.style.cssText = `
-      position:fixed;left:${e.clientX}px;top:${e.clientY}px;
-      width:${wrap.offsetWidth}px;height:${wrap.offsetHeight}px;
-      transform:translate(-50%,-60%) scale(1.15);z-index:9500;
-      pointer-events:none;opacity:0.92;transition:none;
-      border-radius:${getComputedStyle(wrap).borderRadius};
-      box-shadow:0 8px 24px rgba(0,0,0,0.5);
-    `;
-    document.body.append(clone);
-  }
-
-  #updateDropTarget(clientX, dragId) {
-    if (!this.#trayEl) return;
-    const wraps = [...this.#trayEl.querySelectorAll(
-      '.hand-modal__card-wrap:not(.hand-modal__card-wrap--ghost):not(.hand-modal__card-wrap--dragging)'
-    )];
-    let closest = null, minDist = Infinity;
-    for (const w of wraps) {
-      const r = w.getBoundingClientRect();
-      const dist = Math.abs(r.left + r.width / 2 - clientX);
-      if (dist < minDist) { minDist = dist; closest = w; }
-    }
-    const ghost = this.#cardEls.get(dragId + '_ghost');
-    if (!ghost || !closest || closest === ghost) return;
-    const gIdx = [...this.#trayEl.children].indexOf(ghost);
-    const tIdx = [...this.#trayEl.children].indexOf(closest);
-    if (gIdx !== tIdx) {
-      if (clientX < closest.getBoundingClientRect().left + closest.offsetWidth / 2) {
-        closest.before(ghost);
-      } else {
-        closest.after(ghost);
-      }
-    }
-  }
-
-  #finishCardDrag(cardId) {
-    const wrap  = this.#cardEls.get(cardId);
-    const ghost = this.#cardEls.get(cardId + '_ghost');
-    document.getElementById('hm-drag-clone')?.remove();
-    if (wrap && ghost) {
-      ghost.replaceWith(wrap);
-      wrap.classList.remove('hand-modal__card-wrap--dragging');
-      this.#cardEls.delete(cardId + '_ghost');
-      const newOrder = [];
-      for (const child of this.#trayEl.children) {
-        const cid = child.dataset.cardId;
-        if (cid) {
-          const card = this.#cards.find(c => c.id === cid);
-          if (card) newOrder.push(card);
-        }
-      }
-      this.#cards = newOrder;
-    }
-  }
-
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Private â€” Helpers
-  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─────────────────────────────────────────────────────────────────────
+  // Helpers
+  // ─────────────────────────────────────────────────────────────────────
 
   #updateCount() {
     if (!this.#countEl) return;
     const n = this.#cards.length;
-    this.#countEl.textContent = `${n} carta${n !== 1 ? 's' : ''}`;
+    this.#countEl.textContent = n + ' carta' + (n !== 1 ? 's' : '');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // API pública de consulta (usada pelo sistema de turnos)
+  // ─────────────────────────────────────────────────────────────────────
+
+  /**
+   * Retorna a carta que forma par com `card` (mesmo pairId, id diferente), ou null.
+   * @param {import('../domain/Card.js').Card} card
+   * @returns {import('../domain/Card.js').Card|null}
+   */
+  findPairFor(card) {
+    return this.#cards.find(
+      c => c.id !== card.id && c.pairId != null && c.pairId === card.pairId
+    ) ?? null;
+  }
+
+  /**
+   * Retorna uma cópia rasa das cartas atuais na mão.
+   * @returns {import('../domain/Card.js').Card[]}
+   */
+  getCards() {
+    return [...this.#cards];
+  }
+
+  /**
+   * Move o viewport do carrossel para a posição proporcional (0–1).
+   * Chamado em tempo real quando o picker sincroniza o scroll via Firebase.
+   * @param {number} ratio  0 = início, 1 = fim
+   */
+  setScrollRatio(ratio) {
+    const viewportEl = this.#el?.querySelector('.hand-modal__viewport');
+    if (!viewportEl) return;
+    const max = viewportEl.scrollWidth - viewportEl.clientWidth;
+    if (max <= 0) return;
+    // Força posicionamento instantâneo (ignora scroll-behavior: smooth do CSS)
+    // para garantir sincronização fiel em tempo real em todos os browsers.
+    viewportEl.style.scrollBehavior = 'auto';
+    viewportEl.scrollLeft = Math.round(ratio * max);
+    viewportEl.style.scrollBehavior = '';
   }
 }
-
-

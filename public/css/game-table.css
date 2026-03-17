@@ -105,6 +105,39 @@
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
+/* ── Avatar-alvo: indicador pulsante de "clique para pegar carta" ── */
+.player-badge--steal-target {
+  cursor: pointer;
+}
+
+.player-badge--steal-target .player-badge__avatar {
+  cursor: pointer;
+  border-color: #ffd700;
+  animation: steal-target-pulse 0.9s ease-in-out infinite;
+}
+
+.player-badge--steal-target .player-badge__name::after {
+  content: ' 👆';
+}
+
+@keyframes steal-target-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 3px rgba(255, 215, 0, 0.85),
+                0 0 18px rgba(255, 215, 0, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(255, 215, 0, 0.35),
+                0 0 32px rgba(255, 215, 0, 0.85);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-badge--steal-target .player-badge__avatar {
+    animation: none;
+    box-shadow: 0 0 0 4px #ffd700;
+  }
+}
+
 /* ========================================
    POSIÇÕES NA MESA - Cada badge tem posição diferente
    ======================================== */
@@ -124,7 +157,7 @@
   left: 50%;
   top: 90%;
   bottom: unset;
-  transform: translate(-50%, calc(-50% - 2rem));
+  transform: translate(-50%, calc(-50% - 3rem));
 }
 
 .player-badge--bottom .player-badge__avatar {
@@ -389,6 +422,153 @@
   .game-exit-btn {
     transition: none;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Modal de Confirmação de Saída
+   ═══════════════════════════════════════════════════════════════════ */
+
+.exit-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100010;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: clamp(16px, 6vw, 48px);
+}
+
+.exit-confirm-modal {
+  background: linear-gradient(160deg, #1a0a00 0%, #3a1200 100%);
+  border: 2px solid rgba(255, 140, 40, 0.55);
+  border-radius: 18px;
+  padding: 28px 28px 22px;
+  width: min(86vw, 300px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.75);
+  /* inicia fora da tela pela esquerda */
+  transform: translateX(-130%);
+  opacity: 0;
+}
+
+/* Entrada: slide da esquerda */
+.exit-confirm-modal--in {
+  animation: ecm-slide-in 0.38s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes ecm-slide-in {
+  from { transform: translateX(-130%); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+
+/* Saída: slide de volta para a esquerda */
+.exit-confirm-modal--out {
+  animation: ecm-slide-out 0.3s cubic-bezier(0.55, 0, 1, 0.45) forwards;
+}
+
+@keyframes ecm-slide-out {
+  from { transform: translateX(0);     opacity: 1; }
+  to   { transform: translateX(-130%); opacity: 0; }
+}
+
+/* ── Carta full-screen de saída (3 flips crescendo até cobrir a tela) ─────── */
+
+.exit-flip-card {
+  position: fixed;
+  inset: 0;
+  z-index: 100020;
+  background: linear-gradient(145deg, #1a0800 0%, #3c1202 60%, #1f0600 100%);
+  border: 2px solid rgba(255, 130, 30, 0.5);
+  border-radius: 16px;
+  /* scale inicial = tamanho da modal relativo ao viewport */
+  transform: perspective(900px) rotateY(0deg) scale(var(--s, 0.32));
+  transform-origin: center center;
+  pointer-events: none;
+}
+
+.exit-flip-card--active {
+  animation: ecm-flip-exit 1.35s ease-in-out forwards;
+}
+
+/*
+  3 flips em Y (540° total = 3 × 180°):
+  flip 1: 0° → 180°  (modal → ~55% tela)
+  flip 2: 180° → 360° (55% → ~88% tela) — navega no meio (270°, 50%, card edge-on)
+  flip 3: 360° → 540° (88% → 100% tela, fade out) — RoomsScreen visível embaixo
+*/
+@keyframes ecm-flip-exit {
+  /*  flip 1 ─────────────────────────────────────────── */
+  0%    { transform: perspective(900px) rotateY(0deg)   scale(var(--s, 0.32)); border-radius: 16px; opacity: 1;   }
+  16.7% { transform: perspective(900px) rotateY(90deg)  scale(var(--s, 0.32)); border-radius: 14px; opacity: 0.6; } /* edge-on */
+  33.3% { transform: perspective(900px) rotateY(180deg) scale(0.55);           border-radius: 11px; opacity: 1;   }
+  /*  flip 2 ─────────────────────────────────────────── */
+  50%   { transform: perspective(900px) rotateY(270deg) scale(0.55);           border-radius: 9px;  opacity: 0.6; } /* edge-on ← navega aqui */
+  66.7% { transform: perspective(900px) rotateY(360deg) scale(0.88);           border-radius: 5px;  opacity: 1;   }
+  /*  flip 3 ─────────────────────────────────────────── */
+  83.3% { transform: perspective(900px) rotateY(450deg) scale(1);              border-radius: 0;    opacity: 0;   } /* edge-on + tela cheia + transparente */
+  100%  { transform: perspective(900px) rotateY(540deg) scale(1);              border-radius: 0;    opacity: 0;   }
+}
+
+.exit-confirm-modal__icon {
+  font-size: 2.4rem;
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.exit-confirm-modal__msg {
+  color: #ffd090;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(14px, 3.5vw, 18px);
+  font-weight: 700;
+  text-align: center;
+  margin: 0 0 6px;
+}
+
+.exit-confirm-modal__sub {
+  color: rgba(255, 210, 160, 0.6);
+  font-size: clamp(11px, 2.6vw, 13px);
+  text-align: center;
+  margin: 0 0 22px;
+}
+
+.exit-confirm-modal__btns {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.exit-confirm-modal__btn {
+  flex: 1;
+  padding: 11px 0;
+  border: none;
+  border-radius: 10px;
+  font-size: clamp(12px, 3vw, 14px);
+  font-weight: 700;
+  font-family: 'Pixelify Sans', sans-serif;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.1s ease;
+}
+
+.exit-confirm-modal__btn:active {
+  transform: scale(0.95);
+}
+
+.exit-confirm-modal__btn--yes {
+  background: linear-gradient(135deg, #c0392b, #922b21);
+  color: #fff;
+}
+
+.exit-confirm-modal__btn--yes:hover {
+  filter: brightness(1.15);
+}
+
+.exit-confirm-modal__btn--no {
+  background: linear-gradient(135deg, #1e8449, #145a32);
+  color: #fff;
+}
+
+.exit-confirm-modal__btn--no:hover {
+  filter: brightness(1.15);
 }
 
 .game-table-screen__main {

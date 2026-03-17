@@ -39,7 +39,8 @@ export class LobbyType {
       '4p': { minPlayers: 4, maxPlayers: 4 },
       '5p': { minPlayers: 5, maxPlayers: 5 },
       '6p': { minPlayers: 6, maxPlayers: 6 },
-      'multi': { minPlayers: 2, maxPlayers: null }, // sem máximo
+      'multi':      { minPlayers: 2, maxPlayers: null }, // sem máximo
+      'tournament': { minPlayers: 2, maxPlayers: null }, // alias de multi
     };
 
     const rule = rules[this.#type];

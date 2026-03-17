@@ -52,7 +52,7 @@ export class DeckBuilderService {
 
     // 2. Gera 68 cartas normais (34 × 2)
     const normalCards = DeckBuilderService.duplicatePairs();
-    console.log(`[DeckBuilderService] ♻️  Pares gerados: ${normalCards.length / 2} pares → ${normalCards.length} cartas normais`);
+    console.log(`[DeckBuilderService] ♻️  Pares gerados: ${normalCards.length / 2} pares → ${normalCards.length} cartas normais`); // esperado: 33 pares → 66 cartas
 
     // 3. Injeta carta única do Mico
     const deckWithMico = DeckBuilderService.injectMico(normalCards);

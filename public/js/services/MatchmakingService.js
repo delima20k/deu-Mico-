@@ -33,6 +33,12 @@ export class MatchmakingService {
   /** @type {import('../services/FirebaseService.js').FirebaseService} */
   #firebaseService;
 
+  /** @type {ReturnType<typeof setTimeout>|null} Timer local para deadline do lobby multi/tournament */
+  #multiDeadlineTimer = null;
+
+  /** @type {string} lobbyType do timer ativo ('multi' ou 'tournament') */
+  #multiDeadlineLobbyType = 'tournament';
+
   static getInstance() {
     if (!MatchmakingService.#instance) {
       MatchmakingService.#instance = new MatchmakingService(
@@ -67,8 +73,8 @@ export class MatchmakingService {
 
     await this.#lobbyRepository.joinQueue(lobbyType, uid, userData);
 
-    if (lobbyType === 'multi') {
-      await this.#resetMultiDeadline();
+    if (lobbyType === 'multi' || lobbyType === 'tournament') {
+      await this.#resetMultiDeadline(lobbyType);
     } else {
       await this.#tryCreateMatchIfReady(lobbyType);
     }
@@ -140,7 +146,8 @@ export class MatchmakingService {
       if (!acquired) return false;
 
       const queueUsers = await this.#lobbyRepository.getQueueUsers(lobbyType);
-      const playerIds = Object.keys(queueUsers);
+      // Limita a 6 jogadores (máximo do jogo)
+      const playerIds = Object.keys(queueUsers).slice(0, 6);
 
       if (playerIds.length < 2) return false;
 
@@ -412,6 +419,7 @@ export class MatchmakingService {
             matchId,
             lobbyType,
             batchId,
+            playerCount: playerIds.length,
             createdAt: now,
             ts: now,
           });
@@ -439,24 +447,72 @@ export class MatchmakingService {
   }
 
   /**
-   * Reset multi deadline
+   * Gerencia a fila multi/tournament com temporização dinâmica:
+   *  - 2 jogadores  → aguarda 15 s antes de iniciar
+   *  - 3-5 jogadores → redefine para +5 s (rolling)
+   *  - 6 jogadores  → inicia imediatamente
+   * @param {string} [lobbyType='tournament']
    * @private
    */
-  async #resetMultiDeadline() {
-    const queueUsers = await this.#lobbyRepository.getQueueUsers('multi');
+  async #resetMultiDeadline(lobbyType = 'tournament') {
+    const queueUsers = await this.#lobbyRepository.getQueueUsers(lobbyType);
     const count = Object.keys(queueUsers).length;
 
-    const deadlineTs = Date.now() + 6000;
-    await this.#lobbyRepository.setMultiDeadline(deadlineTs);
-    await this.#lobbyRepository.setMultiLastJoinTs(Date.now());
+    console.log(`[MultiLobby] queue count=${count} lobbyType=${lobbyType}`);
 
+    // Cancela timer anterior (novo join redefine a contagem)
+    if (this.#multiDeadlineTimer) {
+      clearTimeout(this.#multiDeadlineTimer);
+      this.#multiDeadlineTimer = null;
+    }
+    this.#multiDeadlineLobbyType = lobbyType;
+
+    if (count < 2) {
+      console.log('[MultiLobby] Aguardando ao menos 2 jogadores...');
+      return;
+    }
+
+    let waitMs;
     if (count >= 6) {
-      setImmediate(async () => {
-        const isCoord = await this.tryBecomeCoordinator('multi', 'auto_6plus');
-        if (isCoord) {
-          await this.tryStartMatch('auto_6plus', 'multi');
-        }
-      });
+      waitMs = 0;       // 6 jogadores → inicia imediatamente
+    } else if (count === 2) {
+      waitMs = 15_000;  // 1º par → espera 15 s
+    } else {
+      waitMs = 5_000;   // 3-5 jogadores → rolling 5 s
+    }
+
+    const deadlineTs = Date.now() + waitMs;
+    // Armazena deadline no Firebase para sincronização entre clientes
+    this.#lobbyRepository.setMultiDeadline(deadlineTs).catch(() => {});
+    this.#lobbyRepository.setMultiLastJoinTs(Date.now()).catch(() => {});
+
+    console.log(`[MultiLobby] deadline em ${waitMs / 1000}s — players=${count}`);
+
+    if (waitMs === 0) {
+      await this.#tryStartMultiMatch(lobbyType);
+    } else {
+      this.#multiDeadlineTimer = setTimeout(async () => {
+        this.#multiDeadlineTimer = null;
+        await this.#tryStartMultiMatch(lobbyType);
+      }, waitMs);
+    }
+  }
+
+  /**
+   * Tenta assumir a coordenação e iniciar o match multi/tournament.
+   * @param {string} lobbyType
+   * @private
+   */
+  async #tryStartMultiMatch(lobbyType) {
+    const coordId = `coord_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    console.log(`[MultiLobby] tentando iniciar match lobbyType=${lobbyType} coord=${coordId}`);
+    try {
+      const isCoord = await this.tryBecomeCoordinator(lobbyType, coordId);
+      if (isCoord) {
+        await this.tryStartMatch(coordId, lobbyType);
+      }
+    } catch (err) {
+      console.error('[MultiLobby] erro ao iniciar match:', err);
     }
   }
 

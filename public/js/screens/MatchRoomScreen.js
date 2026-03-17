@@ -55,6 +55,9 @@ export class MatchRoomScreen extends Screen {
   /** @type {boolean} Flag para evitar navegação duplicada */
   #hasNavigatedToGameTable = false;
 
+  /** @type {number|null} Conta jogadores atribuídos ao match (recebido via assignment, para multi/tournament) */
+  #expectedPlayerCount = null;
+
   /** @type {Function|null} Unsubscriber do listener de assign no RTDB */
   #assignUnsubscribe = null;
 
@@ -94,6 +97,7 @@ export class MatchRoomScreen extends Screen {
       || '2p';
     this.#matchId = '';
     this.#hasNavigatedToGameTable = false;
+    this.#expectedPlayerCount = null;
 
     // 2. Obtém uid real do Firebase Auth
     const authService = AuthService.getInstance();
@@ -156,7 +160,11 @@ export class MatchRoomScreen extends Screen {
         this.#assignUnsubscribe = null;
 
         this.#matchId = assignment.matchId;
-        console.log(`[Assign] received matchId=${assignment.matchId} lobbyType=${this.#lobbyType}`);
+        // Armazena contagem real de jogadores do match (necessário para multi/tournament)
+        if (assignment.playerCount) {
+          this.#expectedPlayerCount = assignment.playerCount;
+        }
+        console.log(`[Assign] received matchId=${assignment.matchId} lobbyType=${this.#lobbyType} playerCount=${assignment.playerCount ?? '?'}`);
 
         // Consome o assign do RTDB para evitar reutilização em sessões futuras
         await LobbyRepository.getInstance()
@@ -436,15 +444,20 @@ export class MatchRoomScreen extends Screen {
    * @private
    */
   #getMaxPlayersForLobbyType(lobbyType) {
+    // Para multi/tournament usa o count real recebido via assignment (evita esperar 6 com 2 atribuídos)
+    if ((lobbyType === 'multi' || lobbyType === 'tournament') && this.#expectedPlayerCount) {
+      return this.#expectedPlayerCount;
+    }
+
     const match = lobbyType.match(/^(\d+)p$/);
     if (match) {
       return parseInt(match[1], 10);
     }
-    
-    if (lobbyType === 'multi') {
-      return 6; // multi pode ter até 6, mas abre com 2+
+
+    if (lobbyType === 'multi' || lobbyType === 'tournament') {
+      return 2; // fallback conservador enquanto playerCount ainda não chegou
     }
-    
+
     return 2; // default
   }
 

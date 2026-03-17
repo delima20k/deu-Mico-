@@ -14,16 +14,16 @@
  *   import { buildAndShuffleDeck } from './services/deck.js';
  *
  *   const deck = buildAndShuffleDeck();
- *   // deck: Card[69] — embaralhado, orderIndex atualizado, pronto para distribuir
+ *   // deck: Card[67] — embaralhado, orderIndex atualizado, pronto para distribuir
  *
  * ── API completa ──────────────────────────────────────────────────────────
  *
- *   buildDeck()                      → Card[69] não embaralhado
- *   shuffleDeck(deck)                → Card[69] embaralhado (Fisher-Yates)
- *   shuffleMultiple(deck, times)     → Card[69] embaralhado N vezes
- *   cutDeck(deck)                    → Card[69] com corte aleatório
+ *   buildDeck()                      → Card[67] não embaralhado
+ *   shuffleDeck(deck)                → Card[67] embaralhado (Fisher-Yates)
+ *   shuffleMultiple(deck, times)     → Card[67] embaralhado N vezes
+ *   cutDeck(deck)                    → Card[67] com corte aleatório
  *   validateDeck(deck)               → { valid, errors, warnings, report }
- *   buildAndShuffleDeck()            → Card[69] pronto para uso
+ *   buildAndShuffleDeck()            → Card[67] pronto para uso
  *
  * ─────────────────────────────────────────────────────────────────────────
  */

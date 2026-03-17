@@ -45,6 +45,22 @@
   to   { opacity: 0; }
 }
 
+/* ── Badge de pares: chacoalha ao receber novo par ───────────────── */
+@keyframes badge-shake {
+  0%   { transform: scale(1)    rotate(0deg); }
+  12%  { transform: scale(1.22) rotate(-6deg); }
+  28%  { transform: scale(1.28) rotate(5deg)  translateX(2px); }
+  44%  { transform: scale(1.18) rotate(-4deg) translateX(-2px); }
+  62%  { transform: scale(1.12) rotate(3deg); }
+  78%  { transform: scale(1.07) rotate(-2deg); }
+  92%  { transform: scale(1.03) rotate(1deg); }
+  100% { transform: scale(1)    rotate(0deg); }
+}
+
+.pairs-badge--shaking {
+  animation: badge-shake 0.52s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
 /* ---------- Classes utilitárias de animação ---------- */
 .anim-fade-in {
   animation: fadeIn var(--transition-slow) forwards;

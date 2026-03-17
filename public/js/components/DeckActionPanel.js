@@ -20,7 +20,7 @@
 
 import { Dom } from '../utils/Dom.js';
 
-/** @typedef {'idle'|'shuffling'|'readyToDeal'} PanelState */
+/** @typedef {'idle'|'shuffling'|'readyToDeal'|'dealing'|'done'} PanelState */
 
 /** Textos do botão por estado */
 const BTN_TEXT = {
@@ -28,6 +28,7 @@ const BTN_TEXT = {
   shuffling:   'EMBARALHANDO...',
   readyToDeal: 'ENTREGAR CARTAS',
   dealing:     'ENTREGANDO...',
+  done:        '',
 };
 
 /** Textos da mensagem de aguardo (jogadores não autorizados) por estado */
@@ -36,6 +37,7 @@ const WAITING_TEXT = {
   shuffling:   'Embaralhando as cartas...',
   readyToDeal: 'Aguardando a entrega das cartas...',
   dealing:     'Entregando as cartas...',
+  done:        '',
 };
 
 /** Duração do toast de bloqueio em ms */
@@ -72,6 +74,9 @@ export class DeckActionPanel {
   /** @type {HTMLElement|null} Mensagem de aguardo (não-dealer) */
   #waitingEl = null;
 
+  /** @type {HTMLElement|null} Elemento raiz do painel */
+  #panelEl = null;
+
   /** @type {HTMLElement|null} Toast de aviso de ação bloqueada */
   #toastEl = null;
 
@@ -105,6 +110,7 @@ export class DeckActionPanel {
    */
   create() {
     const panel = Dom.create('div', { classes: 'deck-action-panel' });
+    this.#panelEl = panel;
 
     // Toast — presente para ambos os fluxos, invisível por padrão
     this.#toastEl = Dom.create('p', { classes: 'deck-action-panel__toast' });
@@ -129,6 +135,27 @@ export class DeckActionPanel {
    */
   setState(state) {
     this.#state = state;
+
+    // Estado 'done': oculta o painel inteiro após a entrega
+    if (state === 'done') {
+      if (this.#panelEl) {
+        this.#panelEl.style.transition = 'opacity 0.4s ease';
+        this.#panelEl.style.opacity    = '0';
+        this.#panelEl.style.pointerEvents = 'none';
+        setTimeout(() => {
+          if (this.#panelEl) this.#panelEl.style.display = 'none';
+        }, 420);
+      }
+      console.log('[DeckAction] state=done — painel ocultado');
+      return;
+    }
+
+    // Qualquer outro estado: garante o painel visível novamente (ex: nova partida)
+    if (this.#panelEl) {
+      this.#panelEl.style.display      = '';
+      this.#panelEl.style.opacity      = '1';
+      this.#panelEl.style.pointerEvents = '';
+    }
 
     if (this.#btnEl) {
       this.#btnEl.textContent = BTN_TEXT[state];

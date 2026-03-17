@@ -29,6 +29,10 @@ import { buildAndShuffleDeck, buildDeck } from '../services/deck.js';
 import { CardDealAnimator }   from '../components/CardDealAnimator.js';
 import { HandModal }          from '../components/HandModal.js';
 import { PairsBadge }         from '../components/PairsBadge.js';
+import { OpponentPickPanel }  from '../components/OpponentPickPanel.js';
+import { CardRevealModal }    from '../components/CardRevealModal.js';
+import { flyCardToAvatar, flyCardBetweenAvatars, animatePairArcToButton } from '../utils/CardFlyAnimator.js';
+import { AudioService }       from '../services/AudioService.js';
 
 export class GameTableScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
@@ -86,6 +90,7 @@ export class GameTableScreen extends Screen {
   #pairsBadges = new Map();
 
   /** @type {Function|null} Unsubscriber do listener de estado de jogo (Firebase) */
+
   #gameStateUnsub = null;
 
   /** @type {number} Timestamp do último evento de estado de jogo processado */
@@ -102,6 +107,32 @@ export class GameTableScreen extends Screen {
 
   /** @type {Object} Mapa uid->dados do último snapshot de presença */
   #presenceMap = {};
+
+  /** @type {number|null} Timer de saída automática por abandono */
+  #autoExitTimer = null;
+
+  /** @type {number} Quantidade de jogadores presentes no momento */
+  #activePlayers = 0;
+
+  // ── Gerenciamento de turnos ────────────────────────────────────────
+
+  /** @type {Map<string, import('../domain/Card.js').Card[]>} uid → cartas na mão */
+  #handMap = new Map();
+
+  /** @type {import('../domain/PlayerSeat.js').PlayerSeat[]} Assentos em ordem horária */
+  #turnSeats = [];
+
+  /** @type {number} Índice do dealer em #turnSeats */
+  #dealerSeatIdx = 0;
+
+  /** @type {number} Offset de turno a partir do dealer (1 = primeiro roubo) */
+  #turnOffset = 1;
+
+  /** @type {OpponentPickPanel|null} Painel de escolha de carta do oponente */
+  #opponentPickPanel = null;
+
+  /** @type {Function|null} Limpeza do indicador visual no avatar-alvo do turno */
+  #stealHintCleanup = null;
 
   /**
    * @param {import('../core/ScreenManager.js').ScreenManager} screenManager
@@ -217,16 +248,23 @@ export class GameTableScreen extends Screen {
       this.#deckPile   = new CardDeckPile(tableEl);
       this.#deckPileEl = this.#deckPile.create();
       deckStack.append(this.#deckPileEl);
+
+      // Conecta o subárvore ao DOM ANTES de animar para que getBoundingClientRect() funcione
+      tableEl.append(deckStack);
+      tableRoot.append(hexEl);
+      mainEl.append(tableRoot);
+      container.append(mainEl);
+
       // Sincroniza contagem visual e distribui cartas com animação
+      // O som começa junto com a primeira carta voando
+      AudioService.getInstance().playForce('table-open');
       await this.#deckPile.renderCentralDeck(this.#deck);
-      console.log('[CardDeckPile] ✅ Monte renderizado — 69 cartas distribuídas');
+      console.log(`[CardDeckPile] ✅ Monte renderizado — ${this.#deck.length} cartas distribuídas`);
       console.log(`[CardDeckPile] 🃏 Camadas visíveis: 6`);
       console.log(`[CardDeckPile] 📦 Total de cartas no deck: ${this.#deck.length}`);
 
-      // Descobre o jogador mais novo para definir quem embaralha
-      const dealerResult = await DealerSelectionService.getInstance()
-        .resolveYoungestPlayer(this.#players);
-
+      // Primeiro a entrar na sala é o dealer (embaralha e entrega)
+      const dealerResult = DealerSelectionService.getInstance().resolveFirstJoiner(this.#players);
       const youngestPlayer = dealerResult.youngestPlayer;
 
       this.#deckActionPanel = new DeckActionPanel(
@@ -249,8 +287,6 @@ export class GameTableScreen extends Screen {
       console.log(`[ShuffleController] ✅ Dealer: ${youngestPlayer.name} (${youngestPlayer.id.slice(0, 8)}...)`);
       console.log(`[ShuffleController] 🔑 Autorizado neste cliente: ${this.#shuffleController.isAuthorized}`);
 
-      tableEl.append(deckStack);
-
       console.log(`[GameTableScreen] ✨ Mesa renderizada com sucesso\n`);
     } catch (error) {
       console.error('[GameTableScreen] ❌ Erro ao criar layout:', error);
@@ -261,6 +297,7 @@ export class GameTableScreen extends Screen {
       this.#hexTable.getSlot().append(errorEl);
     }
 
+    // Garante que o hexEl/tableRoot estão no DOM mesmo se try falhou antes dos appends
     tableRoot.append(hexEl);
     mainEl.append(tableRoot);
 
@@ -282,6 +319,35 @@ export class GameTableScreen extends Screen {
 
     // Assina canal de estado de jogo — sincroniza embaralhar+entregar em todos os clientes
     this.#subscribeGameState();
+  }
+
+  /**
+   * Dispara a animação de arco do par até o botão de pares e,
+   * ao pousar, chama addPair + shake + sons.
+   * @param {string} uid
+   * @param {import('../domain/Card.js').Card[]} pair
+   * @param {boolean} isOwn  true = é o próprio jogador local
+   * @private
+   */
+  #triggerPairArc(uid, pair, isOwn) {
+    const pb = this.#pairsBadges.get(uid);
+    if (!pb) return;
+    const fromEl = pb.getPlayerEl();
+    const toEl   = pb.getElement();
+
+    const onLand = () => {
+      pb.addPair(pair);
+      if (isOwn) AudioService.getInstance().playForce('pair-own');
+      AudioService.getInstance().playForce('pair-gold');
+    };
+
+    if (!fromEl || !toEl || pair.length < 2) {
+      // Fallback sem animação visual
+      onLand();
+      return;
+    }
+
+    animatePairArcToButton(pair, fromEl, toEl, onLand);
   }
 
   /**
@@ -360,7 +426,8 @@ export class GameTableScreen extends Screen {
       const userRepository = UserRepository.getInstance();
       const players = [];
 
-      for (const uid of playerIds) {
+      for (let idx = 0; idx < playerIds.length; idx++) {
+        const uid = playerIds[idx];
         try {
           const userProfile = await userRepository.getProfile(uid);
           if (userProfile) {
@@ -368,7 +435,8 @@ export class GameTableScreen extends Screen {
               uid,
               name: userProfile.displayName || 'Jogador Desconhecido',
               avatarUrl: userProfile.photoURL || null,
-              joinedAt: Date.now()
+              // joinedAt usa o índice no array — preserva a ordem de entrada na fila
+              joinedAt: idx,
             });
             console.log(`[GameTableScreen.onRoomReady] ✅ ${userProfile.displayName || 'Jogador'} carregado`);
           } else {
@@ -377,7 +445,7 @@ export class GameTableScreen extends Screen {
               uid,
               name: `Jogador ${uid.slice(0, 8)}`,
               avatarUrl: null,
-              joinedAt: Date.now()
+              joinedAt: idx,
             });
             console.log(`[GameTableScreen.onRoomReady] ⚠️ Perfil não encontrado para ${uid.slice(0, 8)}...`);
           }
@@ -387,7 +455,7 @@ export class GameTableScreen extends Screen {
             uid,
             name: `Jogador ${uid.slice(0, 8)}`,
             avatarUrl: null,
-            joinedAt: Date.now()
+            joinedAt: idx,
           });
         }
       }
@@ -420,6 +488,12 @@ export class GameTableScreen extends Screen {
     console.log(`[GameTableScreen] 📋 ID da Partida: ${this.#matchId}`);
     console.log(`[GameTableScreen] ⏰ Timestamp: ${new Date().toISOString()}`);
     
+    // Cancela saída automática por abandono (se agendada)
+    if (this.#autoExitTimer !== null) {
+      clearTimeout(this.#autoExitTimer);
+      this.#autoExitTimer = null;
+    }
+
     // Para monitor de presença
     this.#presenceUnsub?.();
     this.#presenceUnsub = null;
@@ -431,6 +505,13 @@ export class GameTableScreen extends Screen {
     this.#gameStateUnsub  = null;
     this.#gameStateLock   = false;
     this.#lastGameEventTs = 0;
+
+    // Remove indicador de roubo no avatar (se estiver ativo)
+    this.#clearStealHint();
+
+    // Destroi painel de escolha de carta do oponente
+    this.#opponentPickPanel?.destroy();
+    this.#opponentPickPanel = null;
 
     // Destroi modal de mão
     this.#handModal?.destroy();
@@ -516,6 +597,7 @@ export class GameTableScreen extends Screen {
         }
 
         const currentUids = new Set(players.map(p => p.uid));
+        this.#activePlayers = currentUids.size;
 
         // Detecta quem saiu comparando com snapshot anterior
         for (const uid of this.#prevPlayerUids) {
@@ -526,12 +608,31 @@ export class GameTableScreen extends Screen {
             // isWinner: havia só 2 no snapshot anterior → o restante é o vencedor
             const isWinner = this.#prevPlayerUids.size === 2;
             this.#showExitNotification(name, isWinner);
+
+            // Se restaram menos de 2 jogadores, força saída em 10s
+            if (currentUids.size < 2) {
+              this.#scheduleAutoExit();
+            }
           }
         }
 
         this.#prevPlayerUids = currentUids;
       }
     );
+  }
+
+  /**
+   * Agenda saída automática em 10s quando a partida não tem jogadores suficientes.
+   * @private
+   */
+  #scheduleAutoExit() {
+    if (this.#autoExitTimer !== null) return; // já agendado
+    console.warn('[GameTableScreen] Menos de 2 jogadores — saída automática em 10s');
+    this.#autoExitTimer = setTimeout(() => {
+      this.#autoExitTimer = null;
+      console.warn('[GameTableScreen] Saída automática executada');
+      this.#onExitGame();
+    }, 10_000);
   }
 
   /**
@@ -553,28 +654,47 @@ export class GameTableScreen extends Screen {
     });
 
     const msg = Dom.create('p', { classes: 'game-exit-notification__text' });
+    const needsForceExit = isWinner || this.#activePlayers < 2;
+
     if (isWinner) {
       msg.innerHTML = `<strong>${name}</strong> saiu da partida.<br>Você é o <strong>vencedor</strong>! 🎉`;
+    } else if (needsForceExit) {
+      msg.innerHTML = `<strong>${name}</strong> saiu da partida.<br>Partida encerrada. Saindo em <strong id="exit-countdown">10</strong>s…`;
     } else {
       msg.innerHTML = `<strong>${name}</strong> saiu da partida.`;
     }
 
     const btnClose = Dom.create('button', {
       classes: 'game-exit-notification__close',
-      text: isWinner ? 'Ver Salas' : 'OK',
+      text: needsForceExit ? 'Sair agora' : 'OK',
       attrs: { type: 'button' },
     });
     btnClose.addEventListener('click', () => {
       overlay.remove();
-      if (isWinner) this.#screenManager.show('RoomsScreen');
+      if (needsForceExit) {
+        clearTimeout(this.#autoExitTimer);
+        this.#autoExitTimer = null;
+        this.#onExitGame();
+      }
     });
 
     bubble.append(icon, msg, btnClose);
     overlay.append(bubble);
     container.append(overlay);
 
-    // Auto-fecha depois de 8s se não for vitória
-    if (!isWinner) {
+    // Countdown visual para forceExit
+    if (needsForceExit && !isWinner) {
+      let secs = 10;
+      const countEl = overlay.querySelector('#exit-countdown');
+      const tick = setInterval(() => {
+        secs--;
+        if (countEl) countEl.textContent = String(secs);
+        if (secs <= 0) clearInterval(tick);
+      }, 1000);
+    }
+
+    // Auto-fecha depois de 8s se não for saída forçada
+    if (!needsForceExit) {
       setTimeout(() => overlay.isConnected && overlay.remove(), 8000);
     }
   }
@@ -600,6 +720,10 @@ export class GameTableScreen extends Screen {
    * @private
    */
   async #onShuffleRequested() {
+    if (this.#activePlayers < 2) {
+      this.#deckActionPanel?.showBlockedWarning('Aguardando jogadores para iniciar');
+      return;
+    }
     if (!this.#shuffleController?.isAuthorized) {
       this.#deckActionPanel?.showBlockedWarning(
         `Somente ${this.#shuffleController?.youngestPlayer?.name} pode embaralhar`
@@ -620,7 +744,9 @@ export class GameTableScreen extends Screen {
       console.warn('[GameTableScreen] Firebase indisponível — embaralhamento local', err);
       this.#gameStateLock = false;
       this.#deckActionPanel?.setState('shuffling');
+      AudioService.getInstance().playLoop('shuffle-start');
       await this.#deckPile?.animateCentralDeckShuffle();
+      AudioService.getInstance().stopLoop('shuffle-start');
       this.#deckActionPanel?.setState('readyToDeal');
     }
   }
@@ -632,6 +758,10 @@ export class GameTableScreen extends Screen {
    * @private
    */
   async #onDealRequested() {
+    if (this.#activePlayers < 2) {
+      this.#deckActionPanel?.showBlockedWarning('Aguardando jogadores para iniciar');
+      return;
+    }
     if (!this.#deck || !this.#tableLayout || !this.#deckPileEl) return;
     if (this.#gameStateLock) return;
     this.#gameStateLock = true;
@@ -658,16 +788,16 @@ export class GameTableScreen extends Screen {
    */
   #subscribeGameState() {
     this.#gameStateUnsub?.();
-    const subTs = Date.now();
 
     this.#gameStateUnsub = MatchService.getInstance().subscribeGameState(
       this.#matchId,
       (state) => {
-        // Ignora eventos anteriores à entrada nesta tela (clock skew de 2s permitido)
-        if (!state?.ts || state.ts < subTs - 2000) return;
-        // Ignora eventos já processados
-        if (state.ts <= this.#lastGameEventTs) return;
-        this.#handleGameState(state);
+        if (!state?.phase) return;
+        // Ignora eventos mais antigos (permite mesmo ms para eventos rápidos consecutivos)
+        if (state.ts && state.ts < this.#lastGameEventTs) return;
+        this.#handleGameState(state).catch(err =>
+          console.error('[GameTableScreen] Erro em handleGameState:', err)
+        );
       }
     );
   }
@@ -680,11 +810,13 @@ export class GameTableScreen extends Screen {
    */
   async #handleGameState(state) {
     if (!state?.phase) return;
-    this.#lastGameEventTs = state.ts;
+    if (state.ts) this.#lastGameEventTs = state.ts;
 
     if (state.phase === 'shuffling') {
       this.#deckActionPanel?.setState('shuffling');
+      AudioService.getInstance().playLoop('shuffle-start');
       await this.#deckPile?.animateCentralDeckShuffle();
+      AudioService.getInstance().stopLoop('shuffle-start');
       this.#deckActionPanel?.setState('readyToDeal');
       this.#gameStateLock = false;
     }
@@ -692,13 +824,114 @@ export class GameTableScreen extends Screen {
     if (state.phase === 'dealing') {
       // Reconstrói o deck na mesma ordem exata que o dealer usou
       if (Array.isArray(state.cardOrder) && state.cardOrder.length > 0) {
-        const base    = buildDeck();
-        const cardMap = new Map(base.map(c => [c.id, c]));
-        const rebuilt = state.cardOrder.map(id => cardMap.get(id)).filter(Boolean);
-        if (rebuilt.length > 0) this.#deck = rebuilt;
+        try {
+          const base    = buildDeck();
+          const cardMap = new Map(base.map(c => [c.id, c]));
+          const rebuilt = state.cardOrder.map(id => cardMap.get(id)).filter(Boolean);
+          if (rebuilt.length > 0) this.#deck = rebuilt;
+        } catch (err) {
+          console.warn('[GameTableScreen] buildDeck falhou ao reconstruir, usando deck local:', err);
+        }
       }
       this.#gameStateLock = false;
       this.#runDealAnimation();
+    }
+
+    if (state.phase === 'card_picked') {
+      // O dono da carta vê ela voar para fora da sua mão imediatamente
+      if (state.fromUid === this.#myUid) {
+        this.#handModal?.removeCard(state.cardId, true /* stolen */);
+      }
+    }
+
+    if (state.phase === 'card_fly') {
+      // A animação já foi executada localmente pelo ladrão (toUid); os demais veem agora
+      if (state.toUid !== this.#myUid) {
+        const fromPb = this.#pairsBadges.get(state.fromUid);
+        const toPb   = this.#pairsBadges.get(state.toUid);
+        if (fromPb && toPb) {
+          flyCardBetweenAvatars(fromPb.getPlayerEl(), toPb.getPlayerEl(), 'img/carta_verso.png', () => {
+            AudioService.getInstance().playForce('card-fly-land');
+          });
+        }
+      }
+    }
+
+    if (state.phase === 'scroll_sync') {
+      // O dono das cartas (targetUid) espelha o scroll que o picker fez no opp-pick-panel
+      if (state.targetUid === this.#myUid) {
+        this.#handModal?.setScrollRatio(state.ratio);
+      }
+    }
+
+    if (state.phase === 'pair_formed') {
+      // Jogador local já tratou tudo localmente — ignora o eco
+      if (state.uid === this.#myUid) return;
+
+      // Remove as cartas pareadas do handMap global.
+      // Busca em TODAS as mãos para garantir remoção correta independente da
+      // ordem de chegada dos eventos (card_stolen pode chegar antes ou depois).
+      if (Array.isArray(state.cardIds)) {
+        for (const cardId of state.cardIds) {
+          for (const hand of this.#handMap.values()) {
+            const idx = hand.findIndex(c => c.id === cardId);
+            if (idx >= 0) { hand.splice(idx, 1); break; }
+          }
+        }
+      }
+
+      // Animação do badge somente para jogadores remotos reais
+      // (bots já animaram localmente em #handleAiTurn)
+      if (!this.#isAiPlayer(state.uid)) {
+        const badge = this.#pairsBadges.get(state.uid);
+        if (badge && Array.isArray(state.cardIds)) {
+          const deckForLookup = this.#deck ?? [];
+          const cardMap = new Map(deckForLookup.map(c => [c.id, c]));
+          const pair = state.cardIds.map(id => cardMap.get(id)).filter(Boolean);
+          const pairToUse = pair.length > 0 ? pair : [];
+          console.log(`[GameTableScreen] 🃏 Par recebido de ${state.uid.slice(0, 8)}: ${pair.map(c => c?.name).join(' + ')}`);
+          this.#triggerPairArc(state.uid, pairToUse, false);
+        }
+      }
+    }
+
+    if (state.phase === 'turn_start') {
+      // Sincroniza offset de turno e ativa UI de roubo/observação
+      if (state.turnOffset != null) this.#turnOffset = state.turnOffset;
+      this.#onTurnStart(state.activeUid, state.targetUid);
+    }
+
+    if (state.phase === 'card_stolen') {
+      // Atualiza handMap em todos os clientes
+      const fromHand = this.#handMap.get(state.fromUid);
+      if (fromHand) {
+        const idx = fromHand.findIndex(c => c.id === state.cardId);
+        if (idx >= 0) {
+          const [stolen] = fromHand.splice(idx, 1);
+          // Adiciona à mão do ladrão somente se:
+          //  - não sou eu (já atualizei localmente em #onCardPickedFromOpponent) E
+          //  - não é um bot (já atualizou em #handleAiTurn) — previne duplicação
+          const toHand = state.toUid !== this.#myUid && !this.#isAiPlayer(state.toUid)
+            ? this.#handMap.get(state.toUid)
+            : null;
+          if (stolen && toHand && !toHand.some(c => c.id === stolen.id)) {
+            toHand.push(stolen);
+          }
+        }
+      }
+      // Se fui roubado: removeCard já foi chamado via card_picked (no-op seguro se já removido)
+      if (state.fromUid === this.#myUid) {
+        this.#handModal?.removeCard(state.cardId, true);
+      }
+    }
+
+    if (state.phase === 'game_over') {
+      const micoPlayer = this.#players.find(p => p.uid === state.micoUid);
+      const micoName  = micoPlayer?.name ?? 'Alguém';
+      const msg = state.micoUid === this.#myUid
+        ? '😢 Você ficou com o Mico!'
+        : `🎉 ${micoName} ficou com o Mico!`;
+      this.#showTurnToast(msg);
     }
   }
 
@@ -725,23 +958,32 @@ export class GameTableScreen extends Screen {
     const sortedSeats = [...this.#tableLayout.seats]
       .sort((a, b) => (CW[a.positionKey] ?? 0) - (CW[b.positionKey] ?? 0));
 
-    const dealerUid   = this.#shuffleController?.youngestPlayer?.id;
-    const dealerIdx   = sortedSeats.findIndex(s => s.uid === dealerUid);
+    const dealerUid = this.#shuffleController?.youngestPlayer?.id;
+    const dealerIdx = sortedSeats.findIndex(s => s.uid === dealerUid);
+    // A distribuição começa pelo jogador imediatamente à ESQUERDA do dealer
+    // (sentido anti-horário no mapa CW = índice anterior no array sortedSeats).
+    // O dealer recebe por último em cada rodada.
     const dealerStart = dealerIdx >= 0 ? dealerIdx : 0;
+    const N = sortedSeats.length;
+    const firstReceiverIdx = (dealerStart - 1 + N) % N;
 
     const dealOrderSeats = [
-      ...sortedSeats.slice(dealerStart),
-      ...sortedSeats.slice(0, dealerStart),
+      ...sortedSeats.slice(firstReceiverIdx),
+      ...sortedSeats.slice(0, firstReceiverIdx),
     ];
 
     // ── 2. Distribui cartas em round-robin ─────────────────────────────────
-    const N          = dealOrderSeats.length;
+    // N já declarado acima (sortedSeats.length === dealOrderSeats.length)
     const cardsByUid = new Map(dealOrderSeats.map(s => [s.uid, []]));
     this.#deck.forEach((card, i) => {
       const uid = dealOrderSeats[i % N].uid;
       cardsByUid.get(uid).push(card);
     });
-
+    // Salva estado para gerenciamento de turnos
+    this.#turnSeats     = sortedSeats;
+    this.#dealerSeatIdx = dealerStart;
+    this.#handMap       = cardsByUid;
+    this.#turnOffset    = 1;
     const dealSequence = dealOrderSeats.map(s => ({
       uid:   s.uid,
       cards: cardsByUid.get(s.uid),
@@ -752,11 +994,34 @@ export class GameTableScreen extends Screen {
     this.#handModal = new HandModal();
     this.#handModal.create();
 
-    // Callback de par confirmado → atualiza PairsBadge do jogador local
-    this.#handModal.onPairFormed = (pair) => {
+    // Callback de par confirmado → atualiza badge local, handMap e broadcast Firebase
+    this.#handModal.onPairFormed = async (pair) => {
+      // 1. Remove do handMap local
+      const myHand = this.#handMap.get(this.#myUid);
+      if (myHand) {
+        for (const c of pair) {
+          const i = myHand.findIndex(x => x.id === c.id);
+          if (i >= 0) myHand.splice(i, 1);
+        }
+      }
+
+      // 2. Atualiza badge do jogador local imediatamente
       const badge = this.#pairsBadges.get(this.#myUid);
-      badge?.addPair(pair);
       console.log(`[GameTableScreen] 🃏 Par formado: ${pair.map(c => c.name).join(' + ')}`);
+      this.#triggerPairArc(this.#myUid, pair, true);
+      void badge; // referenciado indiretamente em #triggerPairArc
+
+      // 3. Transmite para todos os clientes via Firebase
+      try {
+        await MatchService.getInstance().writeGameState(this.#matchId, {
+          phase:   'pair_formed',
+          uid:     this.#myUid,
+          cardIds: pair.map(c => c.id),
+          ts:      Date.now(),
+        });
+      } catch (err) {
+        console.warn('[GameTableScreen] Erro ao enviar par ao Firebase:', err);
+      }
     };
 
     // ── 4. Bloqueia botão durante a distribuição ───────────────────────────
@@ -774,18 +1039,466 @@ export class GameTableScreen extends Screen {
         this.#deckPile?.updateCentralDeckCount(remaining);
       },
       onCardArrived: (uid, card) => {
+        AudioService.getInstance().playForce('deal-start');
         if (uid === this.#myUid) {
           this.#handModal?.addCard(card);
         }
       },
       onDone: () => {
         console.log('[GameTableScreen] ✅ Cartas entregues a todos os jogadores');
+        this.#deckActionPanel?.setState('done');
+        this.#initGamePlay(dealerUid);
       },
     });
 
     animator.start().catch(err => {
       console.error('[GameTableScreen] Erro durante distribuição de cartas:', err);
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // GAMEPLAY — Mecânica de turnos (roubo de cartas)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Inicializa o fluxo de jogo após a distribuição das cartas.
+   * O dealer aguarda 2s e publica o primeiro 'turn_start' no Firebase.
+   * @param {string|undefined} dealerUid
+   * @private
+   */
+  #initGamePlay(dealerUid) {
+    const N = this.#turnSeats.length;
+    if (N < 2) return;
+
+    // Cria (ou recria) o painel de escolha de carta
+    this.#opponentPickPanel?.destroy();
+    this.#opponentPickPanel = new OpponentPickPanel();
+
+    // Somente o dealer dispara o primeiro turno
+    if (dealerUid !== this.#myUid) return;
+
+    setTimeout(async () => {
+      // Sentido CCW: o primeiro ativo é o jogador à ESQUERDA do dealer
+      // (índice -1 no array sortedSeats/CW) e rouba do jogador à sua DIREITA.
+      const activeIdx = ((this.#dealerSeatIdx - this.#turnOffset) % N + N) % N;
+      const targetIdx = (activeIdx + 1) % N; // alvo = jogador à direita do ativo
+      const activeUid = this.#turnSeats[activeIdx]?.uid;
+      const targetUid = this.#turnSeats[targetIdx]?.uid;
+      if (!activeUid || !targetUid) return;
+
+      try {
+        await MatchService.getInstance().writeGameState(this.#matchId, {
+          phase: 'turn_start',
+          activeUid,
+          targetUid,
+          turnOffset: this.#turnOffset,
+          ts: Date.now(),
+        });
+      } catch (err) {
+        console.warn('[GameTableScreen] Erro ao iniciar primeiro turno:', err);
+        // Fallback local
+        this.#onTurnStart(activeUid, targetUid);
+      }
+    }, 2000);
+  }
+
+  /**
+   * Chamado quando um 'turn_start' chega do Firebase.
+   * Se for minha vez: exibe painel de escolha. Caso contrário, mostra toast.
+   * @param {string} activeUid  Jogador que vai roubar
+   * @param {string} targetUid  Jogador que vai perder uma carta
+   * @private
+   */
+  #onTurnStart(activeUid, targetUid) {
+    // Remove qualquer hint anterior e fecha painel de escolha aberto
+    this.#clearStealHint();
+    this.#opponentPickPanel?.hide();
+
+    if (activeUid === this.#myUid) {
+      // É minha vez — destaca o avatar do alvo e aguarda clique
+      this.#showStealHint(targetUid);
+    } else {
+      // Outro jogador está na vez
+      const activePlayer = this.#players.find(p => p.uid === activeUid);
+      const activeName   = activePlayer?.name ?? 'Jogador';
+      this.#showTurnToast(`Vez de ${activeName}`);
+
+      // Se for jogador bot (mock), simula o turno automaticamente
+      if (this.#isAiPlayer(activeUid)) {
+        this.#handleAiTurn(activeUid, targetUid).catch(err =>
+          console.error('[GameTableScreen] Erro no turno bot:', err)
+        );
+      }
+    }
+  }
+
+  /**
+   * Verifica se um UID pertence a um jogador artificial (mock/bot).
+   * @param {string} uid
+   * @returns {boolean}
+   * @private
+   */
+  #isAiPlayer(uid) {
+    return uid.startsWith('user_mock_');
+  }
+
+  /**
+   * Simula automaticamente o turno de um jogador bot.
+   * Escolhe uma carta aleatória do alvo, atualiza o handMap local,
+   * verifica par e chama #broadcastNextTurn para continuar o jogo.
+   * @param {string} activeUid  UID do bot que vai roubar
+   * @param {string} targetUid  UID do jogador-alvo
+   * @private
+   */
+  async #handleAiTurn(activeUid, targetUid) {
+    const targetHand = this.#handMap.get(targetUid) ?? [];
+    if (targetHand.length === 0) {
+      await this.#broadcastNextTurn();
+      return;
+    }
+
+    // Delay de "pensamento" do bot (1.0–2.0 s)
+    await new Promise(r => setTimeout(r, 1000 + Math.random() * 1000));
+
+    // Escolhe carta aleatória do alvo (bots não veem as faces — escolha justa)
+    const card = targetHand[Math.floor(Math.random() * targetHand.length)];
+    if (!card) { await this.#broadcastNextTurn(); return; }
+
+    // Se o alvo é o jogador local, remove da modal visual imediatamente
+    if (targetUid === this.#myUid) {
+      this.#handModal?.removeCard(card.id, true /* stolen */);
+    }
+
+    // Animação de voo entre avatares
+    const fromPb = this.#pairsBadges.get(targetUid);
+    const toPb   = this.#pairsBadges.get(activeUid);
+    if (fromPb && toPb) {
+      flyCardBetweenAvatars(fromPb.getPlayerEl(), toPb.getPlayerEl(), 'img/carta_verso.png', () => {
+        AudioService.getInstance().playForce('card-fly-land');
+      });
+    }
+
+    // Atualiza handMap localmente (remove do alvo, adiciona ao bot)
+    const tHand = this.#handMap.get(targetUid) ?? [];
+    const tIdx  = tHand.findIndex(c => c.id === card.id);
+    if (tIdx >= 0) tHand.splice(tIdx, 1);
+
+    const aHand = this.#handMap.get(activeUid) ?? [];
+    aHand.push(card);
+
+    // Verifica par na mão do bot
+    const pairCard = card.isMico
+      ? null
+      : aHand.find(c => c.id !== card.id && c.pairId != null && c.pairId === card.pairId);
+
+    const activeName = this.#players.find(p => p.uid === activeUid)?.name ?? 'Jogador';
+
+    if (pairCard) {
+      // Remove o par da mão do bot
+      const ai = aHand.findIndex(c => c.id === card.id);
+      if (ai >= 0) aHand.splice(ai, 1);
+      const pi = aHand.findIndex(c => c.id === pairCard.id);
+      if (pi >= 0) aHand.splice(pi, 1);
+
+      // Anima o arc do par até o badge
+      this.#triggerPairArc(activeUid, [card, pairCard], false);
+      this.#showTurnToast(`${activeName} formou um par! 🎉`);
+
+      // Broadcast do par para outros clientes reais
+      try {
+        await MatchService.getInstance().writeGameState(this.#matchId, {
+          phase:   'pair_formed',
+          uid:     activeUid,
+          cardIds: [card.id, pairCard.id],
+          ts:      Date.now(),
+        });
+      } catch (_e) { /* sem Firebase — badge já atualizado localmente */ }
+
+      // Pausa para a animação do par ser visível
+      await new Promise(r => setTimeout(r, 900));
+    } else {
+      if (card.isMico) {
+        this.#showTurnToast(`${activeName} pegou o Mico! 😱`);
+        AudioService.getInstance().playForce('mico-arrive');
+      } else {
+        this.#showTurnToast(`${activeName} pegou uma carta`);
+      }
+      await new Promise(r => setTimeout(r, 800));
+    }
+
+    // Avança para o próximo turno
+    await this.#broadcastNextTurn();
+  }
+
+  /**
+   * Adiciona indicador pulsante no avatar do jogador-alvo e registra
+   * o listener de clique que abre o painel de escolha de carta.
+   * @param {string} targetUid  UID do jogador cujas cartas serão escolhidas
+   * @private
+   */
+  #showStealHint(targetUid) {
+    const container = this.#gameTableView?.getPlayersContainer?.();
+    if (!container) return;
+
+    const badgeEl = container.querySelector(`[data-uid="${targetUid}"]`);
+    if (!badgeEl) return;
+
+    // Adiciona classe de destaque pulsante
+    badgeEl.classList.add('player-badge--steal-target');
+
+    const openPanel = () => {
+      this.#clearStealHint();
+      const targetCards  = this.#handMap.get(targetUid) ?? [];
+      const targetPlayer = this.#players.find(p => p.uid === targetUid);
+      const targetName   = targetPlayer?.name ?? 'Oponente';
+      const avatarUrl    = targetPlayer?.avatarUrl ?? null;
+
+      this.#opponentPickPanel?.show(targetName, targetCards, (card) => {
+        this.#onCardPickedFromOpponent(targetUid, card);
+      }, avatarUrl);
+
+      // Animação de voo imediata ao clicar: carta sai do avatar do dono e voa ao avatar do ladrão
+      this.#opponentPickPanel.onCardClick = (card, _idx, _itemRect) => {
+        const fromPb = this.#pairsBadges.get(targetUid);
+        const myPb   = this.#pairsBadges.get(this.#myUid);
+        if (fromPb && myPb) {
+          flyCardBetweenAvatars(fromPb.getPlayerEl(), myPb.getPlayerEl(), 'img/carta_verso.png', () => {
+            AudioService.getInstance().playForce('card-fly-land');
+          });
+        }
+        // Som especial ao pegar a carta do mico
+        if (card.isMico) {
+          AudioService.getInstance().playForce('mico-click');
+        }
+      };
+
+      // Sincroniza scroll em tempo real: picker arrasta → Firebase → dono das cartas
+      let _scrollTs = 0;
+      this.#opponentPickPanel.onScrollChange = (ratio) => {
+        const now = Date.now();
+        if (now - _scrollTs < 50) return; // throttle ≈20 fps
+        _scrollTs = now;
+        MatchService.getInstance().writeGameState(this.#matchId, {
+          phase:     'scroll_sync',
+          fromUid:   this.#myUid,
+          targetUid,
+          ratio,
+          ts:        now,
+        }).catch(() => {});
+      };
+    };
+
+    badgeEl.addEventListener('click', openPanel, { once: true });
+
+    // Guarda limpeza para remoção posterior
+    this.#stealHintCleanup = () => {
+      badgeEl.classList.remove('player-badge--steal-target');
+      badgeEl.removeEventListener('click', openPanel);
+    };
+  }
+
+  /**
+   * Remove o indicador visual do avatar-alvo e cancela o listener de clique.
+   * @private
+   */
+  #clearStealHint() {
+    this.#stealHintCleanup?.();
+    this.#stealHintCleanup = null;
+  }
+
+  /**
+   * Exibe toast efêmero informando de quem é a vez.
+   * @param {string} msg
+   * @private
+   */
+  #showTurnToast(msg) {
+    const container = this.getElement();
+    container.querySelector('.turn-toast')?.remove();
+
+    const toast = Dom.create('div', { classes: 'turn-toast', text: msg });
+    container.append(toast);
+
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => toast.classList.add('turn-toast--visible'))
+    );
+
+    setTimeout(() => {
+      toast.classList.remove('turn-toast--visible');
+      setTimeout(() => toast.isConnected && toast.remove(), 400);
+    }, 2500);
+  }
+
+  /**
+   * Chamado quando o jogador local escolhe uma carta do oponente.
+   * Adiciona à mão, verifica par, exibe modal de revelação e avança turno.
+   * @param {string} fromUid  UID do oponente roubado
+   * @param {import('../domain/Card.js').Card} card  Carta escolhida
+   * @private
+   */
+  #onCardPickedFromOpponent(fromUid, card) {
+    // 1. Esconde o painel de escolha
+    this.#opponentPickPanel?.hide();
+
+    // 2. Broadcast imediato: dono da carta vê ela sair da mão na hora
+    MatchService.getInstance().writeGameState(this.#matchId, {
+      phase:   'card_picked',
+      fromUid,
+      cardId:  card.id,
+      ts:      Date.now(),
+    }).catch(() => {});
+
+    // 2b. Broadcast para todos verem a carta voar entre os avatares
+    MatchService.getInstance().writeGameState(this.#matchId, {
+      phase:   'card_fly',
+      fromUid,
+      toUid:   this.#myUid,
+      ts:      Date.now(),
+    }).catch(() => {});
+
+    // 3. Atualiza handMap local: remove de fromUid, adiciona a myUid
+    const fromHand = this.#handMap.get(fromUid) ?? [];
+    const cardIdxInMap = fromHand.findIndex(c => c.id === card.id);
+    if (cardIdxInMap >= 0) fromHand.splice(cardIdxInMap, 1);
+
+    const myHand = this.#handMap.get(this.#myUid) ?? [];
+    myHand.push(card);
+
+    // 3. Adiciona à modal da mão (flip verso→frente no carrossel)
+    this.#handModal?.addCard(card);
+    // Som ao receber a carta do mico na mão
+    if (card.isMico) {
+      // Pequeno delay: carta chega ao modal ~1.1s após o clique (duração do voo)
+      setTimeout(() => AudioService.getInstance().playForce('mico-arrive'), 1100);
+    }
+
+    // 4. Verifica par imediatamente (carta já está em #cards do HandModal)
+    const matchCard  = this.#handModal?.findPairFor(card);
+    const pairFormed = !!matchCard;
+
+    // 5. Exibe modal de revelação após breve pausa (carta aparece no carrossel)
+    setTimeout(() => {
+      CardRevealModal.show(card, pairFormed, async () => {
+        // ── 6. Broadcast card_stolen PRIMEIRO — garante que outros clientes
+        //       movam a carta para a minha mão ANTES de receber pair_formed,
+        //       permitindo que o handler pair_formed encontre e remova as
+        //       cartas do local correto no handMap.
+        try {
+          await MatchService.getInstance().writeGameState(this.#matchId, {
+            phase:   'card_stolen',
+            fromUid,
+            toUid:   this.#myUid,
+            cardId:  card.id,
+            ts:      Date.now(),
+          });
+        } catch (err) {
+          console.warn('[GameTableScreen] Erro ao transmitir roubo:', err);
+        }
+
+        // ── 7. Par formado: auto-confirma e transmite DEPOIS do card_stolen ──
+        if (matchCard) {
+          this.#handModal?.removeCard(card.id);
+          this.#handModal?.removeCard(matchCard.id);
+
+          // Remove ambas do handMap local
+          const hand = this.#handMap.get(this.#myUid) ?? [];
+          for (const id of [card.id, matchCard.id]) {
+            const i = hand.findIndex(c => c.id === id);
+            if (i >= 0) hand.splice(i, 1);
+          }
+
+          // Atualiza badge local
+          const badge = this.#pairsBadges.get(this.#myUid);
+          void badge; // usado em #triggerPairArc
+          this.#triggerPairArc(this.#myUid, [card, matchCard], true);
+
+          // Broadcast pair_formed (chega DEPOIS que card_stolen já foi processado)
+          try {
+            await MatchService.getInstance().writeGameState(this.#matchId, {
+              phase:   'pair_formed',
+              uid:     this.#myUid,
+              cardIds: [card.id, matchCard.id],
+              ts:      Date.now() + 1,
+            });
+          } catch (err) {
+            console.warn('[GameTableScreen] Erro ao enviar par:', err);
+          }
+        }
+
+        // ── 8. Avança para o próximo turno ───────────────────────────
+        await this.#broadcastNextTurn();
+      });
+    }, 350);
+  }
+
+  /**
+   * Incrementa o offset de turno e transmite o próximo 'turn_start'.
+   * Pula jogadores cujo alvo não tem cartas.
+   * @private
+   */
+  async #broadcastNextTurn() {
+    const N = this.#turnSeats.length;
+    if (N < 2) return;
+
+    // Verifica se o jogo acabou: total de cartas nas mãos ≤ 1 (só sobrou o mico)
+    const totalCards = [...this.#handMap.values()].reduce((sum, h) => sum + h.length, 0);
+    if (totalCards <= 1) {
+      let micoUid = null;
+      for (const [uid, hand] of this.#handMap) {
+        if (hand.length > 0) { micoUid = uid; break; }
+      }
+      try {
+        await MatchService.getInstance().writeGameState(this.#matchId, {
+          phase:   'game_over',
+          micoUid,
+          ts:      Date.now() + 1,
+        });
+      } catch (err) {
+        console.warn('[GameTableScreen] Erro ao transmitir game_over:', err);
+        // Fallback local
+        const micoPlayer = this.#players.find(p => p.uid === micoUid);
+        const micoName   = micoPlayer?.name ?? 'Alguém';
+        const msg = micoUid === this.#myUid
+          ? '😢 Você ficou com o Mico!'
+          : `🎉 ${micoName} ficou com o Mico!`;
+        this.#showTurnToast(msg);
+      }
+      return;
+    }
+
+    this.#turnOffset++;
+
+    // Busca próximo par válido (alvo deve ter pelo menos 1 carta)
+    for (let tries = 0; tries < N; tries++) {
+      // Sentido CCW: cada turnOffset adicional volta uma posição no array CW
+      const activeIdx = ((this.#dealerSeatIdx - this.#turnOffset) % N + N) % N;
+      const targetIdx = (activeIdx + 1) % N; // alvo = à direita do ativo
+      const activeUid = this.#turnSeats[activeIdx]?.uid;
+      const targetUid = this.#turnSeats[targetIdx]?.uid;
+
+      if (!activeUid || !targetUid) break;
+
+      const targetCards = this.#handMap.get(targetUid) ?? [];
+      if (targetCards.length > 0) {
+        try {
+          await MatchService.getInstance().writeGameState(this.#matchId, {
+            phase: 'turn_start',
+            activeUid,
+            targetUid,
+            turnOffset: this.#turnOffset,
+            ts: Date.now() + 1,
+          });
+        } catch (err) {
+          console.warn('[GameTableScreen] Erro ao transmitir próximo turno (fallback local):', err);
+          // Fallback local: aciona diretamente sem Firebase
+          this.#onTurnStart(activeUid, targetUid);
+        }
+        return;
+      }
+
+      this.#turnOffset++;
+    }
+
+    console.log('[GameTableScreen] Nenhum alvo com cartas — possível fim de jogo');
   }
 
   /**

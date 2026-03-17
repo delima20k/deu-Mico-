@@ -35,6 +35,7 @@ import { SoundManager }       from '../utils/SoundManager.js';
 import { AudioService }       from '../services/AudioService.js';
 import { FirebaseService }    from '../services/FirebaseService.js';
 import { NavigationService }  from '../services/NavigationService.js';
+import { bindButtonSounds }   from '../utils/ButtonSoundBinder.js';
 
 export class App {
   /** @type {ScreenManager} */
@@ -123,7 +124,26 @@ export class App {
     SoundManager.getInstance().unlockOnInteraction();
 
     // 4.5. Carrega sons para menus e botões
-    AudioService.getInstance().load('menu_click', 'audio/made.mp3', 0.8);
+    AudioService.getInstance().load('menu_click',  'audio/made.mp3', 0.8);          // legado (MenuButton)
+    AudioService.getInstance().load('btn-tap',     'audio/made.mp3', 0.8);          // clique genérico
+    AudioService.getInstance().load('btn-confirm', 'audio/confirm_action.mp3', 0.9); // confirmação de ação
+    // Ativa sons globais em todos os botões via event delegation
+    bindButtonSounds();
+    // Sons de par: material-gold = qualquer par | pair-own = par do próprio usuário
+    AudioService.getInstance().load('pair-gold', 'audio/freesound_crunchpixstudio-material-gold-394476.mp3', 0.9);
+    AudioService.getInstance().load('pair-own',  'audio/freesound_crunchpixstudio-clear-combo-7-394494.mp3',  1.0);
+    // Sons da carta do mico
+    AudioService.getInstance().load('mico-click',  'audio/universfield-game-character-140506.mp3', 1.0);
+    AudioService.getInstance().load('mico-arrive', 'audio/freesound_community-negative_beeps-6008.mp3', 0.9);
+    // Música de fundo do menu
+    AudioService.getInstance().load('menu-bgm',    'audio/jls-creation-maringa-conga-246609.mp3', 0.75);
+    // Som de entrada na mesa de jogo
+    AudioService.getInstance().load('table-open',    'audio/freesound_community-tarot-shuffle-89105.mp3', 1.0);
+    // Sons de embaralhamento e entrega de cartas
+    AudioService.getInstance().load('shuffle-start', 'audio/enbaralhamento.mp3',  1.0);
+    AudioService.getInstance().load('deal-start',    'audio/entragar-cartas.mp3', 1.0);
+    AudioService.getInstance().setPlaybackRate('deal-start', 1.6);
+    AudioService.getInstance().load('card-fly-land', 'audio/entragar-cartas.mp3', 0.9);
     SoundManager.getInstance().load('made', 'audio/made.mp3', 0.8);
 
     // 5. Firebase — não bloqueia; funciona mesmo sem config

@@ -21,6 +21,7 @@ import { HeaderBar } from '../components/HeaderBar.js';
 import { SideMenu } from '../components/SideMenu.js';
 import { Dom } from '../utils/Dom.js';
 import { App } from '../core/App.js';
+import { AudioService } from '../services/AudioService.js';
 
 export class MenuScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
@@ -89,6 +90,9 @@ export class MenuScreen extends Screen {
 
       // 2. Renderiza a tela com o perfil
       this.#render(profile, currentUser);
+
+      // 3. Inicia música de fundo em loop
+      AudioService.getInstance().playLoop('menu-bgm');
     } catch (error) {
       console.error('[MenuScreen] Erro ao verificar autenticação:', error);
       this.#screenManager.show('LoginScreen');
@@ -99,7 +103,7 @@ export class MenuScreen extends Screen {
    * Limpeza ao sair da tela.
    */
   onExit() {
-    // Nada por enquanto
+    AudioService.getInstance().stopLoop('menu-bgm');
   }
 
   // -------------------------------------------------------
@@ -148,14 +152,17 @@ export class MenuScreen extends Screen {
     // Listeners do SideMenu
     this.#sideMenu.on('salas', () => {
       console.log('[MenuScreen] Navegando para Salas');
+      AudioService.getInstance().stopLoop('menu-bgm');
       this.#screenManager.show('RoomsScreen');
     });
     this.#sideMenu.on('ranking', () => {
       console.log('[MenuScreen] Navegando para Ranking');
+      AudioService.getInstance().stopLoop('menu-bgm');
       // TODO: implementar em futuro
     });
     this.#sideMenu.on('campeonato', () => {
       console.log('[MenuScreen] Navegando para Campeonato');
+      AudioService.getInstance().stopLoop('menu-bgm');
       this.#screenManager.show('TournamentScreen');
     });
     this.#sideMenu.on('logout', () => {
@@ -194,6 +201,7 @@ export class MenuScreen extends Screen {
     });
     Dom.on(btnSalas, 'click', () => {
       console.log('[MenuScreen] Clicado em SALAS');
+      AudioService.getInstance().stopLoop('menu-bgm');
       this.#screenManager.show('RoomsScreen');
     });
 
@@ -204,6 +212,7 @@ export class MenuScreen extends Screen {
     });
     Dom.on(btnCampeonato, 'click', () => {
       console.log('[MenuScreen] Clicado em CAMPEONATO');
+      AudioService.getInstance().stopLoop('menu-bgm');
       this.#screenManager.show('TournamentScreen');
     });
 
@@ -214,6 +223,7 @@ export class MenuScreen extends Screen {
     });
     Dom.on(btnRanking, 'click', () => {
       console.log('[MenuScreen] Clicado em RANKING');
+      AudioService.getInstance().stopLoop('menu-bgm');
       // TODO: Implementar em futuro
     });
 

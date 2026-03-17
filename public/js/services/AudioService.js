@@ -53,6 +53,16 @@ export class AudioService {
   }
 
   /**
+   * Ajusta a velocidade de reprodução de um som já carregado.
+   * @param {string} key
+   * @param {number} rate - ex: 1.6 = 60% mais rápido
+   */
+  setPlaybackRate(key, rate) {
+    const audio = this.#sounds.get(key);
+    if (audio) audio.playbackRate = rate;
+  }
+
+  /**
    * Define o throttle em ms.
    * @param {number} ms
    */
@@ -118,6 +128,41 @@ export class AudioService {
   mute()    { this.#muted = true; }
   unmute()  { this.#muted = false; }
   isMuted() { return this.#muted; }
+
+  // -------------------------------------------------------
+  // Música de fundo (BGM) — loop automático
+  // -------------------------------------------------------
+
+  /**
+   * Inicia a reprodução em loop de um som já carregado.
+   * Se já estiver tocando o mesmo som, não reinicia.
+   * @param {string} key
+   */
+  playLoop(key) {
+    if (this.#muted) return;
+    const audio = this.#sounds.get(key);
+    if (!audio) {
+      console.warn(`[AudioService] Som não carregado: "${key}".`);
+      return;
+    }
+    // Evita reiniciar se já está tocando o mesmo BGM
+    if (!audio.paused) return;
+    audio.loop = true;
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
+  }
+
+  /**
+   * Para a reprodução de um som em loop e reseta a posição.
+   * @param {string} key
+   */
+  stopLoop(key) {
+    const audio = this.#sounds.get(key);
+    if (!audio) return;
+    audio.loop = false;
+    audio.pause();
+    audio.currentTime = 0;
+  }
 
   /**
    * Limpa todos os sons carregados.

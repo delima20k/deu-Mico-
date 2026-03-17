@@ -15,8 +15,6 @@ import { Dom } from '../utils/Dom.js';
 import { TableBackground } from './TableBackground.js';
 import { PlayerBadge } from './PlayerBadge.js';
 import { PlayerScoreBadge } from './PlayerScoreBadge.js';
-import { CardsHandView } from './CardsHandView.js';
-import { CenterPileView } from './CenterPileView.js';
 import { TournamentBadge } from './TournamentBadge.js';
 
 export class GameTableView {
@@ -104,16 +102,6 @@ export class GameTableView {
 
       this.#playersContainer.append(badgeComponent.create());
     });
-
-    // Monitor central (monte de cartas)
-    const centerPileComponent = new CenterPileView(0);
-    const centerEl = centerPileComponent.create();
-    wrapper.append(centerEl);
-
-    // Mão do jogador (embaixo)
-    const handComponent = new CardsHandView(5);
-    const handEl = handComponent.create();
-    wrapper.append(handEl);
 
     return wrapper;
   }

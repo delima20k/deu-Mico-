@@ -27,17 +27,22 @@ export class LobbyCard {
   /** @type {number} */
   #presenceCount = 0;
 
+  /** @type {string|null} Título personalizado (substitui "X Jogadores") */
+  #label = null;
+
   /**
    * @param {Object} options
    * @param {number} options.playersCount - ex: 2, 3, 4, 5, 6
    * @param {string} options.queueKey - ex: "queue_2p"
    * @param {number} [options.presenceCount=0] - quantos presentes
+   * @param {string|null} [options.label=null] - título personalizado
    * @param {Function} [options.onJoin] - callback ao clicar
    */
-  constructor({ playersCount, queueKey, presenceCount = 0, onJoin = null }) {
+  constructor({ playersCount, queueKey, presenceCount = 0, label = null, onJoin = null }) {
     this.#playersCount = playersCount;
     this.#queueKey = queueKey;
     this.#presenceCount = presenceCount;
+    this.#label = label;
     this.#onJoin = onJoin;
   }
 
@@ -48,10 +53,10 @@ export class LobbyCard {
   create() {
     const card = Dom.create('div', { classes: 'lobby-card' });
 
-    // Título: "2 Jogadores"
+    // Título: usa label personalizado ou "X Jogadores"
     const title = Dom.create('h3', {
       classes: 'lobby-card__title',
-      text: `${this.#playersCount} Jogadores`,
+      text: this.#label ?? `${this.#playersCount} Jogadores`,
     });
 
     // Contador de presentes

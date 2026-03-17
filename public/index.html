@@ -6,6 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Deu Mico</title>
 
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#e63946" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Deu Mico" />
+    <link rel="apple-touch-icon" href="img/carta_logo.png" />
+
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -29,6 +38,17 @@
 
     <!-- Entry point: apenas App.bootstrap() inicia o sistema -->
     <script type="module" src="js/core/App.js"></script>
+
+    <!-- Registro do Service Worker (PWA) -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch((err) => {
+            console.warn('[SW] Falha ao registrar service worker:', err);
+          });
+        });
+      }
+    </script>
 
     <!-- DEBUG util (somente dev) — remover em produção -->
     <script>

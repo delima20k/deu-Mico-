@@ -36,9 +36,9 @@ export class MenuButton {
       attrs: { type: 'button' },
     });
 
-    // Adiciona listener direto no construtor
+    // Som tratado globalmente pelo ButtonSoundBinder (event delegation).
+    // O AudioService permanece injetado para uso futuro se necessário.
     this.#offClick = Dom.on(this.#el, 'click', () => {
-      this.#audio.play('menu_click');
       onClick?.();
     });
   }

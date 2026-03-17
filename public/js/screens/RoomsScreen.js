@@ -35,12 +35,12 @@ export class RoomsScreen extends Screen {
 
   /** @type {Object[]} Configuração das filas */
   static #QUEUES = [
-    { playersCount: 2,    queueKey: 'queue_2p',    lobbyType: '2p'         },
-    { playersCount: 3,    queueKey: 'queue_3p',    lobbyType: '3p'         },
-    { playersCount: 4,    queueKey: 'queue_4p',    lobbyType: '4p'         },
-    { playersCount: 5,    queueKey: 'queue_5p',    lobbyType: '5p'         },
-    { playersCount: 6,    queueKey: 'queue_6p',    lobbyType: '6p'         },
-    { playersCount: null, queueKey: 'queue_multi', lobbyType: 'tournament', label: 'Multijogador' },
+    { playersCount: 2,    queueKey: 'queue_2p',    lobbyType: '2p'    },
+    { playersCount: 3,    queueKey: 'queue_3p',    lobbyType: '3p'    },
+    { playersCount: 4,    queueKey: 'queue_4p',    lobbyType: '4p'    },
+    { playersCount: 5,    queueKey: 'queue_5p',    lobbyType: '5p'    },
+    { playersCount: 6,    queueKey: 'queue_6p',    lobbyType: '6p'    },
+    { playersCount: null, queueKey: 'queue_multi', lobbyType: 'multi', label: 'Multijogador' },
   ];
 
   /**
@@ -96,6 +96,7 @@ export class RoomsScreen extends Screen {
     RoomsScreen.#QUEUES.forEach(queue => {
       const card = new LobbyCard({
         playersCount: queue.playersCount || 'Multi',
+        label:        queue.label || null,
         queueKey:     queue.queueKey,
         presenceCount: 0,
         onJoin: () => this.#onCardJoin(queue.queueKey),

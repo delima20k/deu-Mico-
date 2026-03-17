@@ -47,6 +47,8 @@ export class PairsBadge {
     this.#playerEl = playerEl;
     this.#uid      = uid;
     this.#isMe     = isMe;
+    // Monta o botão imediatamente para que apareça desde o início (pares 0)
+    this.#ensureBadge();
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -61,6 +63,9 @@ export class PairsBadge {
     this.#pairs.push(pair);
     this.#ensureBadge();
     this.#updateBadge();
+    // O shake é disparado externamente após a animação de arco pousar.
+    // Como fallback (ex: par remoto sem objeto de carta), chacoalha aqui também.
+    this.shake();
     // Fecha popover se estiver aberto (conteúdo mudou)
     this.#closePopover();
   }
@@ -71,6 +76,26 @@ export class PairsBadge {
    */
   get pairCount() {
     return this.#pairs.length;
+  }
+
+  /** @returns {HTMLElement|null} Elemento .pairs-badge (botão) */
+  getElement()  { return this.#badgeEl; }
+
+  /** @returns {HTMLElement} Elemento .player-badge pai */
+  getPlayerEl() { return this.#playerEl; }
+
+  /**
+   * Chacoalha o badge visivelmente — chamado ao pousar o par.
+   */
+  shake() {
+    if (!this.#badgeEl) return;
+    this.#badgeEl.classList.remove('pairs-badge--shaking');
+    void this.#badgeEl.offsetWidth;
+    this.#badgeEl.classList.add('pairs-badge--shaking');
+    this.#badgeEl.addEventListener('animationend',
+      () => this.#badgeEl?.classList.remove('pairs-badge--shaking'),
+      { once: true }
+    );
   }
 
   destroy() {
@@ -96,7 +121,7 @@ export class PairsBadge {
     const badge = Dom.create('div', {
       classes: 'pairs-badge',
       attrs:   { title: 'Ver pares formados', 'data-uid': this.#uid },
-      text:    '0',
+      text:    'pares 0',
     });
 
     badge.addEventListener('click', (e) => {
@@ -114,7 +139,7 @@ export class PairsBadge {
 
   #updateBadge() {
     if (this.#badgeEl) {
-      this.#badgeEl.textContent = String(this.#pairs.length);
+      this.#badgeEl.textContent = 'pares ' + String(this.#pairs.length);
     }
   }
 
