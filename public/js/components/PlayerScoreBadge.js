@@ -10,23 +10,11 @@
  * Usado em modo tournament.
  */
 
-import { Dom } from '../utils/Dom.js';
+import { Dom }       from '../utils/Dom.js';
+import { AppConfig } from '../config/AppConfig.js';
 
-/**
- * Roteia URLs do Google através do proxy para evitar 429 e CORS.
- * Em localhost, usa a URL diretamente (sem proxy).
- * @param {string|null} url
- * @returns {string|null}
- */
-function resolveAvatarUrl(url) {
-  if (!url) return null;
-  if (url.includes('googleusercontent.com')) {
-    const isLocalhost = ['localhost', '127.0.0.1'].includes(location.hostname);
-    if (isLocalhost) return url;
-    return `/api/avatar-proxy?url=${encodeURIComponent(url)}`;
-  }
-  return url;
-}
+/** Resolve URL do avatar para o ambiente atual (dev = direto, prod = proxy). */
+const resolveAvatarUrl = (url) => AppConfig.avatarProxyUrl(url);
 
 export class PlayerScoreBadge {
   /** @type {string} UID do jogador */

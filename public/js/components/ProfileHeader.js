@@ -9,7 +9,8 @@
  * Exibe: avatar circular + nome + idade
  * Sem interatividade (apenas visualização).
  */
-import { Dom } from '../utils/Dom.js';
+import { Dom }       from '../utils/Dom.js';
+import { AppConfig } from '../config/AppConfig.js';
 
 export class ProfileHeader {
   /** @type {import('../domain/UserProfile.js').UserProfile} */
@@ -38,22 +39,8 @@ export class ProfileHeader {
       classes: 'profile-header__avatar-container',
     });
 
-    // Se for URL do Google, faz proxy pelo servidor para evitar CORS
-    // Em localhost o proxy não está disponível — usa photoURL diretamente
-    let finalSrc = this.#profile.avatarUrl;
-    const isLocalhost = ['localhost', '127.0.0.1'].includes(location.hostname);
-    if (finalSrc && finalSrc.includes('lh3.googleusercontent.com')) {
-      if (isLocalhost) {
-        console.log('[Avatar] using direct photoURL (localhost)');
-      } else {
-        finalSrc = `/api/avatar-proxy?url=${encodeURIComponent(finalSrc)}`;
-        console.log('[ProfileHeader] 🔄 Usando proxy para Google avatar:');
-        console.log('[ProfileHeader]   Original:', this.#profile.avatarUrl);
-        console.log('[ProfileHeader]   Proxy:', finalSrc);
-      }
-    } else {
-      console.log('[ProfileHeader] 📸 Avatar URL:', finalSrc);
-    }
+    // Resolve URL do avatar: proxy em produção, direto em dev
+    let finalSrc = AppConfig.avatarProxyUrl(this.#profile.avatarUrl);
 
     finalSrc = finalSrc || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2250%22 fill=%22%23ccc%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-size=%2248%22 fill=%22%23999%22%3E%3F%3C/text%3E%3C/svg%3E';
 
