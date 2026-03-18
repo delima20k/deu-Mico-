@@ -1,0 +1,34 @@
+# Deploy Deu Mico → GitHub Pages
+# Deploys the contents of public/ to the gh-pages branch on every push to main.
+# GitHub Pages then serves those files from the repo root URL.
+#
+# After enabling: Settings → Pages → Source: "Deploy from branch" → gh-pages / root
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false   # LFS removed — regular git objects now
+
+      - name: Deploy public/ to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          publish_branch: gh-pages
+          force_orphan: true   # keeps gh-pages history clean
+          user_name: github-actions[bot]
+          user_email: github-actions[bot]@users.noreply.github.com
+          commit_message: "chore: deploy ${{ github.sha }}"

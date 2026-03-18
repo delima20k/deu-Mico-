@@ -1,7 +1,13 @@
-*.webp filter=lfs diff=lfs merge=lfs -text
-*.apk filter=lfs diff=lfs merge=lfs -text
-*.mp3 filter=lfs diff=lfs merge=lfs -text
-*.png filter=lfs diff=lfs merge=lfs -text
-*.jpg filter=lfs diff=lfs merge=lfs -text
-*.jpeg filter=lfs diff=lfs merge=lfs -text
-*.gif filter=lfs diff=lfs merge=lfs -text
+# Normaliza line endings: LF no repositório, checkout nativo no SO
+* text=auto
+
+# Binários sem diff de texto
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.mp3  binary
+*.wav  binary
+*.apk  binary
+*.ico  binary
