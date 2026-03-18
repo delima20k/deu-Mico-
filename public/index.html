@@ -50,20 +50,5 @@
       }
     </script>
 
-    <!-- DEBUG util (somente dev) — remover em produção -->
-    <script>
-      (function debugViewport() {
-        const html = document.documentElement;
-        const cs   = getComputedStyle(html);
-        console.groupCollapsed('[DEBUG] Viewport & Scale');
-        console.log('devicePixelRatio :', window.devicePixelRatio);
-        console.log('innerWidth       :', window.innerWidth);
-        console.log('innerHeight      :', window.innerHeight);
-        console.log('html font-size   :', cs.fontSize);
-        console.log('html zoom        :', cs.zoom ?? 'n/a');
-        console.log('html transform   :', cs.transform);
-        console.groupEnd();
-      })();
-    </script>
   </body>
 </html>
