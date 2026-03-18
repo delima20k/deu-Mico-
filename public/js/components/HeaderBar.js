@@ -41,7 +41,7 @@ export class HeaderBar {
     const logo = Dom.create('img', {
       classes: 'header-bar__logo',
       attrs: {
-        src: 'img/logoMarca.png',
+        src: 'img/carta_logo.png',
         alt: 'Logo Deu Mico',
         draggable: 'false',
       },
