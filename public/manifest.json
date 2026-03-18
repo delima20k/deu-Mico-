@@ -8,7 +8,7 @@
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "orientation": "natural",
-  "background_color": "#1a1a2e",
+  "background_color": "#F3F6F8",
   "theme_color": "#e63946",
   "lang": "pt-BR",
   "dir": "ltr",
@@ -16,25 +16,25 @@
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/img/carta_logo.png",
+      "src": "/img/logoMarca.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/img/carta_logo.png",
+      "src": "/img/logoMarca.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/img/carta_logo.png",
+      "src": "/img/logoMarca.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/img/carta_logo.png",
+      "src": "/img/logoMarca.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
