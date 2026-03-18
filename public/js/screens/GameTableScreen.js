@@ -799,8 +799,8 @@ export class GameTableScreen extends Screen {
       this.#matchId,
       (state) => {
         if (!state?.phase) return;
-        // Ignora eventos mais antigos (permite mesmo ms para eventos rápidos consecutivos)
-        if (state.ts && state.ts < this.#lastGameEventTs) return;
+        // Ignora eventos mais antigos OU repetidos (mesmo ts = replay do mesmo snapshot)
+        if (state.ts && state.ts <= this.#lastGameEventTs) return;
         this.#handleGameState(state).catch(err =>
           console.error('[GameTableScreen] Erro em handleGameState:', err)
         );
@@ -871,32 +871,33 @@ export class GameTableScreen extends Screen {
     }
 
     if (state.phase === 'pair_formed') {
-      // Jogador local já tratou tudo localmente — ignora o eco
-      if (state.uid === this.#myUid) return;
-
-      // Remove as cartas pareadas do handMap global.
-      // Busca em TODAS as mãos para garantir remoção correta independente da
-      // ordem de chegada dos eventos (card_stolen pode chegar antes ou depois).
-      if (Array.isArray(state.cardIds)) {
-        for (const cardId of state.cardIds) {
-          for (const hand of this.#handMap.values()) {
-            const idx = hand.findIndex(c => c.id === cardId);
-            if (idx >= 0) { hand.splice(idx, 1); break; }
+      // Eco próprio: jogador local já processou tudo localmente — pula visual,
+      // mas NÃO faz return para não bloquear fases subsequentes (turn_start).
+      if (state.uid !== this.#myUid) {
+        // Remove as cartas pareadas do handMap global.
+        // Busca em TODAS as mãos para garantir remoção correta independente da
+        // ordem de chegada dos eventos (card_stolen pode chegar antes ou depois).
+        if (Array.isArray(state.cardIds)) {
+          for (const cardId of state.cardIds) {
+            for (const hand of this.#handMap.values()) {
+              const idx = hand.findIndex(c => c.id === cardId);
+              if (idx >= 0) { hand.splice(idx, 1); break; }
+            }
           }
         }
-      }
 
-      // Animação do badge somente para jogadores remotos reais
-      // (bots já animaram localmente em #handleAiTurn)
-      if (!this.#isAiPlayer(state.uid)) {
-        const badge = this.#pairsBadges.get(state.uid);
-        if (badge && Array.isArray(state.cardIds)) {
-          const deckForLookup = this.#deck ?? [];
-          const cardMap = new Map(deckForLookup.map(c => [c.id, c]));
-          const pair = state.cardIds.map(id => cardMap.get(id)).filter(Boolean);
-          const pairToUse = pair.length > 0 ? pair : [];
-          console.log(`[GameTableScreen] 🃏 Par recebido de ${state.uid.slice(0, 8)}: ${pair.map(c => c?.name).join(' + ')}`);
-          this.#triggerPairArc(state.uid, pairToUse, false);
+        // Animação do badge somente para jogadores remotos reais
+        // (bots já animaram localmente em #handleAiTurn)
+        if (!this.#isAiPlayer(state.uid)) {
+          const badge = this.#pairsBadges.get(state.uid);
+          if (badge && Array.isArray(state.cardIds)) {
+            const deckForLookup = this.#deck ?? [];
+            const cardMap = new Map(deckForLookup.map(c => [c.id, c]));
+            const pair = state.cardIds.map(id => cardMap.get(id)).filter(Boolean);
+            const pairToUse = pair.length > 0 ? pair : [];
+            console.log(`[GameTableScreen] 🃏 Par recebido de ${state.uid.slice(0, 8)}: ${pair.map(c => c?.name).join(' + ')}`);
+            this.#triggerPairArc(state.uid, pairToUse, false);
+          }
         }
       }
     }
@@ -1487,7 +1488,7 @@ export class GameTableScreen extends Screen {
             activeUid,
             targetUid,
             turnOffset: this.#turnOffset,
-            ts: Date.now() + 1,
+            ts: Date.now() + 100,
           });
         } catch (err) {
           console.warn('[GameTableScreen] Erro ao transmitir próximo turno (fallback local):', err);
