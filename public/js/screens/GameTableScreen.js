@@ -165,6 +165,9 @@ export class GameTableScreen extends Screen {
     this.#myUid = params.myUid || this.#getCurrentUserUid();
     this.#players = params.players || await this.#generateMockPlayers();
 
+    // Libera rotação landscape apenas na mesa de jogo
+    try { if (screen.orientation?.unlock) screen.orientation.unlock(); } catch (_) {}
+
     console.log(`\n[GameTableScreen] 🎮 ===== TELA DA MESA ABERTA =====`);
     console.log(`[GameTableScreen] 📋 ID da Partida: ${this.#matchId}`);
     console.log(`[GameTableScreen] 2️⃣ Tipo de Sala: ${this.#roomType}`);
@@ -487,6 +490,9 @@ export class GameTableScreen extends Screen {
     console.log(`\n[GameTableScreen] 🚪 ===== SAINDO DA MESA =====`);
     console.log(`[GameTableScreen] 📋 ID da Partida: ${this.#matchId}`);
     console.log(`[GameTableScreen] ⏰ Timestamp: ${new Date().toISOString()}`);
+
+    // Volta a travar orientação em portrait ao sair da mesa
+    try { if (screen.orientation?.lock) screen.orientation.lock('portrait').catch(() => {}); } catch (_) {}
     
     // Cancela saída automática por abandono (se agendada)
     if (this.#autoExitTimer !== null) {

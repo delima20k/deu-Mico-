@@ -180,38 +180,41 @@ export class HandModal {
   // Drag-to-scroll do carrossel
   // ─────────────────────────────────────────────────────────────────────
 
-  #initDrag(viewport, track) {
+  #initDrag(viewport, _track) {
+    // Usa scroll nativo do browser para máxima fluidez no mobile.
+    // touch-action: pan-x é definido no CSS — o browser cuida do momentum/rubber-band.
+    // O mouse ainda funciona via wheel e cursor grab.
     let startX = 0, scrollStart = 0, panning = false, moved = false;
 
+    // Mouse — mantido para desktop
     const down = (e) => {
-      // Aceita mouse e touch
-      startX      = e.touches ? e.touches[0].clientX : e.clientX;
+      startX      = e.clientX;
       scrollStart = viewport.scrollLeft;
       panning     = true;
       moved       = false;
     };
-
-    const move = (e) => {
+    const mouseMove = (e) => {
       if (!panning) return;
-      const x   = e.touches ? e.touches[0].clientX : e.clientX;
-      const dx  = startX - x;
+      const dx = startX - e.clientX;
       if (Math.abs(dx) > 4) moved = true;
       viewport.scrollLeft = scrollStart + dx;
     };
-
     const up = () => { panning = false; };
 
-    // Mouse
-    viewport.addEventListener('mousedown',  down, { passive: true });
-    window.addEventListener('mousemove',    move, { passive: true });
-    window.addEventListener('mouseup',      up);
+    viewport.addEventListener('mousedown',  down,      { passive: true });
+    window.addEventListener ('mousemove',   mouseMove, { passive: true });
+    window.addEventListener ('mouseup',     up);
 
-    // Touch
-    viewport.addEventListener('touchstart', down, { passive: true });
-    viewport.addEventListener('touchmove',  move, { passive: true });
-    viewport.addEventListener('touchend',   up,   { passive: true });
+    // Touch — apenas rastreia se houve movimento significativo (para diferenciar tap de scroll)
+    viewport.addEventListener('touchstart', (e) => {
+      startX = e.touches[0].clientX;
+      moved  = false;
+    }, { passive: true });
+    viewport.addEventListener('touchmove', (e) => {
+      if (Math.abs(e.touches[0].clientX - startX) > 8) moved = true;
+    }, { passive: true });
+    viewport.addEventListener('touchend', () => {}, { passive: true });
 
-    // Guarda referencia ao flag de movimento para os taps
     this._moved = () => moved;
   }
 
@@ -272,12 +275,22 @@ export class HandModal {
 
   #select(cardId) {
     this.#selectedId = cardId;
-    this.#itemEls.get(cardId)?.classList.add('hand-modal__item--selected');
+    const item = this.#itemEls.get(cardId);
+    if (!item) return;
+    item.classList.add('hand-modal__item--selected');
+    // Eleva a carta selecionada para cima de todos os elementos
+    item.style.zIndex = '99999';
+    item.style.position = 'relative';
   }
 
   #clearSelection() {
     if (this.#selectedId) {
-      this.#itemEls.get(this.#selectedId)?.classList.remove('hand-modal__item--selected');
+      const item = this.#itemEls.get(this.#selectedId);
+      if (item) {
+        item.classList.remove('hand-modal__item--selected');
+        item.style.zIndex = '';
+        item.style.position = '';
+      }
     }
     this.#selectedId = null;
   }

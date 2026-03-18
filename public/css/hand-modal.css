@@ -25,6 +25,8 @@
   transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
   user-select: none;
   -webkit-user-select: none;
+  /* Permite que carta selecionada sobreponha elementos acima do modal */
+  overflow: visible;
 }
 
 .hand-modal--visible {
@@ -63,9 +65,13 @@
   -webkit-overflow-scrolling: touch;
   scroll-snap-type: x mandatory;
   scroll-behavior: smooth;
+  /* Scroll nativo no celular: browser gerencia momentum/rubber-band */
+  touch-action: pan-x;
   /* Remove scrollbar visivelmente */
   scrollbar-width: none;
   cursor: grab;
+  /* Permite que os itens se sobreponham para cima (carta selecionada) */
+  overflow-clip-margin: 0;
   padding: 4px 0 12px;
 }
 
@@ -95,30 +101,37 @@
 .hand-modal__item {
   flex-shrink: 0;
   scroll-snap-align: center;
-  width:  clamp(66px, 17vw, 100px);
-  height: clamp(99px, 25.5vw, 150px);
-  border-radius: clamp(6px, 1.4vw, 10px);
+  /* Cartas maiores para mobile: ~22vw em portrait, min 88px, max 130px */
+  width:  clamp(88px, 22vw, 130px);
+  height: clamp(132px, 33vw, 195px);
+  border-radius: clamp(8px, 1.8vw, 12px);
   /* Perspectiva para o flip 3D */
   perspective: 700px;
   cursor: pointer;
-  transition: transform 0.15s ease;
+  transition: transform 0.18s ease;
   will-change: transform;
   position: relative;
+  /* Garante que a carção selecionada sobreponha as vizinhas */
+  z-index: 1;
 }
 
 /* Hover: levanta a carta */
 .hand-modal__item:hover {
-  transform: translateY(-12px);
+  transform: translateY(-16px);
+  z-index: 10;
 }
 
-/* Selecionada para par */
+/* Selecionada para par — sobe bastante e fica acima de tudo */
 .hand-modal__item--selected {
-  transform: translateY(-12px) !important;
+  transform: translateY(-48px) scale(1.12) !important;
   filter: drop-shadow(0 0 10px rgba(255, 220, 0, 0.9));
   outline: 3px solid #ffe000;
   outline-offset: 2px;
-  border-radius: clamp(5px, 1.2vw, 9px);
+  border-radius: clamp(7px, 1.6vw, 11px);
   animation: hm-pulse-selected 0.9s ease infinite;
+  /* z-index alto garante sobreposição sobre avatares, badges e demais UI */
+  z-index: 99999 !important;
+  position: relative !important;
 }
 
 @keyframes hm-pulse-selected {

@@ -1278,3 +1278,171 @@
   transform: scale(0.96);
 }
 
+/* ============================================
+   MODAL DE FIM DE JOGO (game_over)
+   ============================================ */
+
+.game-over-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10100;
+  background: rgba(0, 0, 0, 0.75);
+  animation: goFadeIn 0.3s ease;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+@keyframes goFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.game-over-panel {
+  background: #1a1a2e;
+  border: 2px solid rgba(230, 57, 70, 0.5);
+  border-radius: 20px;
+  padding: 24px 20px 20px;
+  max-width: 380px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  animation: goPanelPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@keyframes goPanelPop {
+  from { transform: scale(0.75) translateY(30px); opacity: 0; }
+  to   { transform: scale(1)    translateY(0);    opacity: 1; }
+}
+
+.game-over-panel__header {
+  text-align: center;
+  font-size: 22px;
+  font-weight: 800;
+  color: #e63946;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+/* ── Cartão (perdedor / vencedor) ── */
+.game-over-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+
+.game-over-card--loser {
+  background: linear-gradient(135deg, rgba(230, 57, 70, 0.18), rgba(100, 20, 20, 0.35));
+  border: 1px solid rgba(230, 57, 70, 0.4);
+}
+
+.game-over-card--winner {
+  background: linear-gradient(135deg, rgba(255, 200, 30, 0.2), rgba(60, 100, 20, 0.35));
+  border: 1px solid rgba(255, 210, 50, 0.5);
+}
+
+.game-over-card__mico-img {
+  width: 44px;
+  height: auto;
+  border-radius: 6px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+
+.game-over-card__icon {
+  font-size: 36px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.game-over-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.game-over-card__name {
+  color: #fff;
+  font-size: 16px;
+}
+
+.game-over-card__label {
+  color: rgba(255,255,255,0.75);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.game-over-card__label strong {
+  color: #fff;
+}
+
+/* ── Lista de classificação (2°, 3°…) ── */
+.game-over-rank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.game-over-rank-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.game-over-rank-row__place {
+  font-size: 18px;
+  font-weight: 800;
+  color: rgba(255,255,255,0.5);
+  flex-shrink: 0;
+  min-width: 28px;
+}
+
+.game-over-rank-row__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.game-over-rank-row__info strong {
+  color: #fff;
+  font-size: 14px;
+}
+
+.game-over-rank-row__info span {
+  color: rgba(255,255,255,0.6);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* ── Botão voltar ── */
+.game-over-panel__btn {
+  background: #e63946;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 14px 28px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  width: 100%;
+  margin-top: 4px;
+  transition: background 0.15s ease, transform 0.1s ease;
+  letter-spacing: 0.3px;
+}
+
+.game-over-panel__btn:hover  { background: #c5313d; }
+.game-over-panel__btn:active { transform: scale(0.97); }
+
