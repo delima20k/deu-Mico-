@@ -86,7 +86,7 @@ body {
 
 /* ---------- Tela de Splash Gelo ---------- */
 .splash-ice {
-  background: var(--color-ice);
+  background: transparent;
   display: flex;
   flex-direction: column;
   align-items: center;
