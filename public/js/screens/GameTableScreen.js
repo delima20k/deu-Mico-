@@ -1125,11 +1125,15 @@ export class GameTableScreen extends Screen {
       const activeName   = activePlayer?.name ?? 'Jogador';
       this.#showTurnToast(`Vez de ${activeName}`);
 
-      // Se for jogador bot (mock), simula o turno automaticamente
+      // Se for jogador bot (mock), simula o turno automaticamente.
+      // APENAS o dealer controla bots para evitar execução duplicada entre clientes.
       if (this.#isAiPlayer(activeUid)) {
-        this.#handleAiTurn(activeUid, targetUid).catch(err =>
-          console.error('[GameTableScreen] Erro no turno bot:', err)
-        );
+        const dealerUid = this.#shuffleController?.youngestPlayer?.id;
+        if (this.#myUid === dealerUid) {
+          this.#handleAiTurn(activeUid, targetUid).catch(err =>
+            console.error('[GameTableScreen] Erro no turno bot:', err)
+          );
+        }
       }
     }
   }
@@ -1501,7 +1505,26 @@ export class GameTableScreen extends Screen {
       this.#turnOffset++;
     }
 
-    console.log('[GameTableScreen] Nenhum alvo com cartas — possível fim de jogo');
+    // Nenhum alvo válido encontrado — encerra o jogo
+    console.warn('[GameTableScreen] Nenhum alvo com cartas — forçando game_over');
+    let micoUid = null;
+    for (const [uid, hand] of this.#handMap) {
+      if (hand.length > 0) { micoUid = uid; break; }
+    }
+    const pairCounts = {};
+    for (const [uid, badge] of this.#pairsBadges) {
+      pairCounts[uid] = badge.pairCount;
+    }
+    try {
+      await MatchService.getInstance().writeGameState(this.#matchId, {
+        phase:      'game_over',
+        micoUid,
+        pairCounts,
+        ts:         Date.now() + 1,
+      });
+    } catch (err) {
+      this.#showGameOverModal({ micoUid, pairCounts });
+    }
   }
 
   /**
