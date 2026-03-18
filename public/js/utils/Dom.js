@@ -23,7 +23,9 @@ export class Dom {
   static create(tag, { classes = [], attrs = {}, html = null, text = null } = {}) {
     const el = document.createElement(tag);
 
-    const classList = Array.isArray(classes) ? classes : [classes];
+    const classList = Array.isArray(classes)
+      ? classes.flatMap(c => c.split(' '))
+      : classes.split(' ');
     classList.filter(Boolean).forEach(c => el.classList.add(c));
 
     Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));

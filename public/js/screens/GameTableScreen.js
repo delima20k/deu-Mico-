@@ -1602,6 +1602,10 @@ export class GameTableScreen extends Screen {
     btnBack.addEventListener('click', () => this.#onExitGame());
     panel.append(btnBack);
 
+    // Auto-redireciona após 10 s caso o jogador não clique
+    const autoExit = setTimeout(() => this.#onExitGame(), 10_000);
+    btnBack.addEventListener('click', () => clearTimeout(autoExit), { once: true });
+
     overlay.append(panel);
     this.getElement().append(overlay);
   }
