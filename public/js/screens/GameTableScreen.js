@@ -926,12 +926,7 @@ export class GameTableScreen extends Screen {
     }
 
     if (state.phase === 'game_over') {
-      const micoPlayer = this.#players.find(p => p.uid === state.micoUid);
-      const micoName  = micoPlayer?.name ?? 'Alguém';
-      const msg = state.micoUid === this.#myUid
-        ? '😢 Você ficou com o Mico!'
-        : `🎉 ${micoName} ficou com o Mico!`;
-      this.#showTurnToast(msg);
+      this.#showGameOverModal(state);
     }
   }
 
@@ -1446,21 +1441,22 @@ export class GameTableScreen extends Screen {
       for (const [uid, hand] of this.#handMap) {
         if (hand.length > 0) { micoUid = uid; break; }
       }
+      // Coleta contagem de pares de cada jogador
+      const pairCounts = {};
+      for (const [uid, badge] of this.#pairsBadges) {
+        pairCounts[uid] = badge.pairCount;
+      }
       try {
         await MatchService.getInstance().writeGameState(this.#matchId, {
-          phase:   'game_over',
+          phase:      'game_over',
           micoUid,
-          ts:      Date.now() + 1,
+          pairCounts,
+          ts:         Date.now() + 1,
         });
       } catch (err) {
         console.warn('[GameTableScreen] Erro ao transmitir game_over:', err);
         // Fallback local
-        const micoPlayer = this.#players.find(p => p.uid === micoUid);
-        const micoName   = micoPlayer?.name ?? 'Alguém';
-        const msg = micoUid === this.#myUid
-          ? '😢 Você ficou com o Mico!'
-          : `🎉 ${micoName} ficou com o Mico!`;
-        this.#showTurnToast(msg);
+        this.#showGameOverModal({ micoUid, pairCounts });
       }
       return;
     }
@@ -1499,6 +1495,108 @@ export class GameTableScreen extends Screen {
     }
 
     console.log('[GameTableScreen] Nenhum alvo com cartas — possível fim de jogo');
+  }
+
+  /**
+   * Exibe o modal de resultado final do jogo.
+   * Toca sons e exibe classificação completa dos jogadores.
+   * @param {{ micoUid: string, pairCounts?: Record<string,number> }} state
+   * @private
+   */
+  #showGameOverModal(state) {
+    const { micoUid, pairCounts = {} } = state;
+
+    // 1. Monta lista de jogadores com seus pares (usa pairCounts do evento
+    //    ou fallback para o badge local — garante dado correto em todos os clientes)
+    const nonMicoPlayers = this.#players
+      .filter(p => p.uid !== micoUid)
+      .map(p => ({
+        ...p,
+        pairs: pairCounts[p.uid] ?? this.#pairsBadges.get(p.uid)?.pairCount ?? 0,
+      }))
+      .sort((a, b) => b.pairs - a.pairs);
+
+    const micoPlayer = this.#players.find(p => p.uid === micoUid);
+    const micoName   = micoPlayer?.name ?? 'Jogador';
+    const micoIsMe   = micoUid === this.#myUid;
+    const winner     = nonMicoPlayers[0] ?? null;
+    const others     = nonMicoPlayers.slice(1);
+
+    // 2. Toca sons
+    AudioService.getInstance().playForce('game-over');
+    if (winner?.uid === this.#myUid) {
+      setTimeout(() => {
+        AudioService.getInstance().playForce('vitoria-comum');
+        setTimeout(() => AudioService.getInstance().playForce('fala-vitaria'), 800);
+      }, 700);
+    }
+
+    // 3. Remove overlay anterior se existir
+    this.getElement().querySelector('.game-over-overlay')?.remove();
+
+    // 4. Constrói o DOM do modal
+    const overlay = Dom.create('div', { classes: 'game-over-overlay' });
+    const panel   = Dom.create('div', { classes: 'game-over-panel' });
+
+    // ── Header ──────────────────────────────────────────────────────────
+    const header = Dom.create('div', { classes: 'game-over-panel__header', text: '🃏 FIM DE JOGO' });
+    panel.append(header);
+
+    // ── Card do perdedor (mico) ──────────────────────────────────────────
+    const loserCard = Dom.create('div', { classes: 'game-over-card game-over-card--loser' });
+    loserCard.innerHTML = `
+      <img class="game-over-card__mico-img" src="img/carta_mico.png" alt="Carta Mico" />
+      <div class="game-over-card__body">
+        <strong class="game-over-card__name">${micoIsMe ? 'Você' : micoName}</strong>
+        <span class="game-over-card__label">ficou com o Mico e <strong>PERDEU!</strong> 😢</span>
+      </div>
+    `;
+    panel.append(loserCard);
+
+    // ── Card do vencedor ─────────────────────────────────────────────────
+    if (winner) {
+      const winnerIsMe = winner.uid === this.#myUid;
+      const winnerCard = Dom.create('div', { classes: 'game-over-card game-over-card--winner' });
+      winnerCard.innerHTML = `
+        <span class="game-over-card__icon">🏆</span>
+        <div class="game-over-card__body">
+          <strong class="game-over-card__name">${winnerIsMe ? 'Você' : winner.name}</strong>
+          <span class="game-over-card__label">ganhou com <strong>${winner.pairs}</strong> par${winner.pairs !== 1 ? 'es' : ''}! 🎉</span>
+        </div>
+      `;
+      panel.append(winnerCard);
+    }
+
+    // ── Classificação dos demais (2°, 3°, 4°, 5°) ────────────────────────
+    if (others.length > 0) {
+      const rankList = Dom.create('div', { classes: 'game-over-rank-list' });
+      others.forEach((p, idx) => {
+        const place  = idx + 2;
+        const isMe   = p.uid === this.#myUid;
+        const row    = Dom.create('div', { classes: 'game-over-rank-row' });
+        row.innerHTML = `
+          <span class="game-over-rank-row__place">${place}°</span>
+          <div class="game-over-rank-row__info">
+            <strong>${isMe ? 'Você' : p.name}</strong>
+            <span>${p.pairs} par${p.pairs !== 1 ? 'es' : ''} · Não foi dessa vez, continue se divertindo! 😊</span>
+          </div>
+        `;
+        rankList.append(row);
+      });
+      panel.append(rankList);
+    }
+
+    // ── Botão voltar ─────────────────────────────────────────────────────
+    const btnBack = Dom.create('button', {
+      classes: 'game-over-panel__btn',
+      text:    'Voltar às Salas',
+      attrs:   { type: 'button' },
+    });
+    btnBack.addEventListener('click', () => this.#onExitGame());
+    panel.append(btnBack);
+
+    overlay.append(panel);
+    this.getElement().append(overlay);
   }
 
   /**

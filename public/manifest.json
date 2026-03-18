@@ -16,13 +16,13 @@
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/img/carta_logo.png",
+      "src": "/img/logoMarca.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/img/carta_logo.png",
+      "src": "/img/logoMarca.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"

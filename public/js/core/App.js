@@ -144,6 +144,10 @@ export class App {
     AudioService.getInstance().load('deal-start',    'audio/entragar-cartas.mp3', 1.0);
     AudioService.getInstance().setPlaybackRate('deal-start', 1.6);
     AudioService.getInstance().load('card-fly-land', 'audio/entragar-cartas.mp3', 0.9);
+    // Sons de fim de jogo
+    AudioService.getInstance().load('game-over',     'audio/game-over.mp3',      1.0);
+    AudioService.getInstance().load('vitoria-comum', 'audio/vitoria-comun.mp3',  1.0);
+    AudioService.getInstance().load('fala-vitaria',  'audio/fala-vitaria.mp3',   1.0);
     SoundManager.getInstance().load('made', 'audio/made.mp3', 0.8);
 
     // 5. Firebase — não bloqueia; funciona mesmo sem config
