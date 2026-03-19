@@ -9,9 +9,10 @@
  * Hero image em destaque, H1 grande, descrição e botão.
  * Footer com logos de marca e app stores.
  */
-import { Screen } from '../core/Screen.js';
-import { Dom }    from '../utils/Dom.js';
-import { Footer } from '../components/Footer.js';
+import { Screen }      from '../core/Screen.js';
+import { Dom }         from '../utils/Dom.js';
+import { Footer }      from '../components/Footer.js';
+import { AuthService } from '../services/AuthService.js';
 
 export class HomeScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
@@ -96,8 +97,20 @@ export class HomeScreen extends Screen {
     wrapper.appendChild(footer.create());
 
     // ── Eventos ────────────────────────────────────────────
-    const offPlay = Dom.on(playBtn, 'click', () => {
-      this.#manager.show('LoginScreen');
+    // Verifica estado de autenticação no momento do clique:
+    // - Se já logado → vai direto ao MenuScreen (evita form de login desnecessário)
+    // - Se não logado → vai ao LoginScreen
+    const offPlay = Dom.on(playBtn, 'click', async () => {
+      try {
+        const user = await AuthService.getInstance().getCurrentUser();
+        if (user) {
+          this.#manager.show('MenuScreen', { user });
+        } else {
+          this.#manager.show('LoginScreen');
+        }
+      } catch (_) {
+        this.#manager.show('LoginScreen');
+      }
     });
     this.#cleanups.push(offPlay);
 

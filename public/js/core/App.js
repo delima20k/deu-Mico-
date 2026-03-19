@@ -160,6 +160,13 @@ export class App {
   }
 
   async #start() {
+    // Limpa hashes que possam rotear diretamente ao jogo sem partida ativa.
+    // Isso evita que um hash #game-table ou #match fique preso na URL após
+    // um refresh/fechamento e cause navegação indevida via Router.
+    const staleHashes = ['#game-table', '#match'];
+    if (staleHashes.includes(window.location.hash)) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
     await this.#screenManager.show('SplashIceScreen');
   }
 }
