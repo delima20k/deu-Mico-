@@ -55,6 +55,12 @@ export class FirebaseService {
   /** @type {*} Módulos do Storage carregados dinamicamente */
   #storageMod = null;
 
+  /** @type {number|null} Timer do heartbeat periódico */
+  #heartbeatTimer = null;
+
+  /** @type {Function|null} Unsubscriber do monitor de conexão Firebase */
+  #connUnsubscribe = null;
+
   // -------------------------------------------------------
   // Singleton
   // -------------------------------------------------------
@@ -289,5 +295,67 @@ export class FirebaseService {
       displayName: fbUser.displayName || null,
       photoURL:    fbUser.photoURL || null,
     };
+  }
+
+  // -------------------------------------------------------
+  // Heartbeat — Mantém WebSocket ativo no Android PWA
+  // -------------------------------------------------------
+
+  /**
+   * Inicia ping periódico para manter o WebSocket do RTDB ativo.
+   * Especialmente útil no Android PWA que pode suspender conexões em background.
+   * Monitora .info/connected para logar reconexões e atualizar lastSeen.
+   * @param {string} matchId
+   * @param {string} uid
+   */
+  startHeartbeat(matchId, uid) {
+    this.stopHeartbeat();
+
+    const db    = this.#database;
+    const dbMod = this.#mod;
+    if (!db || !dbMod) {
+      console.warn('[Heartbeat] Firebase não inicializado — heartbeat não iniciado');
+      return;
+    }
+
+    // Monitora estado de conexão: loga e atualiza lastSeen ao reconectar
+    const connRef = dbMod.ref(db, '.info/connected');
+    this.#connUnsubscribe = dbMod.onValue(connRef, (snap) => {
+      const connected = snap.val();
+      console.log(`[Heartbeat] Firebase ${connected ? '✅ conectado' : '❌ desconectado'}`);
+      if (connected) {
+        const lastSeenRef = dbMod.ref(db, `matches/${matchId}/presence/${uid}/lastSeen`);
+        dbMod.set(lastSeenRef, Date.now()).catch(() => {});
+      }
+    });
+
+    // Ping periódico a cada 15s: escreve timestamp no nó heartbeat
+    this.#heartbeatTimer = setInterval(async () => {
+      try {
+        const heartbeatRef = dbMod.ref(db, `matches/${matchId}/presence/${uid}/heartbeat`);
+        await dbMod.set(heartbeatRef, Date.now());
+        console.log('[Heartbeat] ✓ ping enviado');
+      } catch (e) {
+        console.warn('[Heartbeat] Falha no ping:', e.message);
+      }
+    }, 15_000);
+
+    console.log(`[Heartbeat] iniciado — matchId=${matchId} uid=${uid.slice(0, 8)}...`);
+  }
+
+  /**
+   * Para o heartbeat e o monitor de conexão.
+   * Deve ser chamado em GameTableScreen.onExit().
+   */
+  stopHeartbeat() {
+    if (this.#heartbeatTimer) {
+      clearInterval(this.#heartbeatTimer);
+      this.#heartbeatTimer = null;
+    }
+    if (this.#connUnsubscribe) {
+      this.#connUnsubscribe();
+      this.#connUnsubscribe = null;
+    }
+    console.log('[Heartbeat] parado');
   }
 }

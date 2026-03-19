@@ -641,6 +641,19 @@ export class MatchService {
     const dbMod = this.#matchRepository.getDbModules();
     if (!db) throw new Error('[GameState] Database não inicializado');
 
+    // Para turn_start: tenta via servidor primeiro (escrita autoritativa evita race conditions)
+    if (state.phase === 'turn_start') {
+      const apiOk = await this.#callNextTurnAPI(matchId, state).catch(() => false);
+      if (apiOk) {
+        const isPWA = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        const env = isPWA ? 'PWA' : 'Navegador';
+        console.log(`[TURNO] 🔄 Escrevendo turno → próximo: ${state.activeUid} | fase: ${state.phase} | offset: ${state.turnOffset} | ambiente: ${env} | matchId: ${matchId} | via: API`);
+        return;
+      }
+      // Fallback: escrita direta se a API falhou
+      console.warn('[TURNO] ⚠️ API falhou — usando escrita direta no Firebase');
+    }
+
     const ref = dbMod.ref(db, `matches/${matchId}/gameState`);
     await dbMod.set(ref, state);
     console.log(`[GameState] escrito phase=${state.phase} matchId=${matchId}`);
@@ -649,6 +662,48 @@ export class MatchService {
       const isPWA = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
       const env = isPWA ? 'PWA' : 'Navegador';
       console.log(`[TURNO] 🔄 Escrevendo turno → próximo: ${state.activeUid} | fase: ${state.phase} | offset: ${state.turnOffset} | ambiente: ${env} | matchId: ${matchId}`);
+    }
+  }
+
+  /**
+   * Tenta escrever a mudança de turno via endpoint serverless /api/next-turn.
+   * O servidor usa Firebase Admin SDK — escrita autoritativa, evita race conditions.
+   * Se falhar (offline, rede, API down), retorna false e o caller usa escrita direta.
+   * @param {string} matchId
+   * @param {Object} state - gameState com phase, activeUid, targetUid, turnOffset, ts
+   * @returns {Promise<boolean>} true se o servidor escreveu com sucesso
+   * @private
+   */
+  async #callNextTurnAPI(matchId, state) {
+    try {
+      const authService = AuthService.getInstance();
+      const currentUser = await authService.getCurrentUser();
+      const fromUid = currentUser?.uid;
+      if (!fromUid) return false;
+
+      const res = await fetch('/api/next-turn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          matchId,
+          fromUid,
+          toUid:      state.activeUid,
+          targetUid:  state.targetUid,
+          phase:      state.phase,
+          turnOffset: state.turnOffset,
+          ts:         state.ts,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        console.warn('[next-turn API] Falhou:', data.error);
+        return false;
+      }
+      console.log('[next-turn API] ✅ Turno escrito pelo servidor');
+      return true;
+    } catch (e) {
+      console.warn('[next-turn API] Erro de rede:', e.message);
+      return false;
     }
   }
 

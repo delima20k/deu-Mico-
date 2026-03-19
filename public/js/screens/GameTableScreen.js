@@ -33,6 +33,7 @@ import { OpponentPickPanel }  from '../components/OpponentPickPanel.js';
 import { CardRevealModal }    from '../components/CardRevealModal.js';
 import { flyCardToAvatar, flyCardBetweenAvatars, animatePairArcToButton } from '../utils/CardFlyAnimator.js';
 import { AudioService }       from '../services/AudioService.js';
+import { FirebaseService }    from '../services/FirebaseService.js';
 
 export class GameTableScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
@@ -187,6 +188,7 @@ export class GameTableScreen extends Screen {
     // Re-escreve a própria presença (aguarda) para garantir que o monitor
     // de presença captura snapshot completo com todos os jogadores
     await this.#writeOwnPresence();
+    FirebaseService.getInstance().startHeartbeat(this.#matchId, this.#myUid);
     await this.#renderTable();
   }
 
@@ -502,7 +504,10 @@ export class GameTableScreen extends Screen {
 
     // Volta a travar orientação em portrait ao sair da mesa
     try { if (screen.orientation?.lock) screen.orientation.lock('portrait').catch(() => {}); } catch (_) {}
-    
+
+    // Para o heartbeat Firebase (ping periódico)
+    FirebaseService.getInstance().stopHeartbeat();
+
     // Cancela saída automática por abandono (se agendada)
     if (this.#autoExitTimer !== null) {
       clearTimeout(this.#autoExitTimer);
