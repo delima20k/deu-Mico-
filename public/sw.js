@@ -10,7 +10,7 @@
  * Para invalidar o cache em produção: incremente CACHE_VERSION.
  */
 
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const CACHE_NAME    = `deu-mico-${CACHE_VERSION}`;
 
 /** Assets pré-cacheados no install — todos devem existir em produção. */
@@ -37,6 +37,8 @@ const STATIC_ASSETS = [
   '/img/carta_mico.png',
   '/img/baixa-android.png',
   '/img/baixaIOS.png',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
 ];
 
 // ── Install: pré-cache dos assets essenciais ──────────────────────────────
