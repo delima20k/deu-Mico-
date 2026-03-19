@@ -10,7 +10,7 @@
  * Para invalidar o cache em produção: incremente CACHE_VERSION.
  */
 
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v6';
 const CACHE_NAME    = `deu-mico-${CACHE_VERSION}`;
 
 /** Assets pré-cacheados no install — todos devem existir em produção. */
@@ -39,6 +39,20 @@ const STATIC_ASSETS = [
   '/img/baixaIOS.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
+];
+
+/**
+ * Origens que NUNCA devem ser interceptadas pelo SW.
+ * Firebase usa WebSocket (wss://) e long-polling (https://); qualquer
+ * interferência do SW pode bloquear a sincronização em tempo real no Android.
+ */
+const FIREBASE_BYPASS_HOSTNAMES = [
+  'firebaseio.com',
+  'googleapis.com',
+  'firebase.com',
+  'firebaseapp.com',
+  'firebasestorage.googleapis.com',
+  'gstatic.com',
 ];
 
 // ── Install: pré-cache dos assets essenciais ──────────────────────────────
@@ -86,7 +100,12 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
 
-  // 1. Requisições de API → Network Only (Firebase, avatar-proxy, etc.)
+  // 1a. Origens Firebase/Google → nunca interceptar (WebSocket + long-polling)
+  if (FIREBASE_BYPASS_HOSTNAMES.some(h => url.hostname.endsWith(h))) {
+    return; // passa direto para o browser/network
+  }
+
+  // 1b. Requisições de API ou qualquer outra origem externa → Network Only
   if (url.pathname.startsWith('/api/') || url.origin !== self.location.origin) {
     return; // deixa o browser tratar normalmente
   }
