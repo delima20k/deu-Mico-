@@ -97,6 +97,9 @@ export class GameTableScreen extends Screen {
   /** @type {number} Timestamp do último evento de estado de jogo processado */
   #lastGameEventTs = 0;
 
+  /** @type {number} Último turnOffset de turn_start processado (dedup imune a clock drift) */
+  #lastTurnOffset = 0;
+
   /** @type {boolean} Trava para evitar processamento duplo de eventos */
   #gameStateLock = false;
 
@@ -423,7 +426,7 @@ export class GameTableScreen extends Screen {
 
       // 2. Obtém UID do jogador logado
       console.log(`[GameTableScreen.onRoomReady] 🔐 Obtendo usuário logado...`);
-      const currentUser = AuthService.getInstance().getCurrentUser();
+      const currentUser = await AuthService.getInstance().getCurrentUser();
       if (!currentUser) {
         throw new Error('Usuário não está logado');
       }
@@ -525,6 +528,7 @@ export class GameTableScreen extends Screen {
     this.#gameStateUnsub  = null;
     this.#gameStateLock   = false;
     this.#lastGameEventTs = 0;
+    this.#lastTurnOffset  = 0;
 
     // Remove indicador de roubo no avatar (se estiver ativo)
     this.#clearStealHint();
@@ -818,8 +822,15 @@ export class GameTableScreen extends Screen {
       this.#matchId,
       (state) => {
         if (!state?.phase) return;
-        // Ignora eventos mais antigos OU repetidos (mesmo ts = replay do mesmo snapshot)
-        if (state.ts && state.ts <= this.#lastGameEventTs) return;
+        if (state.phase === 'turn_start') {
+          // Para turn_start usa turnOffset como chave única — imune a clock drift
+          // entre clientes diferentes que escrevem com Date.now() local.
+          if (state.turnOffset != null && state.turnOffset <= this.#lastTurnOffset) return;
+          if (state.turnOffset != null) this.#lastTurnOffset = state.turnOffset;
+        } else {
+          // Para outros eventos (card_fly, pair_formed, etc.) usa ts — mesma origem
+          if (state.ts && state.ts <= this.#lastGameEventTs) return;
+        }
         this.#handleGameState(state).catch(err =>
           console.error('[GameTableScreen] Erro em handleGameState:', err)
         );

@@ -22,22 +22,34 @@
 const { initializeApp, getApps, cert } = require('firebase-admin/app');
 const { getDatabase }                  = require('firebase-admin/database');
 
-// Inicializa Firebase Admin uma única vez (reutilizado entre invocações warm)
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId:   process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey:  process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-    databaseURL: process.env.FIREBASE_DATABASE_URL,
-  });
-}
-
 module.exports = async (req, res) => {
   // Apenas POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Verifica env vars antes de qualquer inicialização do Admin SDK
+  // (evita que o Vercel retorne HTML 500 por exceção não capturada no módulo)
+  const { FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, FIREBASE_DATABASE_URL } = process.env;
+  if (!FIREBASE_PROJECT_ID || !FIREBASE_CLIENT_EMAIL || !FIREBASE_PRIVATE_KEY || !FIREBASE_DATABASE_URL) {
+    console.warn('[next-turn] Firebase Admin não configurado — variáveis de ambiente faltando');
+    return res.status(200).json({
+      success: false,
+      reason:  'admin_not_configured',
+      message: 'Server-side turn validation not available, use client fallback',
+    });
+  }
+
+  // Inicializa Firebase Admin uma única vez (reutilizado entre invocações warm)
+  if (!getApps().length) {
+    initializeApp({
+      credential: cert({
+        projectId:   FIREBASE_PROJECT_ID,
+        clientEmail: FIREBASE_CLIENT_EMAIL,
+        privateKey:  FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      }),
+      databaseURL: FIREBASE_DATABASE_URL,
+    });
   }
 
   const { matchId, fromUid, toUid, targetUid, phase, turnOffset, ts } = req.body ?? {};
