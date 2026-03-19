@@ -10,7 +10,7 @@
  * Para invalidar o cache em produção: incremente CACHE_VERSION.
  */
 
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const CACHE_NAME    = `deu-mico-${CACHE_VERSION}`;
 
 /** Assets pré-cacheados no install — todos devem existir em produção. */
@@ -59,6 +59,22 @@ self.addEventListener('activate', (event) => {
     )
   );
   self.clients.claim();
+});
+
+// ── Message: responde imediatamente para não deixar canal de mensagem aberto ─
+// Evita: "A listener indicated an asynchronous response by returning true,
+//         but the message channel closed before a response was received"
+// O Firebase Auth SDK envia mensagens ao SW durante o fluxo de autenticação;
+// sem este handler, o canal fecha sem resposta e gera warnings/instabilidade.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+    return;
+  }
+  // Responde imediatamente a qualquer outra mensagem (Firebase Auth, etc.)
+  if (event.ports && event.ports[0]) {
+    event.ports[0].postMessage({ handled: false });
+  }
 });
 
 // ── Fetch ─────────────────────────────────────────────────────────────────
