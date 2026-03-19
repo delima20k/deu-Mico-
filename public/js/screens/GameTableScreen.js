@@ -160,9 +160,18 @@ export class GameTableScreen extends Screen {
    * @param {string} [params.myUid] - UID do jogador logado
    */
   async onEnter(params = {}) {
-    this.#matchId = params.matchId || 'match_test';
+    // Guarda de segurança: exige matchId real fornecido via NavigationService.toGameTable().
+    // Sem ele, o usuário pode ter chegado aqui por hash stale (#game-table na URL)
+    // ou por navegação direta sem partida ativa — redireciona para Home.
+    if (!params.matchId) {
+      console.warn('[GameTableScreen] ⚠️ Acesso sem matchId válido — redirecionando para HomeScreen');
+      this.#screenManager.show('HomeScreen');
+      return;
+    }
+
+    this.#matchId = params.matchId;
     this.#roomType = params.roomType || '2p';
-    this.#myUid = params.myUid || this.#getCurrentUserUid();
+    this.#myUid   = params.myUid   || this.#getCurrentUserUid();
     this.#players = params.players || await this.#generateMockPlayers();
 
     // Libera rotação landscape apenas na mesa de jogo
@@ -586,13 +595,18 @@ export class GameTableScreen extends Screen {
   #startPresenceMonitor() {
     this.#presenceUnsub?.();
 
-    // Pré-popula baseline a partir da lista definitiva de jogadores
-    // (evita race condition: não depende do primeiro snapshot do Firebase)
+    // Pré-popula apenas o mapa de nomes (para exibição em notificações).
+    // NÃO pré-populamos #prevPlayerUids com this.#players:
+    // o primeiro callback do Firebase estabelece o baseline real.
+    // Pré-popular causaria falso-positivo "player left" quando o snapshot
+    // chega ANTES de todos os jogadores re-escreverem presença após a
+    // transição MatchRoomScreen → GameTableScreen (race condition clássica:
+    // Firebase SDK pode descartar cache local ao substituir o listener).
     this.#presenceMap = {};
     for (const p of this.#players) {
       this.#presenceMap[p.uid] = p;
     }
-    this.#prevPlayerUids = new Set(this.#players.map(p => p.uid));
+    this.#prevPlayerUids = new Set(); // será populado pelo 1º snapshot do Firebase
 
     this.#presenceUnsub = MatchService.getInstance().subscribePresence(
       this.#matchId,
@@ -933,6 +947,14 @@ export class GameTableScreen extends Screen {
     }
 
     if (state.phase === 'game_over') {
+      // Guard: ignora evento stale que chega como primeiro snapshot
+      // (pode ocorrer se o Firebase ainda tem um game_over de sessão anterior
+      // para este matchId, já que #handMap só é populado após a distribuição).
+      const hasDealtCards = [...this.#handMap.values()].some(h => h.length > 0);
+      if (!hasDealtCards) {
+        console.warn('[GameTableScreen] ⚠️ game_over ignorado — cartas ainda não distribuídas (evento stale ou prematuro)');
+        return;
+      }
       this.#showGameOverModal(state);
     }
   }

@@ -24,6 +24,9 @@ export class ScreenManager {
   /** @type {boolean} */
   #transitioning = false;
 
+  /** @type {boolean} — true enquanto onEnter() da tela atual ainda está em execução */
+  #entering = false;
+
   /**
    * @param {HTMLElement} root - Container onde as telas serão montadas
    */
@@ -99,8 +102,18 @@ export class ScreenManager {
     this.#current      = next;
     this.#transitioning = false;
 
-    // 3. Chama onEnter após visibilidade
-    await next.onEnter(params);
+    // 3. Chama onEnter após visibilidade.
+    // ATENÇÃO: #transitioning já é false aqui para permitir que a tela responda
+    // a interações do usuário durante o onEnter (ex: botão sair do jogo).
+    // A proteção contra re-entrada na MESMA tela é garantida por #current === next.
+    // Para evitar que uma nova tela seja exibida enquanto onEnter ainda está em
+    // execução, usamos #entering como flag de guarda adicional.
+    this.#entering = true;
+    try {
+      await next.onEnter(params);
+    } finally {
+      this.#entering = false;
+    }
   }
 
   // -------------------------------------------------------
@@ -112,4 +125,7 @@ export class ScreenManager {
 
   /** @returns {string[]} */
   getRegisteredScreens() { return Array.from(this.#screens.keys()); }
+
+  /** @returns {boolean} true enquanto onEnter() da tela atual ainda está rodando */
+  isEnteringScreen() { return this.#entering; }
 }
