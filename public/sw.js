@@ -10,7 +10,7 @@
  * Para invalidar o cache em produção: incremente CACHE_VERSION.
  */
 
-const CACHE_VERSION = 'v6';
+const CACHE_VERSION = 'v7';
 const CACHE_NAME    = `deu-mico-${CACHE_VERSION}`;
 
 /** Assets pré-cacheados no install — todos devem existir em produção. */
@@ -85,6 +85,14 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+    return;
+  }
+  // Notifica todos os clientes para chamar goOnline() no Firebase
+  // (o SW não tem acesso direto ao Firebase SDK)
+  if (event.data && event.data.type === 'FIREBASE_GOTO_ONLINE') {
+    self.clients.matchAll({ type: 'window' }).then(clients => {
+      clients.forEach(client => client.postMessage({ type: 'RECONNECT_FIREBASE' }));
+    });
     return;
   }
   // Responde imediatamente a qualquer outra mensagem (Firebase Auth, etc.)

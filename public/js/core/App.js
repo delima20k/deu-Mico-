@@ -155,6 +155,45 @@ export class App {
       console.warn('[App] Firebase init falhou silenciosamente:', err.message);
     });
 
+    // 5.5. Reconexão Firebase após background (PWA Android / rede instável)
+    // Quando o PWA fica em segundo plano no Android, o SO pode suspender o
+    // WebSocket do Firebase. Ao voltar ao foreground, forçamos goOnline().
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        const fs    = FirebaseService.getInstance();
+        const db    = fs.getDatabase();
+        const dbMod = fs.getDbModules();
+        if (db && dbMod?.goOnline) {
+          console.log('[Firebase] 🔄 App voltou ao foreground — forçando reconexão');
+          dbMod.goOnline(db);
+          // Verifica imediatamente o status da conexão
+          const connRef = dbMod.ref(db, '.info/connected');
+          dbMod.onValue(connRef, (snap) => {
+            console.log('[Firebase] Conexão:', snap.val() ? '✅ online' : '❌ offline');
+          }, { onlyOnce: true });
+        }
+      }
+    });
+
+    window.addEventListener('online', () => {
+      console.log('[Firebase] 🌐 Network online detectado — forçando reconexão');
+      const fs    = FirebaseService.getInstance();
+      const db    = fs.getDatabase();
+      const dbMod = fs.getDbModules();
+      if (db && dbMod?.goOnline) dbMod.goOnline(db);
+    });
+
+    // Recebe mensagem do Service Worker solicitando reconexão Firebase
+    navigator.serviceWorker?.addEventListener('message', (event) => {
+      if (event.data?.type === 'RECONNECT_FIREBASE') {
+        console.log('[Firebase] 📨 SW solicitou reconexão — chamando goOnline');
+        const fs    = FirebaseService.getInstance();
+        const db    = fs.getDatabase();
+        const dbMod = fs.getDbModules();
+        if (db && dbMod?.goOnline) dbMod.goOnline(db);
+      }
+    });
+
     // 6. Lança a primeira tela
     await this.#start();
   }

@@ -917,6 +917,9 @@ export class GameTableScreen extends Screen {
     }
 
     if (state.phase === 'turn_start') {
+      const isPWA = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      const env = isPWA ? 'PWA' : 'Navegador';
+      console.log(`[TURNO] 🎮 Processando turno | meuUid: ${this.#myUid?.slice(0, 8)} | currentPlayer: ${state.activeUid?.slice(0, 8)} | target: ${state.targetUid?.slice(0, 8)} | é minha vez: ${state.activeUid === this.#myUid} | offset: ${state.turnOffset} | ambiente: ${env}`);
       // Sincroniza offset de turno e ativa UI de roubo/observação
       if (state.turnOffset != null) this.#turnOffset = state.turnOffset;
       this.#onTurnStart(state.activeUid, state.targetUid);
@@ -1137,6 +1140,10 @@ export class GameTableScreen extends Screen {
     // Remove qualquer hint anterior e fecha painel de escolha aberto
     this.#clearStealHint();
     this.#opponentPickPanel?.hide();
+
+    const isPWA = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    const env = isPWA ? 'PWA' : 'Navegador';
+    console.log(`[TURNO] ▶️ onTurnStart | ativo: ${activeUid?.slice(0, 8)} | alvo: ${targetUid?.slice(0, 8)} | é minha vez: ${activeUid === this.#myUid} | ambiente: ${env}`);
 
     if (activeUid === this.#myUid) {
       // É minha vez — destaca o avatar do alvo e aguarda clique

@@ -644,6 +644,12 @@ export class MatchService {
     const ref = dbMod.ref(db, `matches/${matchId}/gameState`);
     await dbMod.set(ref, state);
     console.log(`[GameState] escrito phase=${state.phase} matchId=${matchId}`);
+
+    if (state.phase === 'turn_start') {
+      const isPWA = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      const env = isPWA ? 'PWA' : 'Navegador';
+      console.log(`[TURNO] 🔄 Escrevendo turno → próximo: ${state.activeUid} | fase: ${state.phase} | offset: ${state.turnOffset} | ambiente: ${env} | matchId: ${matchId}`);
+    }
   }
 
   /**
@@ -665,7 +671,16 @@ export class MatchService {
 
       const ref   = dbMod.ref(db, `matches/${matchId}/gameState`);
       const unsub = dbMod.onValue(ref, (snap) => {
-        if (snap.exists()) callback(snap.val());
+        if (snap.exists()) {
+          const data = snap.val();
+          if (data?.phase === 'turn_start') {
+            const myUid = AuthService.getInstance().getCurrentUser()?.uid;
+            const isPWA = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+            const env = isPWA ? 'PWA' : 'Navegador';
+            console.log(`[TURNO] 📥 Recebendo turno → activePlayer: ${data.activeUid} | target: ${data.targetUid} | fase: ${data.phase} | minha vez: ${data.activeUid === myUid} | ambiente: ${env}`);
+          }
+          callback(data);
+        }
       }, (err) => {
         console.error('[GameState] Erro no listener:', err);
       });
