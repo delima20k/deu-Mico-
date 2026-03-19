@@ -1,60 +1,51 @@
 /**
  * generate-icons.js
  *
- * Gera ícones placeholder para o PWA copiando `/public/img/carta_logo.png`
- * para cada tamanho necessário em `/public/icons/`.
- *
- * As imagens NÃO são redimensionadas (requer `sharp` para isso).
- * Para gerar ícones com tamanhos corretos, instale sharp e use:
- *   npm install sharp
- *   # depois descomente o bloco "com sharp" abaixo
+ * Gera ícones PWA com fundo BRANCO redimensionados usando jimp.
+ * O logo é centralizado com padding dentro de um canvas branco.
  *
  * Uso:
  *   node generate-icons.js
  */
 
-const fs   = require('fs');
+const { Jimp, HorizontalAlign, VerticalAlign, BlendMode } = require('jimp');
 const path = require('path');
+const fs   = require('fs');
 
 const SOURCE = path.join(__dirname, 'public', 'img', 'carta_logo.png');
 const DEST   = path.join(__dirname, 'public', 'icons');
 const SIZES  = [72, 96, 128, 144, 152, 192, 384, 512];
 
-// ── Verificações ────────────────────────────────────────────────────────────
-if (!fs.existsSync(SOURCE)) {
-  console.error('[!] Arquivo de origem não encontrado:', SOURCE);
-  process.exit(1);
-}
-
 fs.mkdirSync(DEST, { recursive: true });
 
-// ── Opção A: cópia simples (sem redimensionamento) ─────────────────────────
-// Útil para ter os arquivos presentes e passarem na validação do PWABuilder.
-// Para a Play Store, substitua por ícones redimensionados corretamente.
+async function generateIcons() {
+  const logo = await Jimp.read(SOURCE);
 
-SIZES.forEach((size) => {
-  const destFile = path.join(DEST, `icon-${size}.png`);
-  fs.copyFileSync(SOURCE, destFile);
-  console.log(`✔ Criado: public/icons/icon-${size}.png (cópia placeholder — ${size}×${size})`);
+  for (const size of SIZES) {
+    // Canvas branco opaco
+    const canvas = new Jimp({ width: size, height: size, color: 0xFFFFFFFF });
+
+    // Padding de 10% em cada lado
+    const padding   = Math.round(size * 0.10);
+    const innerSize = size - padding * 2;
+
+    // Clona e redimensiona o logo mantendo proporção dentro do espaço disponível
+    const resized = logo.clone().contain({ w: innerSize, h: innerSize });
+
+    // Centraliza o logo no canvas branco
+    const x = Math.round((size - resized.width)  / 2);
+    const y = Math.round((size - resized.height) / 2);
+    canvas.composite(resized, x, y);
+
+    const destFile = path.join(DEST, `icon-${size}.png`);
+    await canvas.write(destFile);
+    console.log(`✔ icon-${size}.png — fundo branco, ${size}×${size}px`);
+  }
+
+  console.log('\n✅ Ícones gerados com fundo branco em public/icons/');
+}
+
+generateIcons().catch(err => {
+  console.error('Erro ao gerar ícones:', err.message);
+  process.exit(1);
 });
-
-console.log('\n✅ Ícones placeholder gerados em public/icons/');
-console.log('⚠  Os ícones são cópias de carta_logo.png (não redimensionadas).');
-console.log('   Para ícones com tamanhos corretos, use:');
-console.log('   → https://www.pwabuilder.com/imageGenerator');
-console.log('   → npm install sharp  (e depois use o bloco comentado abaixo)\n');
-
-// ── Opção B: redimensionamento real com sharp (descomente se disponível) ───
-/*
-const sharp = require('sharp');
-
-Promise.all(
-  SIZES.map((size) =>
-    sharp(SOURCE)
-      .resize(size, size, { fit: 'contain', background: { r: 18, g: 18, b: 18, alpha: 1 } })
-      .png()
-      .toFile(path.join(DEST, `icon-${size}.png`))
-      .then(() => console.log(`✔ icon-${size}.png gerado com sharp`))
-  )
-).then(() => console.log('\n✅ Todos os ícones redimensionados com sharp.'));
-*/

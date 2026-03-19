@@ -99,6 +99,8 @@ body {
   width: clamp(120px, 40vw, 220px);
   height: auto;
   object-fit: contain;
+  background: #ffffff;
+  border-radius: 16px;
   /* Leve pulse de entrada */
   animation: logoFadeIn 0.8s ease forwards;
 }
