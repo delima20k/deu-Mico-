@@ -21,6 +21,8 @@
 import { UserRepository }         from '../repositories/UserRepository.js';
 import { Player }                  from '../domain/Player.js';
 import { YoungestPlayerResolver }  from '../domain/YoungestPlayerResolver.js';
+import { AdService }              from './adService.js';
+import { AdConfig }               from './adConfig.js';
 
 export class DealerSelectionService {
   /** @type {DealerSelectionService|null} */
@@ -83,6 +85,28 @@ export class DealerSelectionService {
       youngestAge:        winner.resolvedAge,
       youngestPlayer:     winner,   // Player instance para uso no ShuffleController
     };
+  }
+
+  /**
+   * Oferece rewarded opcional ao dealer (primeiro jogador / jogador mais novo).
+   * Chamado pela tela de jogo, não bloqueia o fluxo.
+   * @param {string} dealerUid - UID do dealer selecionado
+   * @param {string} currentUserUid - UID do jogador logado
+   * @returns {Promise<boolean>} true se recompensa concedida
+   */
+  async offerFirstPlayerReward(dealerUid, currentUserUid) {
+    if (!AdConfig.enableFirstPlayerReward) return false;
+    if (dealerUid !== currentUserUid) return false;
+
+    const result = await AdService.getInstance()
+      .showRewarded(AdConfig.rewardedTriggers.firstPlayerBonus)
+      .catch(() => ({ rewarded: false }));
+
+    if (result.rewarded) {
+      AdService.getInstance().grantReward(AdConfig.rewardTypes.firstPlayerBonus);
+      return true;
+    }
+    return false;
   }
 
   /**

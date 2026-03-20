@@ -30,6 +30,7 @@ const STATIC_ASSETS = [
   '/css/deck-shuffle.css',
   '/css/deck-action-panel.css',
   '/css/hand-modal.css',
+  '/css/ads.css',
   '/img/carta_logo.png',
   '/img/logoMarca.png',
   '/img/carta_home.png',

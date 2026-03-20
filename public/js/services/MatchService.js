@@ -477,6 +477,22 @@ export class MatchService {
     console.log(`[GameExit] presence removed uid=${uid?.slice(0, 8)}...`);
   }
 
+  /**
+   * Limpa todas as mensagens de chat de uma partida (game over).
+   * @param {string} matchId
+   * @returns {Promise<void>}
+   */
+  async clearChat(matchId) {
+    try {
+      this.stopObservingChat(matchId);
+      await this.#matchRepository.clearChat(matchId);
+      this.#chatCache.delete(matchId);
+      console.log(`[Chat] Chat limpo para matchId="${matchId}"`);
+    } catch (err) {
+      console.warn(`[Chat] Erro ao limpar chat (${matchId}):`, err);
+    }
+  }
+
   // -------------------------------------------------------
   // Presença em Tempo Real (Firebase presence)
   // -------------------------------------------------------

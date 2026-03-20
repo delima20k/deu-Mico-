@@ -1,0 +1,49 @@
+{
+  "packageId": "com.deumico.app",
+  "host": "www.deu-mico.com.br",
+  "name": "Deu Mico",
+  "launcherName": "Deu Mico",
+  "display": "standalone",
+  "themeColor": "#e63946",
+  "navigationColor": "#e63946",
+  "navigationColorDark": "#b71c1c",
+  "navigationDividerColor": "#00000000",
+  "navigationDividerColorDark": "#00000000",
+  "backgroundColor": "#F3F6F8",
+  "enableNotifications": false,
+  "startUrl": "/?source=twa",
+  "iconUrl": "https://www.deu-mico.com.br/img/carta_logo.png",
+  "maskableIconUrl": "https://www.deu-mico.com.br/img/carta_logo.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "android-keystore/deu-mico.keystore",
+    "alias": "deu-mico"
+  },
+  "appVersionCode": 1,
+  "appVersionName": "1.0.0",
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://www.deu-mico.com.br/manifest.json",
+  "fallbackType": "customtabs",
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://www.deu-mico.com.br/",
+  "minSdkVersion": 23,
+  "orientation": "natural",
+  "fingerprints": [
+    {
+      "name": "PLACEHOLDER — substituir pelo SHA-256 real do keystore",
+      "value": "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"
+    }
+  ],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "playBilling": {
+    "enabled": false
+  },
+  "locationDelegation": {
+    "enabled": false
+  },
+  "features": {}
+}

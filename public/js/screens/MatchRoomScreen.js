@@ -23,6 +23,8 @@ import { TableLayoutService } from '../services/TableLayoutService.js';
 import { GameRoomType } from '../domain/GameRoomType.js';
 import { LobbyRepository } from '../repositories/LobbyRepository.js';
 import { GameExitButton } from '../components/GameExitButton.js';
+import { AdService } from '../services/adService.js';
+import { AdConfig }  from '../services/adConfig.js';
 
 export class MatchRoomScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
@@ -64,8 +66,20 @@ export class MatchRoomScreen extends Screen {
   /** @type {ReturnType<typeof setTimeout>|null} Timeout de 20s aguardando assign */
   #assignTimeoutId = null;
 
+  /** @type {boolean} Se o rewarded de primeiro jogador já foi usado neste lobby */
+  #rewardedFirstPlayerUsed = false;
+
+  /** @type {number} Contagem atual de jogadores na sala */
+  #currentPlayerCount = 1;
+
   /** @type {HTMLElement|null} Container raiz resolvido uma vez em onEnter */
   #containerEl = null;
+
+  /** @type {ReturnType<typeof setTimeout>|null} Timer de 15s para interstitial no lobby */
+  #lobbyInterstitialTimer = null;
+
+  /** @type {boolean} Se o interstitial de lobby já foi exibido nesta sessão de tela */
+  #lobbyInterstitialShown = false;
 
   /**
    * @param {import('../core/ScreenManager.js').ScreenManager} screenManager
@@ -98,6 +112,9 @@ export class MatchRoomScreen extends Screen {
     this.#matchId = '';
     this.#hasNavigatedToGameTable = false;
     this.#expectedPlayerCount = null;
+    this.#rewardedFirstPlayerUsed = false;
+    this.#lobbyInterstitialShown = false;
+    this.#clearLobbyInterstitialTimer();
 
     // 2. Obtém uid real do Firebase Auth
     const authService = AuthService.getInstance();
@@ -213,6 +230,58 @@ export class MatchRoomScreen extends Screen {
       btn.addEventListener('click', () => this.#onLeaveRoom());
       wrapper.append(btn);
 
+      // ── Banner de anúncio na sala de espera ──────────────
+      const adBanner = Dom.create('div', {
+        classes: 'ad-slot',
+        attrs: { id: 'ad-banner-waiting' },
+      });
+      wrapper.append(adBanner);
+
+      // ── Rewarded opcional: assistir vídeo ────────────────
+      if (AdConfig.enableRewarded) {
+        const rewardSlot = Dom.create('div', {
+          classes: 'reward-slot',
+          attrs: { id: 'rewarded-waiting-slot' },
+        });
+        const rewardBtn = Dom.create('button', {
+          classes: 'reward-slot__btn',
+          text: '\uD83C\uDFAC Assistir vídeo e ganhar benefício',
+          attrs: { type: 'button' },
+        });
+        rewardBtn.addEventListener('click', async () => {
+          rewardBtn.disabled = true;
+          rewardBtn.textContent = 'Carregando\u2026';
+          const result = await AdService.getInstance()
+            .showRewarded(AdConfig.rewardedTriggers.waitingReward)
+            .catch(() => ({ rewarded: false }));
+          if (result.rewarded) {
+            AdService.getInstance().grantReward(AdConfig.rewardTypes.waitingReward);
+            rewardBtn.textContent = '\u2705 Benefício recebido!';
+          } else {
+            rewardBtn.textContent = '\uD83C\uDFAC Assistir vídeo e ganhar benefício';
+            rewardBtn.disabled = false;
+          }
+        });
+        rewardSlot.append(rewardBtn);
+        wrapper.append(rewardSlot);
+      }
+
+      // ── Mostrar banner (serviço) ─────────────────────────
+      AdService.getInstance().showBanner(AdConfig.bannerPlacements.waiting);
+
+      // ── Interstitial após 15 s no lobby (apenas 1×) ──────
+      if (!this.#lobbyInterstitialShown) {
+        this.#clearLobbyInterstitialTimer();
+        this.#lobbyInterstitialTimer = setTimeout(async () => {
+          if (this.#lobbyInterstitialShown) return;
+          this.#lobbyInterstitialShown = true;
+          // TODO [AdMob]: Substituir por chamada real ao AdMob via bridge TWA
+          await AdService.getInstance()
+            .showInterstitial(AdConfig.interstitialTriggers.lobbyWait)
+            .catch(() => {});
+        }, 15_000);
+      }
+
       container.append(wrapper);
       console.log(`[MatchRoomUI] waiting rendered timedOut=${mode === 'timeout'}`);
     } catch (err) {
@@ -292,6 +361,48 @@ export class MatchRoomScreen extends Screen {
       main.append(leftSection, rightSection);
       container.append(main);
 
+      // ── Slot de recompensa para primeiro jogador ─────────────────
+      // Visível apenas quando é o primeiro jogador na sala.
+      // O listener de presença esconde quando há > 1 jogador.
+      if (AdConfig.enableFirstPlayerReward && !this.#rewardedFirstPlayerUsed) {
+        const fpSlot = Dom.create('div', {
+          classes: 'reward-slot',
+          attrs: { id: 'rewarded-first-player-slot' },
+        });
+        const fpBtn = Dom.create('button', {
+          classes: 'reward-slot__btn',
+          text: '\uD83C\uDFAC Assistir vídeo e acelerar início',
+          attrs: { type: 'button' },
+        });
+        fpBtn.addEventListener('click', async () => {
+          if (this.#rewardedFirstPlayerUsed) return;
+          // Não pode acelerar sozinho — precisa de jogadores mínimos
+          const maxP = this.#getMaxPlayersForLobbyType(this.#lobbyType);
+          if (this.#currentPlayerCount < maxP) {
+            fpBtn.textContent = '⚠️ Aguarde mais jogadores entrarem';
+            setTimeout(() => {
+              fpBtn.textContent = '\uD83C\uDFAC Assistir vídeo e acelerar início';
+            }, 2000);
+            return;
+          }
+          fpBtn.disabled = true;
+          fpBtn.textContent = 'Carregando…';
+          const result = await AdService.getInstance()
+            .showRewarded(AdConfig.rewardedTriggers.firstPlayerBonus)
+            .catch(() => ({ rewarded: false }));
+          if (result.rewarded) {
+            this.#rewardedFirstPlayerUsed = true;
+            AdService.getInstance().grantReward(AdConfig.rewardTypes.firstPlayerBonus);
+            fpBtn.textContent = '✅ Bônus recebido!';
+          } else {
+            fpBtn.textContent = '\uD83C\uDFAC Assistir vídeo e acelerar início';
+            fpBtn.disabled = false;
+          }
+        });
+        fpSlot.append(fpBtn);
+        container.append(fpSlot);
+      }
+
       // Escrever presença e iniciar listener de presença/game-table
       await this.#writeOwnPresence();
       this.#startPresenceListener();
@@ -306,6 +417,12 @@ export class MatchRoomScreen extends Screen {
    */
   onExit() {
     console.log(`[MatchRoomScreen] Saindo: matchId="${this.#matchId}" lobbyType="${this.#lobbyType}"`);
+
+    // Esconde banner de espera
+    AdService.getInstance().hideBanner(AdConfig.bannerPlacements.waiting);
+
+    // Cancela timer de interstitial do lobby
+    this.#clearLobbyInterstitialTimer();
 
     // Cancela timeout de assign pendente
     if (this.#assignTimeoutId !== null) {
@@ -397,8 +514,11 @@ export class MatchRoomScreen extends Screen {
 
     this.#matchPlayersUnsubscribe = matchService.subscribePresence(
       this.#matchId,
-      (players) => {
+      async (players) => {
         const count = players.length;
+
+        // Atualiza contagem interna
+        this.#currentPlayerCount = count;
 
         // Atualiza barra de status
         this.#queueBar?.updateCount(count);
@@ -414,6 +534,12 @@ export class MatchRoomScreen extends Screen {
           }
         });
 
+        // Mostra/esconde slot de primeiro jogador conforme quantidade de players
+        const fpSlot = this.#containerEl?.querySelector('#rewarded-first-player-slot');
+        if (fpSlot) {
+          fpSlot.style.display = count <= 1 ? '' : 'none';
+        }
+
         // Descobre maxPlayers do lobbyType
         const maxPlayers = this.#getMaxPlayersForLobbyType(this.#lobbyType);
 
@@ -422,6 +548,11 @@ export class MatchRoomScreen extends Screen {
           this.#hasNavigatedToGameTable = true;
 
           console.log(`[GameTable] opening with count=${count} matchId=${this.#matchId}`);
+
+          // Anúncio: intersticial entre a espera e a mesa de jogo
+          await AdService.getInstance()
+            .showInterstitial(AdConfig.interstitialTriggers.matchFound)
+            .catch(() => {});
 
           // Navega para GameTableScreen
           NavigationService.getInstance().toGameTable({
@@ -469,6 +600,17 @@ export class MatchRoomScreen extends Screen {
     if (this.#presencePolling !== null) {
       clearInterval(this.#presencePolling);
       this.#presencePolling = null;
+    }
+  }
+
+  /**
+   * Cancela o timer de interstitial do lobby (se ativo).
+   * @private
+   */
+  #clearLobbyInterstitialTimer() {
+    if (this.#lobbyInterstitialTimer !== null) {
+      clearTimeout(this.#lobbyInterstitialTimer);
+      this.#lobbyInterstitialTimer = null;
     }
   }
 }

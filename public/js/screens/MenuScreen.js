@@ -22,6 +22,8 @@ import { SideMenu } from '../components/SideMenu.js';
 import { Dom } from '../utils/Dom.js';
 import { App } from '../core/App.js';
 import { AudioService } from '../services/AudioService.js';
+import { AdService } from '../services/adService.js';
+import { AdConfig }  from '../services/adConfig.js';
 
 export class MenuScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
@@ -93,6 +95,9 @@ export class MenuScreen extends Screen {
 
       // 3. Inicia música de fundo em loop
       AudioService.getInstance().playLoop('menu-bgm');
+
+      // 4. Anúncio: banner no menu principal
+      AdService.getInstance().showBanner(AdConfig.bannerPlacements.menu);
     } catch (error) {
       console.error('[MenuScreen] Erro ao verificar autenticação:', error);
       this.#screenManager.show('LoginScreen');
@@ -104,6 +109,7 @@ export class MenuScreen extends Screen {
    */
   onExit() {
     AudioService.getInstance().stopLoop('menu-bgm');
+    AdService.getInstance().hideBanner(AdConfig.bannerPlacements.menu);
   }
 
   // -------------------------------------------------------

@@ -25,6 +25,14 @@ desktop.ini
 *.swp
 *.swo
 
+# Android TWA / Keystore (nunca comitar!)
+android-keystore/
+*.keystore
+*.jks
+app/
+.gradle/
+build/
+
 # Ficheiros temporários / lixo
 d
 {

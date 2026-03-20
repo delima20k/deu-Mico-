@@ -5,7 +5,11 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "android:init": "bubblewrap init --manifest=https://www.deu-mico.com.br/manifest.json",
+    "android:build": "bubblewrap build",
+    "android:install": "adb install app/build/outputs/apk/release/app-release-signed.apk",
+    "android:keygen": "mkdir -p android-keystore && keytool -genkeypair -alias deu-mico -keyalg RSA -keysize 2048 -validity 10000 -keystore android-keystore/deu-mico.keystore"
   },
   "engines": {
     "node": ">=18"

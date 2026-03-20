@@ -13,6 +13,8 @@ import { Screen }      from '../core/Screen.js';
 import { Dom }         from '../utils/Dom.js';
 import { Footer }      from '../components/Footer.js';
 import { AuthService } from '../services/AuthService.js';
+import { AdService }   from '../services/adService.js';
+import { AdConfig }    from '../services/adConfig.js';
 
 export class HomeScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
@@ -95,7 +97,12 @@ export class HomeScreen extends Screen {
     // ── Footer com logos ──────────────────────────────────
     const footer = new Footer();
     wrapper.appendChild(footer.create());
-
+    // ── Banner de anúncio no rodapé ───────────────────────
+    const adBanner = Dom.create('div', {
+      classes: 'ad-slot',
+      attrs: { id: 'ad-banner-home' },
+    });
+    wrapper.appendChild(adBanner);
     // ── Eventos ────────────────────────────────────────────
     // Verifica estado de autenticação no momento do clique:
     // - Se já logado → vai direto ao MenuScreen (evita form de login desnecessário)
@@ -125,9 +132,12 @@ export class HomeScreen extends Screen {
     if (params.user) {
       this.#showUserBadge(params.user);
     }
+    // Anúncio: banner na tela inicial
+    AdService.getInstance().showBanner(AdConfig.bannerPlacements.home);
   }
 
   onExit() {
+    AdService.getInstance().hideBanner(AdConfig.bannerPlacements.home);
     this.#cleanups.forEach(fn => fn());
     this.#cleanups = [];
   }

@@ -34,6 +34,9 @@ import { CardRevealModal }    from '../components/CardRevealModal.js';
 import { flyCardToAvatar, flyCardBetweenAvatars, animatePairArcToButton } from '../utils/CardFlyAnimator.js';
 import { AudioService }       from '../services/AudioService.js';
 import { FirebaseService }    from '../services/FirebaseService.js';
+import { AdService }          from '../services/adService.js';
+import { AdConfig }           from '../services/adConfig.js';
+import { ChatBox }            from '../components/ChatBox.js';
 
 export class GameTableScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
@@ -134,6 +137,9 @@ export class GameTableScreen extends Screen {
 
   /** @type {OpponentPickPanel|null} Painel de escolha de carta do oponente */
   #opponentPickPanel = null;
+
+  /** @type {ChatBox|null} Chat em tempo real */
+  #chatBox = null;
 
   /** @type {Function|null} Limpeza do indicador visual no avatar-alvo do turno */
   #stealHintCleanup = null;
@@ -283,6 +289,11 @@ export class GameTableScreen extends Screen {
       // Primeiro a entrar na sala é o dealer (embaralha e entrega)
       const dealerResult = DealerSelectionService.getInstance().resolveFirstJoiner(this.#players);
       const youngestPlayer = dealerResult.youngestPlayer;
+
+      // Anúncio: rewarded opcional para o dealer (primeiro jogador) — não bloqueia
+      DealerSelectionService.getInstance()
+        .offerFirstPlayerReward(youngestPlayer.id, this.#myUid)
+        .catch(() => {});
 
       this.#deckActionPanel = new DeckActionPanel(
         this.#myUid,
@@ -511,6 +522,8 @@ export class GameTableScreen extends Screen {
     // Para o heartbeat Firebase (ping periódico)
     FirebaseService.getInstance().stopHeartbeat();
 
+    // Esconde banner de resultados (se visível)
+    AdService.getInstance().hideBanner(AdConfig.bannerPlacements.results);
     // Cancela saída automática por abandono (se agendada)
     if (this.#autoExitTimer !== null) {
       clearTimeout(this.#autoExitTimer);
@@ -532,6 +545,10 @@ export class GameTableScreen extends Screen {
 
     // Remove indicador de roubo no avatar (se estiver ativo)
     this.#clearStealHint();
+
+    // Destroi chat
+    this.#chatBox?.destroy();
+    this.#chatBox = null;
 
     // Destroi painel de escolha de carta do oponente
     this.#opponentPickPanel?.destroy();
@@ -1090,6 +1107,7 @@ export class GameTableScreen extends Screen {
       onDone: () => {
         console.log('[GameTableScreen] ✅ Cartas entregues a todos os jogadores');
         this.#deckActionPanel?.setState('done');
+        this.#showChatButton();
         this.#initGamePlay(dealerUid);
       },
     });
@@ -1102,6 +1120,24 @@ export class GameTableScreen extends Screen {
   // ═══════════════════════════════════════════════════════════════════════
   // GAMEPLAY — Mecânica de turnos (roubo de cartas)
   // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Cria e exibe o botão flutuante de chat no centro da mesa.
+   * Chamado após a distribuição de cartas.
+   * @private
+   */
+  #showChatButton() {
+    this.#chatBox?.destroy();
+    this.#chatBox = new ChatBox({
+      matchId: this.#matchId,
+      myUid: this.#myUid,
+      players: this.#players,
+    });
+
+    const chatBtnEl = this.#chatBox.create();
+    const container = this.getElement();
+    container.append(chatBtnEl);
+  }
 
   /**
    * Inicializa o fluxo de jogo após a distribuição das cartas.
@@ -1581,6 +1617,11 @@ export class GameTableScreen extends Screen {
   #showGameOverModal(state) {
     const { micoUid, pairCounts = {} } = state;
 
+    // Limpa chat da partida
+    this.#chatBox?.clearChat();
+    this.#chatBox?.destroy();
+    this.#chatBox = null;
+
     // 1. Monta lista de jogadores com seus pares (usa pairCounts do evento
     //    ou fallback para o badge local — garante dado correto em todos os clientes)
     const nonMicoPlayers = this.#players
@@ -1661,6 +1702,67 @@ export class GameTableScreen extends Screen {
       panel.append(rankList);
     }
 
+    // ── Botão rewarded opcional (bônus por assistir anúncio) ────────────
+    if (AdConfig.enableRewarded) {
+      const btnReward = Dom.create('button', {
+        classes: 'game-over-panel__btn game-over-panel__btn--reward',
+        text:    '🎁 Assistir anúncio para bônus',
+        attrs:   { type: 'button' },
+      });
+      btnReward.addEventListener('click', async () => {
+        btnReward.disabled = true;
+        btnReward.textContent = 'Carregando…';
+        const result = await AdService.getInstance()
+          .showRewarded(AdConfig.rewardedTriggers.gameOverBonus)
+          .catch(() => ({ rewarded: false }));
+        if (result.rewarded) {
+          AdService.getInstance().grantReward(AdConfig.rewardTypes.gameOverBonus);
+          btnReward.textContent = '✅ Bônus recebido!';
+        } else {
+          btnReward.textContent = '🎁 Assistir anúncio para bônus';
+          btnReward.disabled = false;
+        }
+      });
+      panel.append(btnReward);
+    }
+
+    // ── Banner de anúncio nos resultados ────────────────────────────────
+    const adBannerResults = Dom.create('div', {
+      classes: 'ad-slot',
+      attrs: { id: 'ad-banner-results' },
+    });
+    panel.append(adBannerResults);
+    AdService.getInstance().showBanner(AdConfig.bannerPlacements.results);
+
+    // ── Slot de recompensa para revanche ───────────────────────────
+    if (AdConfig.enableRematchReward) {
+      const rematchSlot = Dom.create('div', {
+        classes: 'reward-slot',
+        attrs: { id: 'rewarded-rematch-slot' },
+      });
+      const rematchBtn = Dom.create('button', {
+        classes: 'reward-slot__btn',
+        text: '\uD83C\uDFAC Assistir vídeo para bônus de revanche',
+        attrs: { type: 'button' },
+      });
+      rematchBtn.addEventListener('click', async () => {
+        rematchBtn.disabled = true;
+        rematchBtn.textContent = 'Carregando\u2026';
+        const result = await AdService.getInstance()
+          .showRewarded(AdConfig.rewardedTriggers.rematchReward)
+          .catch(() => ({ rewarded: false }));
+        if (result.rewarded) {
+          AdService.getInstance().grantReward(AdConfig.rewardTypes.rematchReward);
+          rematchBtn.textContent = '\u2705 B\u00f4nus de revanche recebido!';
+        } else {
+          rematchBtn.textContent = '\uD83C\uDFAC Assistir v\u00eddeo para b\u00f4nus de revanche';
+          rematchBtn.disabled = false;
+        }
+      });
+      rematchSlot.append(rematchBtn);
+      panel.append(rematchSlot);
+    }
+
     // ── Botão voltar ─────────────────────────────────────────────────────
     const btnBack = Dom.create('button', {
       classes: 'game-over-panel__btn',
@@ -1670,12 +1772,23 @@ export class GameTableScreen extends Screen {
     btnBack.addEventListener('click', () => this.#onExitGame());
     panel.append(btnBack);
 
-    // Auto-redireciona após 10 s caso o jogador não clique
-    const autoExit = setTimeout(() => this.#onExitGame(), 10_000);
+    // Auto-redireciona após 15 s caso o jogador não clique (mais tempo para rewarded)
+    const autoExit = setTimeout(() => this.#onExitGame(), 15_000);
     btnBack.addEventListener('click', () => clearTimeout(autoExit), { once: true });
 
     overlay.append(panel);
     this.getElement().append(overlay);
+
+    // ── Interstitial com delay após exibir resultado ─────────────
+    // Anti-duplicação: só exibe 1x por sessão via AdService
+    // TODO [AdMob]: Substituir por chamada real ao AdMob via bridge TWA
+    setTimeout(() => {
+      if (!AdService.getInstance().hasShownInterstitial(AdConfig.interstitialTriggers.afterMatch)) {
+        AdService.getInstance()
+          .showInterstitial(AdConfig.interstitialTriggers.afterMatch)
+          .catch(() => {});
+      }
+    }, 2000);
   }
 
   /**
