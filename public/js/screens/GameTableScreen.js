@@ -842,7 +842,9 @@ export class GameTableScreen extends Screen {
         if (state.phase === 'turn_start') {
           // Para turn_start usa turnOffset como chave única — imune a clock drift
           // entre clientes diferentes que escrevem com Date.now() local.
-          if (state.turnOffset != null && state.turnOffset <= this.#lastTurnOffset) return;
+          // Usa < (estrito) para permitir re-entrega do mesmo turnOffset após
+          // reconexão do Firebase (ex: PWA volta do background com tela bloqueada).
+          if (state.turnOffset != null && state.turnOffset < this.#lastTurnOffset) return;
           if (state.turnOffset != null) this.#lastTurnOffset = state.turnOffset;
         } else {
           // Para outros eventos (card_fly, pair_formed, etc.) usa ts — mesma origem

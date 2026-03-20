@@ -23,6 +23,16 @@ const { initializeApp, getApps, cert } = require('firebase-admin/app');
 const { getDatabase }                  = require('firebase-admin/database');
 
 module.exports = async (req, res) => {
+  // Headers CORS — necessário para PWA/TWA que podem ter origem diferente da URL de deploy
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Responde ao preflight OPTIONS sem processar lógica de turno
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   // Apenas POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
