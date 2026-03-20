@@ -865,7 +865,9 @@ export class GameTableScreen extends Screen {
    */
   async #handleGameState(state) {
     if (!state?.phase) return;
-    if (state.ts) this.#lastGameEventTs = state.ts;
+    // turn_start usa turnOffset para dedup — não atualiza lastGameEventTs
+    // (o ts de turn_start tem +100ms artificial que corromperia o filtro dos eventos seguintes)
+    if (state.ts && state.phase !== 'turn_start') this.#lastGameEventTs = state.ts;
 
     if (state.phase === 'shuffling') {
       this.#deckActionPanel?.setState('shuffling');
@@ -1342,7 +1344,8 @@ export class GameTableScreen extends Screen {
       const targetName   = targetPlayer?.name ?? 'Oponente';
       const avatarUrl    = targetPlayer?.avatarUrl ?? null;
 
-      this.#opponentPickPanel?.show(targetName, targetCards, (card) => {
+      if (!this.#opponentPickPanel) return;
+      this.#opponentPickPanel.show(targetName, targetCards, (card) => {
         this.#onCardPickedFromOpponent(targetUid, card);
       }, avatarUrl);
 
@@ -1436,13 +1439,17 @@ export class GameTableScreen extends Screen {
       ts:      Date.now(),
     }).catch(() => {});
 
-    // 2b. Broadcast para todos verem a carta voar entre os avatares
-    MatchService.getInstance().writeGameState(this.#matchId, {
-      phase:   'card_fly',
-      fromUid,
-      toUid:   this.#myUid,
-      ts:      Date.now(),
-    }).catch(() => {});
+    // 2b. Broadcast para todos verem a carta voar entre os avatares.
+    // Delay garante que card_picked é entregue pelos subscribers antes de ser sobrescrito
+    // no mesmo path do Firebase (ambos escrevem em gameState).
+    setTimeout(() => {
+      MatchService.getInstance().writeGameState(this.#matchId, {
+        phase:   'card_fly',
+        fromUid,
+        toUid:   this.#myUid,
+        ts:      Date.now(),
+      }).catch(() => {});
+    }, 120);
 
     // 3. Atualiza handMap local: remove de fromUid, adiciona a myUid
     const fromHand = this.#handMap.get(fromUid) ?? [];

@@ -125,6 +125,8 @@ export class PairsBadge {
     });
 
     badge.addEventListener('click', (e) => {
+      // Se o player-badge é alvo de roubo, deixa o clique borbulhar para abrir o painel de pick
+      if (this.#playerEl.classList.contains('player-badge--steal-target')) return;
       e.stopPropagation();
       if (this.#popoverEl) {
         this.#closePopover();
