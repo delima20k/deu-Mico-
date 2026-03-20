@@ -711,8 +711,12 @@ export class MatchService {
         }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        console.warn('[next-turn API] Falhou:', data.error);
+      // Verifica tanto o status HTTP quanto data.success:
+      // A API pode retornar HTTP 200 com { success: false, reason: 'admin_not_configured' }
+      // quando as env vars do Firebase Admin não estão configuradas no Vercel.
+      // Nesse caso, o fallback de escrita direta no Firebase deve ser usado.
+      if (!res.ok || !data.success) {
+        console.warn('[next-turn API] Falhou:', data.error ?? data.reason ?? 'unknown');
         return false;
       }
       console.log('[next-turn API] ✅ Turno escrito pelo servidor');

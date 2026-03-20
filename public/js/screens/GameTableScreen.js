@@ -1167,7 +1167,10 @@ export class GameTableScreen extends Screen {
       const targetIdx = (activeIdx + 1) % N; // alvo = jogador à direita do ativo
       const activeUid = this.#turnSeats[activeIdx]?.uid;
       const targetUid = this.#turnSeats[targetIdx]?.uid;
-      if (!activeUid || !targetUid) return;
+      if (!activeUid || !targetUid) {
+        console.warn('[GameTableScreen] ⚠️ Não foi possível iniciar primeiro turno — activeUid ou targetUid nulos', { activeIdx, targetIdx, seats: this.#turnSeats.map(s => s?.uid) });
+        return;
+      }
 
       try {
         await MatchService.getInstance().writeGameState(this.#matchId, {
