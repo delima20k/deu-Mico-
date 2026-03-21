@@ -569,4 +569,65 @@ export class MatchRepository {
       unsubscribe();
       console.log(`[GameTable] Listener encerrado para matchId="${matchId}"`);
     };
-  }}
+  }
+
+  // -------------------------------------------------------
+  // Eventos de Animação — Push Queue
+  // -------------------------------------------------------
+
+  /**
+   * Faz push de um evento de animação na fila imutável.
+   * Cada evento tem sua própria chave push (nunca sobrescreve outro).
+   * Path: /matches/{matchId}/animations/{pushId}
+   * @param {string} matchId
+   * @param {Object} event - {type, fromClientUid, ...payload}
+   * @returns {Promise<string>} pushId gerado
+   */
+  async pushAnimEvent(matchId, event) {
+    const db    = this.#firebaseService?.getDatabase?.();
+    const dbMod = this.#firebaseService?.getDbModules?.();
+    if (!db) throw new Error('[AnimEvent] Database não inicializado');
+
+    const animRef = dbMod.ref(db, `matches/${matchId}/animations`);
+    const newRef  = dbMod.push(animRef);
+    await dbMod.set(newRef, { ...event, ts: Date.now() });
+    return newRef.key;
+  }
+
+  /**
+   * Subscreve a novos eventos de animação em tempo real (onChildAdded).
+   * Filtra eventos com ts < (agora - 10s) para evitar replay de histórico.
+   * Path: /matches/{matchId}/animations
+   * @param {string} matchId
+   * @param {(event: Object) => void} onEvent - callback {eid, type, fromClientUid, ...payload, ts}
+   * @returns {Function} unsubscribe
+   */
+  subscribeAnimEvents(matchId, onEvent) {
+    const db    = this.#firebaseService?.getDatabase?.();
+    const dbMod = this.#firebaseService?.getDbModules?.();
+    if (!db) {
+      console.warn('[AnimEvent] Database não disponível — animações desativadas');
+      return () => {};
+    }
+
+    const startTs = Date.now() - 10_000;
+    const animRef = dbMod.ref(db, `matches/${matchId}/animations`);
+    const q = dbMod.query(
+      animRef,
+      dbMod.orderByChild('ts'),
+      dbMod.startAt(startTs)
+    );
+
+    const seen = new Set();
+    const unsub = dbMod.onChildAdded(q, (snap) => {
+      if (seen.has(snap.key)) return;
+      seen.add(snap.key);
+      onEvent({ eid: snap.key, ...snap.val() });
+    }, (err) => {
+      console.error('[AnimEvent] Erro no listener de animações:', err);
+    });
+
+    console.log(`[AnimEvent] Listener iniciado para matchId="${matchId}"`);
+    return unsub;
+  }
+}

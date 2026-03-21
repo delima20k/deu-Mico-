@@ -47,6 +47,9 @@ export class MatchService {
   /** @type {Map<string, Function>} Unsubscribers de listeners de presença (matchId -> unsubscribe) */
   #presenceListeners = new Map();
 
+  /** @type {Map<string, Object>} Refs de presença por chave '{matchId}_{uid}' (para cancelar onDisconnect) */
+  #presenceRefs = new Map();
+
   // -------------------------------------------------------
   // Singleton
   // -------------------------------------------------------
@@ -517,6 +520,8 @@ export class MatchService {
 
       const presencePath = `matches/${matchId}/presence/${uid}`;
       const presenceRef = dbMod.ref(db, presencePath);
+      // Armazena ref para cancelamento posterior do onDisconnect (proteção de segundo plano)
+      this.#presenceRefs.set(`${matchId}_${uid}`, presenceRef);
 
       // Usa onDisconnect para remover presença automaticamente
       const presenceData = {
@@ -794,5 +799,60 @@ export class MatchService {
 
     this.#lastMessageTime.clear();
     console.log('[MatchService] Cleanup completo');
+  }
+
+  // -------------------------------------------------------
+  // Eventos de Animação — Canal Push
+  // -------------------------------------------------------
+
+  /**
+   * Faz push de um evento de animação no canal imutável do RTDB.
+   * Usa push() — cada evento fica em sua própria chave, nunca sobrescreve.
+   * @param {string} matchId
+   * @param {Object} event - {type, fromClientUid, ...payload}
+   * @returns {Promise<string|null>} pushId ou null se falhou
+   */
+  async pushAnimEvent(matchId, event) {
+    try {
+      return await this.#matchRepository.pushAnimEvent(matchId, event);
+    } catch (err) {
+      console.warn('[AnimEvent] Erro ao fazer push de evento de animação:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Subscreve a novos eventos de animação em tempo real (onChildAdded).
+   * Retorna unsubscriber. Ignora eventos com mais de 10 segundos.
+   * @param {string} matchId
+   * @param {(event: Object) => void} onEvent
+   * @returns {Function} unsubscribe
+   */
+  subscribeAnimEvents(matchId, onEvent) {
+    return this.#matchRepository.subscribeAnimEvents(matchId, onEvent);
+  }
+
+  /**
+   * Cancela o handler onDisconnect da presença para evitar remoção automática
+   * quando o Firebase detecta desconexão (ex: PWA em segundo plano).
+   * Chame writePresence() novamente ao voltar para o primeiro plano para restaurar.
+   * @param {string} matchId
+   * @param {string} uid
+   * @returns {Promise<void>}
+   */
+  async cancelPresenceOnDisconnect(matchId, uid) {
+    try {
+      const presenceRef = this.#presenceRefs.get(`${matchId}_${uid}`);
+      if (!presenceRef) {
+        console.warn(`[Presence] cancelPresenceOnDisconnect: ref não encontrada para uid=${uid?.slice(0, 8)}`);
+        return;
+      }
+      const dbMod = this.#matchRepository.getDbModules();
+      if (!dbMod) return;
+      await dbMod.onDisconnect(presenceRef).cancel();
+      console.log(`[Presence] ✅ onDisconnect cancelado uid=${uid?.slice(0, 8)}`);
+    } catch (err) {
+      console.warn('[Presence] Erro ao cancelar onDisconnect (não crítico):', err);
+    }
   }
 }

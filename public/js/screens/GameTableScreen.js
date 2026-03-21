@@ -97,6 +97,18 @@ export class GameTableScreen extends Screen {
 
   #gameStateUnsub = null;
 
+  /** @type {Function|null} Unsubscriber do canal de eventos de animação (Firebase push) */
+  #animEventsUnsub = null;
+
+  /** @type {boolean} Flag: app está em segundo plano (PWA minimizado / aba oculta) */
+  #isInBackground = false;
+
+  /** @type {Function|null} Cleanup do handler de visibilitychange */
+  #visibilityHandler = null;
+
+  /** @type {Set<string>} UIDs de jogadores que enviaram player_left intencional (evita modal duplicado) */
+  #receivedPlayerLeftEvents = new Set();
+
   /** @type {number} Timestamp do último evento de estado de jogo processado */
   #lastGameEventTs = 0;
 
@@ -347,6 +359,12 @@ export class GameTableScreen extends Screen {
 
     // Assina canal de estado de jogo — sincroniza embaralhar+entregar em todos os clientes
     this.#subscribeGameState();
+
+    // Assina canal de animações push — sincroniza animações entre todos os clientes
+    this.#subscribeAnimEvents();
+
+    // Proteção de segundo plano: não remove jogador ao minimizar o PWA
+    this.#setupVisibilityHandler();
   }
 
   /**
@@ -516,6 +534,11 @@ export class GameTableScreen extends Screen {
     console.log(`[GameTableScreen] 📋 ID da Partida: ${this.#matchId}`);
     console.log(`[GameTableScreen] ⏰ Timestamp: ${new Date().toISOString()}`);
 
+    // Remove handler de visibilitychange (proteção de segundo plano)
+    this.#visibilityHandler?.();
+    this.#visibilityHandler = null;
+    this.#receivedPlayerLeftEvents.clear();
+
     // Volta a travar orientação em portrait ao sair da mesa
     try { if (screen.orientation?.lock) screen.orientation.lock('portrait').catch(() => {}); } catch (_) {}
 
@@ -542,6 +565,10 @@ export class GameTableScreen extends Screen {
     this.#gameStateLock   = false;
     this.#lastGameEventTs = 0;
     this.#lastTurnOffset  = 0;
+
+    // Para canal de eventos de animação (Firebase push)
+    this.#animEventsUnsub?.();
+    this.#animEventsUnsub = null;
 
     // Remove indicador de roubo no avatar (se estiver ativo)
     this.#clearStealHint();
@@ -653,7 +680,23 @@ export class GameTableScreen extends Screen {
             const name = saved?.name || 'Jogador';
             // isWinner: havia só 2 no snapshot anterior → o restante é o vencedor
             const isWinner = this.#prevPlayerUids.size === 2;
-            this.#showExitNotification(name, isWinner);
+            const isGameOver = isWinner || currentUids.size < 2;
+
+            if (isGameOver) {
+              // Fim de partida → sempre exibir modal (countdown + auto-exit)
+              this.#showExitNotification(name, isWinner);
+            } else {
+              // Aguarda 1.5s para o evento player_left chegar via animEvents.
+              // Se chegar antes (saída intencional), o toast já foi exibido
+              // e o modal não precisa ser mostrado.
+              const capturedUid  = uid;
+              const capturedName = name;
+              setTimeout(() => {
+                if (!this.#receivedPlayerLeftEvents.has(capturedUid)) {
+                  this.#showExitNotification(capturedName, false);
+                }
+              }, 1500);
+            }
 
             // Se restaram menos de 2 jogadores, força saída em 10s
             if (currentUids.size < 2) {
@@ -752,6 +795,20 @@ export class GameTableScreen extends Screen {
    */
   async #onExitGame() {
     console.log(`[GameExit] clicked matchId=${this.#matchId} uid=${this.#myUid?.slice(0, 8)}...`);
+
+    // Notifica os outros jogadores que saímos intencionalmente ANTES de remover presença.
+    // Isso permite que eles recebam o toast (player_left) antes do evento de presença,
+    // evitando o modal de saída inesperada.
+    const myPlayer = this.#players?.find(p => p.uid === this.#myUid);
+    if (myPlayer && this.#matchId) {
+      await MatchService.getInstance().pushAnimEvent(this.#matchId, {
+        type:          'player_left',
+        playerName:    myPlayer.name,
+        playerUid:     this.#myUid,
+        fromClientUid: this.#myUid,
+      }).catch(() => {});
+    }
+
     await MatchService.getInstance()
       .leaveMatch(this.#matchId, this.#myUid)
       .catch(err => console.error('[GameExit] erro no leaveMatch:', err));
@@ -824,6 +881,62 @@ export class GameTableScreen extends Screen {
       console.warn('[GameTableScreen] Firebase indisponível — entregando cartas localmente', err);
       this.#gameStateLock = false;
       this.#runDealAnimation();
+    }
+  }
+
+  /**
+   * Assina o canal de eventos de animação no Firebase (push queue).
+   * Cada evento é entregue via onChildAdded — nunca sobrescrito, nunca perdido.
+   * @private
+   */
+  #subscribeAnimEvents() {
+    this.#animEventsUnsub?.();
+    this.#animEventsUnsub = MatchService.getInstance().subscribeAnimEvents(
+      this.#matchId,
+      (event) => this.#handleAnimEvent(event)
+    );
+  }
+
+  /**
+   * Processa um evento de animação recebido do canal push do Firebase.
+   * Executa apenas animações visuais — sem mudanças de estado do jogo.
+   * Ignora eventos gerados pelo próprio cliente (fromClientUid === myUid).
+   * @param {Object} event - {eid, type, fromClientUid, ...payload}
+   * @private
+   */
+  #handleAnimEvent(event) {
+    if (!event?.type) return;
+
+    // Pula eventos que eu mesmo gerei (já executei a animação localmente)
+    if (event.fromClientUid === this.#myUid) return;
+
+    if (event.type === 'card_fly') {
+      const fromPb = this.#pairsBadges.get(event.fromUid);
+      const toPb   = this.#pairsBadges.get(event.toUid);
+      if (fromPb && toPb) {
+        console.log(`[AnimEvent] 🃏 Carta voando de ${event.fromUid?.slice(0, 8)} → ${event.toUid?.slice(0, 8)}`);
+        flyCardBetweenAvatars(fromPb.getPlayerEl(), toPb.getPlayerEl(), 'img/carta_verso.png', () => {
+          AudioService.getInstance().playForce('card-fly-land');
+        });
+      }
+    }
+
+    if (event.type === 'pair_formed') {
+      const badge = this.#pairsBadges.get(event.uid);
+      if (badge && Array.isArray(event.cardIds)) {
+        const deckForLookup = this.#deck ?? [];
+        const cardMap = new Map(deckForLookup.map(c => [c.id, c]));
+        const pair = event.cardIds.map(id => cardMap.get(id)).filter(Boolean);
+        console.log(`[AnimEvent] 🎯 Par animado de ${event.uid?.slice(0, 8)}: ${pair.map(c => c?.name).join(' + ')}`);
+        this.#triggerPairArc(event.uid, pair, false);
+      }
+    }
+
+    if (event.type === 'player_left') {
+      // Registra UID como saída intencional para o monitor de presença
+      // não exibir o modal de saída inesperada redundante.
+      if (event.playerUid) this.#receivedPlayerLeftEvents.add(event.playerUid);
+      this.#showPlayerLeftToast(event.playerName || 'Jogador');
     }
   }
 
@@ -902,16 +1015,8 @@ export class GameTableScreen extends Screen {
     }
 
     if (state.phase === 'card_fly') {
-      // A animação já foi executada localmente pelo ladrão (toUid); os demais veem agora
-      if (state.toUid !== this.#myUid) {
-        const fromPb = this.#pairsBadges.get(state.fromUid);
-        const toPb   = this.#pairsBadges.get(state.toUid);
-        if (fromPb && toPb) {
-          flyCardBetweenAvatars(fromPb.getPlayerEl(), toPb.getPlayerEl(), 'img/carta_verso.png', () => {
-            AudioService.getInstance().playForce('card-fly-land');
-          });
-        }
-      }
+      // Animação migrada para #handleAnimEvent via canal animEvents (onChildAdded).
+      // Mantido no gameState apenas para compatibilidade com versões antigas.
     }
 
     if (state.phase === 'scroll_sync') {
@@ -936,20 +1041,7 @@ export class GameTableScreen extends Screen {
             }
           }
         }
-
-        // Animação do badge somente para jogadores remotos reais
-        // (bots já animaram localmente em #handleAiTurn)
-        if (!this.#isAiPlayer(state.uid)) {
-          const badge = this.#pairsBadges.get(state.uid);
-          if (badge && Array.isArray(state.cardIds)) {
-            const deckForLookup = this.#deck ?? [];
-            const cardMap = new Map(deckForLookup.map(c => [c.id, c]));
-            const pair = state.cardIds.map(id => cardMap.get(id)).filter(Boolean);
-            const pairToUse = pair.length > 0 ? pair : [];
-            console.log(`[GameTableScreen] 🃏 Par recebido de ${state.uid.slice(0, 8)}: ${pair.map(c => c?.name).join(' + ')}`);
-            this.#triggerPairArc(state.uid, pairToUse, false);
-          }
-        }
+        // Animação visual migrada para #handleAnimEvent via canal animEvents (onChildAdded).
       }
     }
 
@@ -1075,7 +1167,7 @@ export class GameTableScreen extends Screen {
       this.#triggerPairArc(this.#myUid, pair, true);
       void badge; // referenciado indiretamente em #triggerPairArc
 
-      // 3. Transmite para todos os clientes via Firebase
+      // 3. Transmite para todos os clientes via Firebase (estado)
       try {
         await MatchService.getInstance().writeGameState(this.#matchId, {
           phase:   'pair_formed',
@@ -1086,6 +1178,14 @@ export class GameTableScreen extends Screen {
       } catch (err) {
         console.warn('[GameTableScreen] Erro ao enviar par ao Firebase:', err);
       }
+
+      // Push de animação para o canal dedicado (não sobrescrito por eventos seguintes)
+      MatchService.getInstance().pushAnimEvent(this.#matchId, {
+        type:          'pair_formed',
+        uid:           this.#myUid,
+        cardIds:       pair.map(c => c.id),
+        fromClientUid: this.#myUid,
+      }).catch(() => {});
     };
 
     // ── 4. Bloqueia botão durante a distribuição ───────────────────────────
@@ -1263,7 +1363,7 @@ export class GameTableScreen extends Screen {
       this.#handModal?.removeCard(card.id, true /* stolen */);
     }
 
-    // Animação de voo entre avatares
+    // Animação de voo entre avatares (local no dealer)
     const fromPb = this.#pairsBadges.get(targetUid);
     const toPb   = this.#pairsBadges.get(activeUid);
     if (fromPb && toPb) {
@@ -1271,6 +1371,14 @@ export class GameTableScreen extends Screen {
         AudioService.getInstance().playForce('card-fly-land');
       });
     }
+
+    // Push de animação de voo para outros clientes verem o bot roubando
+    MatchService.getInstance().pushAnimEvent(this.#matchId, {
+      type:          'card_fly',
+      fromUid:       targetUid,
+      toUid:         activeUid,
+      fromClientUid: this.#myUid,  // dealer gera; dealer pula via fromClientUid
+    }).catch(() => {});
 
     // Atualiza handMap localmente (remove do alvo, adiciona ao bot)
     const tHand = this.#handMap.get(targetUid) ?? [];
@@ -1307,6 +1415,14 @@ export class GameTableScreen extends Screen {
           ts:      Date.now(),
         });
       } catch (_e) { /* sem Firebase — badge já atualizado localmente */ }
+
+      // Push de animação de par do bot para todos os outros clientes verem
+      MatchService.getInstance().pushAnimEvent(this.#matchId, {
+        type:          'pair_formed',
+        uid:           activeUid,
+        cardIds:       [card.id, pairCard.id],
+        fromClientUid: this.#myUid,  // dealer gera; dealer pula via fromClientUid
+      }).catch(() => {});
 
       // Pausa para a animação do par ser visível
       await new Promise(r => setTimeout(r, 900));
@@ -1442,17 +1558,14 @@ export class GameTableScreen extends Screen {
       ts:      Date.now(),
     }).catch(() => {});
 
-    // 2b. Broadcast para todos verem a carta voar entre os avatares.
-    // Delay garante que card_picked é entregue pelos subscribers antes de ser sobrescrito
-    // no mesmo path do Firebase (ambos escrevem em gameState).
-    setTimeout(() => {
-      MatchService.getInstance().writeGameState(this.#matchId, {
-        phase:   'card_fly',
-        fromUid,
-        toUid:   this.#myUid,
-        ts:      Date.now(),
-      }).catch(() => {});
-    }, 120);
+    // 2b. Push de animação de voo para o canal dedicado (onChildAdded — não sobrescrito).
+    // Todos os outros clientes veem a carta voar entre avatares em tempo real.
+    MatchService.getInstance().pushAnimEvent(this.#matchId, {
+      type:          'card_fly',
+      fromUid,
+      toUid:         this.#myUid,
+      fromClientUid: this.#myUid,
+    }).catch(() => {});
 
     // 3. Atualiza handMap local: remove de fromUid, adiciona a myUid
     const fromHand = this.#handMap.get(fromUid) ?? [];
@@ -1521,6 +1634,14 @@ export class GameTableScreen extends Screen {
           } catch (err) {
             console.warn('[GameTableScreen] Erro ao enviar par:', err);
           }
+
+          // Push de animação de par para o canal dedicado (não sobrescrito por turn_start)
+          MatchService.getInstance().pushAnimEvent(this.#matchId, {
+            type:          'pair_formed',
+            uid:           this.#myUid,
+            cardIds:       [card.id, matchCard.id],
+            fromClientUid: this.#myUid,
+          }).catch(() => {});
         }
 
         // ── 8. Avança para o próximo turno ───────────────────────────
@@ -1842,6 +1963,65 @@ export class GameTableScreen extends Screen {
       this.#monitoringUnsubscribe = unsubscribe;
       console.log(`[GameTableScreen] 📡 Unsubscriber de monitoramento registrado`);
     }
+  }
+
+  /**
+   * Configura handler de visibilitychange para proteger a sessão do PWA.
+   * - Quando vai para segundo plano (hidden): cancela o onDisconnect do Firebase
+   *   para que a presença não seja removida automaticamente se a conexão cair.
+   * - Quando volta ao primeiro plano (visible): reescreve presença e reinicia heartbeat.
+   * @private
+   */
+  #setupVisibilityHandler() {
+    // Remove handler anterior em caso de chamada dupla
+    this.#visibilityHandler?.();
+    this.#visibilityHandler = null;
+
+    const handler = async () => {
+      if (document.hidden) {
+        this.#isInBackground = true;
+        console.log('[GameTableScreen] 📱 PWA → segundo plano; protegendo presença no Firebase');
+        MatchService.getInstance()
+          .cancelPresenceOnDisconnect(this.#matchId, this.#myUid)
+          .catch(() => {});
+      } else {
+        this.#isInBackground = false;
+        console.log('[GameTableScreen] 📱 PWA → primeiro plano; resincronizando presença');
+        // Reinicia heartbeat imediatamente para reconectar mais rápido
+        FirebaseService.getInstance().startHeartbeat(this.#matchId, this.#myUid);
+        // Reescreve presença (também restaura o onDisconnect handler)
+        await this.#writeOwnPresence().catch(() => {});
+      }
+    };
+
+    document.addEventListener('visibilitychange', handler);
+    this.#visibilityHandler = () => document.removeEventListener('visibilitychange', handler);
+  }
+
+  /**
+   * Exibe toast efêmero informando que um jogador saiu intencionalmente.
+   * Dura 4 segundos e desaparece com fade-out.
+   * @param {string} name - Nome do jogador que saiu
+   * @private
+   */
+  #showPlayerLeftToast(name) {
+    const container = this.getElement();
+    container.querySelector('.player-left-toast')?.remove();
+
+    const toast = Dom.create('div', {
+      classes: 'player-left-toast',
+      text: `☁️ ${name} saiu do jogo`,
+    });
+    container.append(toast);
+
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => toast.classList.add('player-left-toast--visible'))
+    );
+
+    setTimeout(() => {
+      toast.classList.remove('player-left-toast--visible');
+      setTimeout(() => toast.isConnected && toast.remove(), 400);
+    }, 4000);
   }
 
   /**

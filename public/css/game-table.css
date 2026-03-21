@@ -1446,3 +1446,33 @@
 .game-over-panel__btn:hover  { background: #c5313d; }
 .game-over-panel__btn:active { transform: scale(0.97); }
 
+/* ============================================
+   TOAST — Jogador saiu intencionalmente
+   (exibido em vez do modal quando saída é via botão)
+   ============================================ */
+
+.player-left-toast {
+  position: fixed;
+  top: 62px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-10px);
+  z-index: 9300;
+  background: rgba(15, 30, 50, 0.9);
+  border: 1px solid rgba(120, 180, 255, 0.3);
+  border-radius: 22px;
+  color: rgba(180, 220, 255, 0.92);
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(12px, 3vw, 14px);
+  padding: 9px 22px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  white-space: nowrap;
+  backdrop-filter: blur(4px);
+}
+
+.player-left-toast--visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
