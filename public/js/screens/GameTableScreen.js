@@ -288,7 +288,6 @@ export class GameTableScreen extends Screen {
     this.#generalRankingReportedForMatchId = null;
     this.#tournamentAdBenefitsMap = {};
     this.#myTournamentBenefits = null;
-
     if (this.#tournamentRedirectTimer !== null) {
       clearTimeout(this.#tournamentRedirectTimer);
       this.#tournamentRedirectTimer = null;
@@ -644,8 +643,8 @@ export class GameTableScreen extends Screen {
     this.#orientationHandlerCleanup = null;
     this.#currentOrientationMode = null;
 
-    // Fora da mesa, o app volta para portrait quando possível
-    this.#lockPortraitOrientation();
+    // Garante remoção de qualquer lock remanescente de orientação
+    this.#unlockOrientation();
 
     if (this.#tournamentRedirectTimer !== null) {
       clearTimeout(this.#tournamentRedirectTimer);
@@ -746,26 +745,10 @@ export class GameTableScreen extends Screen {
     }
   }
 
-  #lockGameOrientation() {
-    try {
-      if (!screen.orientation?.lock) return;
-      screen.orientation.lock('landscape-primary').catch(() => {
-        screen.orientation.lock('landscape').catch(() => {});
-      });
-    } catch (_) {}
-  }
-
   #unlockOrientation() {
     try {
       if (!screen.orientation?.unlock) return;
       screen.orientation.unlock();
-    } catch (_) {}
-  }
-
-  #lockPortraitOrientation() {
-    try {
-      if (!screen.orientation?.lock) return;
-      screen.orientation.lock('portrait').catch(() => {});
     } catch (_) {}
   }
 
