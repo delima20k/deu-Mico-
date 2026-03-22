@@ -1332,8 +1332,11 @@ export class GameTableScreen extends Screen {
       const layerRect = this.#chatTrailLayerEl.getBoundingClientRect();
       const startX = layerRect.width / 2;
       const startY = layerRect.height / 2;
+      const isPortrait = window.matchMedia
+        ? window.matchMedia('(orientation: portrait)').matches
+        : window.innerHeight >= window.innerWidth;
       const endY = -56;
-      const driftX = 0;
+      const endX = -56;
 
       const text = (message.text || '').trim();
       if (!text) return resolve();
@@ -1370,8 +1373,12 @@ export class GameTableScreen extends Screen {
 
         const riseElapsed = elapsed - popDuration;
         const riseT = Math.min(1, riseElapsed / riseDuration);
-        const x = startX + driftX * riseT;
-        const y = startY + (endY - startY) * riseT;
+        const x = isPortrait
+          ? startX + (endX - startX) * riseT
+          : startX;
+        const y = isPortrait
+          ? startY
+          : startY + (endY - startY) * riseT;
 
         bubble.style.left = `${x}px`;
         bubble.style.top = `${y}px`;
