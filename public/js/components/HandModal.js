@@ -57,12 +57,15 @@ export class HandModal {
   #el       = null;   // .hand-modal
   #trackEl  = null;   // .hand-modal__track (itens do carrossel)
   #countEl  = null;   // span de contagem
-  #chatFeedEl = null;
+  #chatRootEl = null;
+  #chatComposerEl = null;
+  #chatToggleBtnEl = null;
   #chatInputEl = null;
   #chatSendBtnEl = null;
   #chatStatusEl = null;
   #chatCooldownTimer = null;
   #chatCooldownUntil = 0;
+  #chatComposerOpen = false;
 
   // ── Estado de dados
   /** @type {import('../domain/Card.js').Card[]} */
@@ -82,7 +85,6 @@ export class HandModal {
   #chatOnSend = null;
   #chatMyUid = null;
   #chatPlayers = [];
-  #chatMsgIds = new Set();
 
   // ─────────────────────────────────────────────────────────────────────
   // API publica
@@ -109,7 +111,17 @@ export class HandModal {
     viewport.append(track);
 
     const chat = Dom.create('div', { classes: 'hand-modal__chat' });
-    this.#chatFeedEl = Dom.create('div', { classes: 'hand-modal__chat-feed' });
+    this.#chatRootEl = chat;
+
+    const toggleBtn = Dom.create('button', {
+      classes: 'hand-modal__chat-toggle',
+      text: 'Abrir chat',
+      attrs: { type: 'button', 'aria-expanded': 'false' },
+    });
+    this.#chatToggleBtnEl = toggleBtn;
+
+    const composer = Dom.create('div', { classes: 'hand-modal__chat-composer' });
+    this.#chatComposerEl = composer;
 
     const quickRow = Dom.create('div', { classes: 'hand-modal__chat-phrases' });
     for (const phrase of QUICK_CHAT_PHRASES) {
@@ -166,12 +178,18 @@ export class HandModal {
     this.#chatInputEl.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') sendFromInput();
     });
+    toggleBtn.addEventListener('click', () => {
+      this.#setChatComposerOpen(!this.#chatComposerOpen);
+    });
 
     inputRow.append(this.#chatInputEl, sendBtn);
-    chat.append(this.#chatFeedEl, quickRow, emojiRow, inputRow, this.#chatStatusEl);
+    composer.append(quickRow, emojiRow, inputRow, this.#chatStatusEl);
+    chat.append(toggleBtn, composer);
 
     modal.append(header, viewport, chat);
     document.body.append(modal);
+
+    this.#setChatComposerOpen(false);
 
     this.#initDrag(viewport, track);
     return modal;
@@ -242,7 +260,9 @@ export class HandModal {
     this.#el          = null;
     this.#trackEl     = null;
     this.#countEl     = null;
-    this.#chatFeedEl  = null;
+    this.#chatRootEl  = null;
+    this.#chatComposerEl = null;
+    this.#chatToggleBtnEl = null;
     this.#chatInputEl = null;
     this.#chatSendBtnEl = null;
     this.#chatStatusEl = null;
@@ -255,10 +275,10 @@ export class HandModal {
     this.#itemEls     = new Map();
     this.#selectedId  = null;
     this.#formedPairs = [];
+    this.#chatComposerOpen = false;
     this.#chatOnSend  = null;
     this.#chatMyUid   = null;
     this.#chatPlayers = [];
-    this.#chatMsgIds  = new Set();
   }
 
   /**
@@ -276,45 +296,10 @@ export class HandModal {
    * @param {{ msgId?: string, uid?: string, name?: string, text?: string, ts?: number }} message
    */
   appendChatMessage(message) {
-    if (!this.#chatFeedEl || !message?.text) return;
-
-    const identity = message.msgId || `${message.uid || 'anon'}-${message.ts || Date.now()}-${message.text}`;
-    if (this.#chatMsgIds.has(identity)) return;
-    this.#chatMsgIds.add(identity);
-
-    const isMine = Boolean(this.#chatMyUid && message.uid === this.#chatMyUid);
-    const player = this.#chatPlayers.find((candidate) => candidate.uid === message.uid);
-    const label = isMine ? 'Voce' : (message.name || player?.name || 'Jogador');
-
-    const row = Dom.create('div', {
-      classes: ['hand-modal__chat-msg', isMine ? 'hand-modal__chat-msg--mine' : ''],
-    });
-    const name = Dom.create('span', {
-      classes: 'hand-modal__chat-msg-name',
-      text: label,
-    });
-    const bubble = Dom.create('p', {
-      classes: 'hand-modal__chat-bubble',
-      text: message.text,
-    });
-    bubble.classList.add('hand-modal__chat-bubble--pop');
-    setTimeout(() => bubble.classList.remove('hand-modal__chat-bubble--pop'), 260);
-
-    row.append(name, bubble);
-    this.#chatFeedEl.append(row);
-
-    while (this.#chatFeedEl.children.length > 50) {
-      this.#chatFeedEl.firstChild?.remove();
-    }
-
-    requestAnimationFrame(() => {
-      this.#chatFeedEl.scrollTop = this.#chatFeedEl.scrollHeight;
-    });
+    void message;
   }
 
   clearChatMessages() {
-    if (this.#chatFeedEl) this.#chatFeedEl.innerHTML = '';
-    this.#chatMsgIds.clear();
     this.#setChatStatus('', false);
   }
 
@@ -613,6 +598,21 @@ export class HandModal {
     );
     buttons.forEach((buttonEl) => buttonEl.toggleAttribute('disabled', disabled));
     this.#el.classList.toggle('hand-modal__chat--cooldown', disabled);
+  }
+
+  #setChatComposerOpen(open) {
+    this.#chatComposerOpen = Boolean(open);
+    if (!this.#chatRootEl) return;
+
+    this.#chatRootEl.classList.toggle('hand-modal__chat--open', this.#chatComposerOpen);
+    this.#chatToggleBtnEl?.setAttribute('aria-expanded', this.#chatComposerOpen ? 'true' : 'false');
+    if (this.#chatToggleBtnEl) {
+      this.#chatToggleBtnEl.textContent = this.#chatComposerOpen ? 'Fechar chat' : 'Abrir chat';
+    }
+
+    if (this.#chatComposerOpen) {
+      setTimeout(() => this.#chatInputEl?.focus(), 120);
+    }
   }
 
   #setChatStatus(text, isWarning) {

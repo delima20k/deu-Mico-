@@ -37,6 +37,25 @@ import { FirebaseService }    from '../services/FirebaseService.js';
 import { AdService }          from '../services/adService.js';
 import { AdConfig }           from '../services/adConfig.js';
 
+const CHAT_TRAIL_SPEED_MODE = 'turbo';
+const CHAT_TRAIL_SPEED_PRESETS = {
+  turbo: {
+    mineDurationMs: 620,
+    otherDurationMs: 760,
+    gapMs: 30,
+  },
+  fast: {
+    mineDurationMs: 820,
+    otherDurationMs: 980,
+    gapMs: 45,
+  },
+  slow: {
+    mineDurationMs: 1180,
+    otherDurationMs: 1420,
+    gapMs: 120,
+  },
+};
+
 export class GameTableScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
   #screenManager;
@@ -151,6 +170,15 @@ export class GameTableScreen extends Screen {
 
   /** @type {Function|null} Unsubscriber do chat realtime */
   #chatUnsubscribe = null;
+
+  /** @type {HTMLElement|null} Camada de animação de mensagens na mesa */
+  #chatTrailLayerEl = null;
+
+  /** @type {Array<{uid?: string, name?: string, text?: string}>} Fila de mensagens para animação */
+  #chatTrailQueue = [];
+
+  /** @type {boolean} Indica se animação de trilha está em execução */
+  #chatTrailRunning = false;
 
   /** @type {Function|null} Limpeza do indicador visual no avatar-alvo do turno */
   #stealHintCleanup = null;
@@ -272,6 +300,11 @@ export class GameTableScreen extends Screen {
           }
         }
       }
+
+      // Camada dedicada para mensagens voando de baixo para cima na mesa
+      const chatTrailLayer = Dom.create('div', { classes: 'game-table-chat-trail' });
+      hexEl.append(chatTrailLayer);
+      this.#chatTrailLayerEl = chatTrailLayer;
 
       // ── Monte de cartas + painel de ação (wrapper centralizado) ──
       const deckStack = Dom.create('div', { classes: 'deck-center-stack' });
@@ -576,6 +609,10 @@ export class GameTableScreen extends Screen {
     this.#chatUnsubscribe?.();
     this.#chatUnsubscribe = null;
     MatchService.getInstance().stopSubscribingChat(this.#matchId);
+    this.#chatTrailQueue = [];
+    this.#chatTrailRunning = false;
+    this.#chatTrailLayerEl?.remove();
+    this.#chatTrailLayerEl = null;
 
     // Destroi painel de escolha de carta do oponente
     this.#opponentPickPanel?.destroy();
@@ -1245,13 +1282,114 @@ export class GameTableScreen extends Screen {
       },
     });
 
-    const history = MatchService.getInstance().getChatHistory(this.#matchId);
-    history.forEach((message) => this.#handModal?.appendChatMessage(message));
+    this.#chatTrailQueue = [];
+    this.#chatTrailRunning = false;
 
     this.#chatUnsubscribe = MatchService.getInstance().subscribeChat(
       this.#matchId,
-      (message) => this.#handModal?.appendChatMessage(message),
+      (message) => this.#enqueueChatTrail(message),
     );
+  }
+
+  #enqueueChatTrail(message) {
+    if (!message?.text) return;
+
+    this.#chatTrailQueue.push({
+      ...message,
+      isMine: message.uid === this.#myUid,
+    });
+    if (!this.#chatTrailRunning) {
+      void this.#drainChatTrailQueue();
+    }
+  }
+
+  async #drainChatTrailQueue() {
+    this.#chatTrailRunning = true;
+    const { gapMs } = this.#getChatTrailSpeed();
+
+    while (this.#chatTrailQueue.length > 0) {
+      const nextMessage = this.#chatTrailQueue.shift();
+      if (nextMessage?.text) {
+        await this.#animateChatTrail(nextMessage);
+      }
+      await new Promise((resolve) => setTimeout(resolve, gapMs));
+    }
+
+    this.#chatTrailRunning = false;
+  }
+
+  #getChatTrailSpeed() {
+    return CHAT_TRAIL_SPEED_PRESETS[CHAT_TRAIL_SPEED_MODE] || CHAT_TRAIL_SPEED_PRESETS.fast;
+  }
+
+  #findChatTrailAnchors() {
+    const playersRoot = this.#gameTableView?.getPlayersContainer();
+    if (!playersRoot) return { fromEl: null, toEl: null };
+
+    const fromEl = playersRoot.querySelector('.player-badge--bottom .player-badge__avatar');
+    let toEl = playersRoot.querySelector('.player-badge--top .player-badge__avatar');
+    if (!toEl) {
+      toEl = playersRoot.querySelector('.player-badge:not(.player-badge--bottom) .player-badge__avatar');
+    }
+
+    return { fromEl, toEl };
+  }
+
+  #animateChatTrail(message) {
+    return new Promise((resolve) => {
+      if (!this.#chatTrailLayerEl) return resolve();
+
+      const { fromEl, toEl } = this.#findChatTrailAnchors();
+      if (!fromEl || !toEl) return resolve();
+
+      const layerRect = this.#chatTrailLayerEl.getBoundingClientRect();
+      const fromRect = fromEl.getBoundingClientRect();
+      const toRect = toEl.getBoundingClientRect();
+
+      const startX = fromRect.left + fromRect.width / 2 - layerRect.left;
+      const startY = fromRect.top + fromRect.height / 2 - layerRect.top;
+      const endX = toRect.left + toRect.width / 2 - layerRect.left;
+      const endY = toRect.top + toRect.height / 2 - layerRect.top;
+
+      const text = (message.text || '').trim();
+      if (!text) return resolve();
+      const label = `${message.name || 'Jogador'}: ${text}`;
+
+      const bubble = Dom.create('div', {
+        classes: ['game-table-chat-trail__msg', message.isMine ? 'game-table-chat-trail__msg--me' : 'game-table-chat-trail__msg--other'],
+        text: label,
+      });
+
+      bubble.style.left = `${startX}px`;
+      bubble.style.top = `${startY}px`;
+      this.#chatTrailLayerEl.append(bubble);
+
+      const speed = this.#getChatTrailSpeed();
+      const duration = message.isMine ? speed.mineDurationMs : speed.otherDurationMs;
+      const arcHeight = Math.max(42, Math.abs(endY - startY) * 0.2);
+      const startTime = performance.now();
+
+      const tick = (now) => {
+        const raw = Math.min(1, (now - startTime) / duration);
+        const eased = 1 - Math.pow(1 - raw, 3);
+        const x = startX + (endX - startX) * eased;
+        const y = startY + (endY - startY) * eased - Math.sin(Math.PI * eased) * arcHeight;
+
+        bubble.style.left = `${x}px`;
+        bubble.style.top = `${y}px`;
+        bubble.style.opacity = eased < 0.84 ? '1' : `${Math.max(0, 1 - (eased - 0.84) / 0.16)}`;
+
+        if (raw < 1) {
+          requestAnimationFrame(tick);
+          return;
+        }
+
+        bubble.remove();
+        resolve();
+      };
+
+      requestAnimationFrame(tick);
+    });
   }
 
   /**
