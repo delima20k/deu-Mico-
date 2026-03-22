@@ -37,7 +37,7 @@ import { FirebaseService }    from '../services/FirebaseService.js';
 import { AdService }          from '../services/adService.js';
 import { AdConfig }           from '../services/adConfig.js';
 
-const CHAT_TRAIL_SPEED_MODE = 'turbo';
+const CHAT_TRAIL_SPEED_MODE = 'slow';
 const CHAT_TRAIL_SPEED_PRESETS = {
   turbo: {
     mineDurationMs: 1500,
@@ -52,10 +52,10 @@ const CHAT_TRAIL_SPEED_PRESETS = {
     gapMs: 45,
   },
   slow: {
-    mineDurationMs: 2400,
-    otherDurationMs: 2800,
-    popDurationMs: 240,
-    gapMs: 120,
+    mineDurationMs: 3000,
+    otherDurationMs: 3400,
+    popDurationMs: 280,
+    gapMs: 140,
   },
 };
 
@@ -1333,7 +1333,10 @@ export class GameTableScreen extends Screen {
       const startX = layerRect.width / 2;
       const startY = layerRect.height / 2;
       const endY = -56;
-      const driftX = message.isMine ? -18 : 18;
+      const isPortrait = window.matchMedia
+        ? window.matchMedia('(orientation: portrait)').matches
+        : window.innerHeight >= window.innerWidth;
+      const driftX = isPortrait ? 0 : (message.isMine ? -18 : 18);
 
       const text = (message.text || '').trim();
       if (!text) return resolve();
