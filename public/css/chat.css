@@ -263,6 +263,7 @@
 
 .chat-message {
   display: flex;
+  flex-direction: row;
   align-items: flex-start;
   gap: 8px;
   max-width: 85%;
@@ -284,29 +285,30 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   flex-shrink: 0;
 }
 
+/* Avatar como <img> direto */
 .chat-message__avatar {
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  display: block;
   background: #333;
-  overflow: hidden;
+}
+
+/* Fallback quando não há avatarUrl (div com inicial) */
+.chat-message__avatar--initials {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
+  overflow: hidden;
 }
 
-.chat-message__avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.chat-message__avatar span {
+.chat-message__avatar--initials span {
   font-size: 13px;
   font-weight: 700;
   color: #aaa;
@@ -325,17 +327,12 @@
 
 .chat-message__name {
   font-size: 10px;
-  font-weight: 600;
-  color: #4a90d9;
+  color: #aaa;
   text-align: center;
   max-width: 40px;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.chat-message--mine .chat-message__name {
-  color: #6db3f8;
+  white-space: nowrap;
 }
 
 .chat-message__text {

@@ -258,41 +258,45 @@ export class ChatBox {
 
     const isMine = msg.uid === this.#myUid;
     const player = this.#players.find(p => p.uid === msg.uid);
+    const avatarUrl = player?.avatarUrl || msg.avatarUrl || '';
+    const senderName = isMine ? 'Você' : (msg.name || player?.name || 'Jogador');
 
     const wrapper = Dom.create('div', {
-      classes: ['chat-message', isMine ? 'chat-message--mine' : ''],
-    });
-
-    // Avatar
-    const avatarEl = Dom.create('div', { classes: 'chat-message__avatar' });
-    if (player?.avatarUrl) {
-      const img = Dom.create('img', {
-        attrs: { src: player.avatarUrl, alt: msg.name || '' },
-      });
-      avatarEl.append(img);
-    } else {
-      const initial = Dom.create('span', {
-        text: ((msg.name || player?.name || '?')[0]).toUpperCase(),
-      });
-      avatarEl.append(initial);
-    }
-
-    // Conteúdo
-    const content = Dom.create('div', { classes: 'chat-message__content' });
-    const nameEl = Dom.create('span', {
-      classes: 'chat-message__name',
-      text: isMine ? 'Você' : (msg.name || player?.name || 'Jogador'),
-    });
-    const textEl = Dom.create('p', {
-      classes: 'chat-message__text',
-      text: msg.text,
+      classes: ['chat-message', isMine ? 'chat-message--mine' : ''].filter(Boolean),
     });
 
     // Coluna esquerda: avatar + nome abaixo
     const avatarCol = Dom.create('div', { classes: 'chat-message__avatar-col' });
+
+    let avatarEl;
+    if (avatarUrl) {
+      avatarEl = Dom.create('img', {
+        classes: 'chat-message__avatar',
+        attrs: { src: avatarUrl, alt: senderName },
+      });
+    } else {
+      avatarEl = Dom.create('div', { classes: 'chat-message__avatar chat-message__avatar--initials' });
+      const initial = Dom.create('span', {
+        text: (senderName[0] || '?').toUpperCase(),
+      });
+      avatarEl.append(initial);
+    }
+
+    const nameEl = Dom.create('span', {
+      classes: 'chat-message__name',
+      text: senderName,
+    });
+
     avatarCol.append(avatarEl, nameEl);
 
+    // Conteúdo da mensagem
+    const content = Dom.create('div', { classes: 'chat-message__content' });
+    const textEl = Dom.create('span', {
+      classes: 'chat-message__text',
+      text: msg.text,
+    });
     content.append(textEl);
+
     wrapper.append(avatarCol, content);
     this.#messagesContainer.append(wrapper);
 
