@@ -266,7 +266,7 @@
   align-items: flex-start;
   gap: 8px;
   max-width: 85%;
-  animation: msg-in 0.55s ease-out;
+  animation: msg-in 0.65s ease-out;
 }
 
 @keyframes msg-in {
