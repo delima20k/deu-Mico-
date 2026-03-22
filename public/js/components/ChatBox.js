@@ -288,8 +288,12 @@ export class ChatBox {
       text: msg.text,
     });
 
-    content.append(nameEl, textEl);
-    wrapper.append(avatarEl, content);
+    // Coluna esquerda: avatar + nome abaixo
+    const avatarCol = Dom.create('div', { classes: 'chat-message__avatar-col' });
+    avatarCol.append(avatarEl, nameEl);
+
+    content.append(textEl);
+    wrapper.append(avatarCol, content);
     this.#messagesContainer.append(wrapper);
 
     // Limita a 50 mensagens visíveis
