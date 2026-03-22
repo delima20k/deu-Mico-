@@ -1326,10 +1326,26 @@ export class GameTableScreen extends Screen {
     const playersRoot = this.#gameTableView?.getPlayersContainer();
     if (!playersRoot) return { fromEl: null, toEl: null };
 
-    const fromEl = playersRoot.querySelector('.player-badge--bottom .player-badge__avatar');
-    let toEl = playersRoot.querySelector('.player-badge--top .player-badge__avatar');
-    if (!toEl) {
-      toEl = playersRoot.querySelector('.player-badge:not(.player-badge--bottom) .player-badge__avatar');
+    const avatarEls = Array.from(playersRoot.querySelectorAll('.player-badge__avatar'));
+    if (avatarEls.length < 2) return { fromEl: null, toEl: null };
+
+    // Em qualquer orientação, pega o avatar com maior Y (mais embaixo na tela)
+    // e o avatar com menor Y (mais em cima na tela), garantindo trilha vertical ascendente.
+    const sortedByY = avatarEls
+      .map((el) => {
+        const rect = el.getBoundingClientRect();
+        return {
+          el,
+          centerY: rect.top + rect.height / 2,
+        };
+      })
+      .sort((a, b) => a.centerY - b.centerY);
+
+    const toEl = sortedByY[0]?.el || null;
+    const fromEl = sortedByY[sortedByY.length - 1]?.el || null;
+
+    if (!fromEl || !toEl || fromEl === toEl) {
+      return { fromEl: null, toEl: null };
     }
 
     return { fromEl, toEl };
