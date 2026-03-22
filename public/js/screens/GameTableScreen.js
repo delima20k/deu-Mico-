@@ -36,7 +36,6 @@ import { AudioService }       from '../services/AudioService.js';
 import { FirebaseService }    from '../services/FirebaseService.js';
 import { AdService }          from '../services/adService.js';
 import { AdConfig }           from '../services/adConfig.js';
-import { ChatBox }            from '../components/ChatBox.js';
 
 export class GameTableScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
@@ -150,8 +149,8 @@ export class GameTableScreen extends Screen {
   /** @type {OpponentPickPanel|null} Painel de escolha de carta do oponente */
   #opponentPickPanel = null;
 
-  /** @type {ChatBox|null} Chat em tempo real */
-  #chatBox = null;
+  /** @type {Function|null} Unsubscriber do chat realtime */
+  #chatUnsubscribe = null;
 
   /** @type {Function|null} Limpeza do indicador visual no avatar-alvo do turno */
   #stealHintCleanup = null;
@@ -573,9 +572,10 @@ export class GameTableScreen extends Screen {
     // Remove indicador de roubo no avatar (se estiver ativo)
     this.#clearStealHint();
 
-    // Destroi chat
-    this.#chatBox?.destroy();
-    this.#chatBox = null;
+    // Para chat realtime da hand modal
+    this.#chatUnsubscribe?.();
+    this.#chatUnsubscribe = null;
+    MatchService.getInstance().stopSubscribingChat(this.#matchId);
 
     // Destroi painel de escolha de carta do oponente
     this.#opponentPickPanel?.destroy();
@@ -1226,21 +1226,32 @@ export class GameTableScreen extends Screen {
   // ═══════════════════════════════════════════════════════════════════════
 
   /**
-   * Cria e exibe o botão flutuante de chat no centro da mesa.
+   * Inicializa chat em tempo real dentro da HandModal.
    * Chamado após a distribuição de cartas.
    * @private
    */
   #showChatButton() {
-    this.#chatBox?.destroy();
-    this.#chatBox = new ChatBox({
-      matchId: this.#matchId,
+    if (!this.#handModal || !this.#matchId) return;
+
+    this.#chatUnsubscribe?.();
+    this.#chatUnsubscribe = null;
+
+    this.#handModal.clearChatMessages();
+    this.#handModal.configureChat({
       myUid: this.#myUid,
       players: this.#players,
+      onSend: async (text) => {
+        return MatchService.getInstance().sendMessage(this.#matchId, text);
+      },
     });
 
-    const chatBtnEl = this.#chatBox.create();
-    const container = this.getElement();
-    container.append(chatBtnEl);
+    const history = MatchService.getInstance().getChatHistory(this.#matchId);
+    history.forEach((message) => this.#handModal?.appendChatMessage(message));
+
+    this.#chatUnsubscribe = MatchService.getInstance().subscribeChat(
+      this.#matchId,
+      (message) => this.#handModal?.appendChatMessage(message),
+    );
   }
 
   /**
@@ -1751,9 +1762,11 @@ export class GameTableScreen extends Screen {
     const { micoUid, pairCounts = {} } = state;
 
     // Limpa chat da partida
-    this.#chatBox?.clearChat();
-    this.#chatBox?.destroy();
-    this.#chatBox = null;
+    this.#chatUnsubscribe?.();
+    this.#chatUnsubscribe = null;
+    MatchService.getInstance().stopSubscribingChat(this.#matchId);
+    void MatchService.getInstance().clearChat(this.#matchId);
+    this.#handModal?.clearChatMessages();
 
     // 1. Monta lista de jogadores com seus pares (usa pairCounts do evento
     //    ou fallback para o badge local — garante dado correto em todos os clientes)

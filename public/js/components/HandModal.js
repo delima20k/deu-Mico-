@@ -21,12 +21,48 @@ import { Dom } from '../utils/Dom.js';
 
 const BACK_IMG  = 'img/carta_verso.png';
 const FLIP_DELAY = 320; // ms apos adicionar a carta antes de virar
+const QUICK_CHAT_PHRASES = [
+  'Com quem esta o mico? 🙈',
+  'Cade o mico, doido? 👀',
+  'Eu acho que o mico esta com augen 😜',
+  'Passa esse mico pra la! 😂',
+  'Nao sou eu, juro! 😅',
+  'Segura esse mico! 🐵',
+];
+const QUICK_CHAT_EMOJIS = ['😂', '🙈', '👀', '🤯', '🐵', '🔥'];
+const CHAT_COOLDOWN_MS = 1000;
+const CHAT_CENSOR_PATTERNS = [
+  /\bp[o0]r+r+a+\b/gi,
+  /\bp[o0]h+a+\b/gi,
+  /\bc[a@4]r+a+l+h+o+\b/gi,
+  /\bc[a@4]r+a+i+o+\b/gi,
+  /\bc[a@4]r+a+i+\b/gi,
+  /\bk+r+l+\b/gi,
+  /\bc+r+l+\b/gi,
+  /\bm[e3]r+d+a+\b/gi,
+  /\bb[uv]c+e+t+a+\b/gi,
+  /\bbct\b/gi,
+  /\bf+d+p+\b/gi,
+  /\bfilh[oa]\s+d[ae]\s+p[uu]t+a+\b/gi,
+  /\bfi\s+d[ae]\s+p[uu]t+a+\b/gi,
+  /\bf[o0]d+a+\s*-?\s*s[e3]\b/gi,
+  /\bf[o0]d+a+s[e3]\b/gi,
+  /\bp[uu]t+a+\b/gi,
+  /\bp[qk]+p+\b/gi,
+  /\bp[uu]t+a+\s+q+[eu]+\s+p+a+r+i+[uuw]+\b/gi,
+];
 
 export class HandModal {
   // ── DOM
   #el       = null;   // .hand-modal
   #trackEl  = null;   // .hand-modal__track (itens do carrossel)
   #countEl  = null;   // span de contagem
+  #chatFeedEl = null;
+  #chatInputEl = null;
+  #chatSendBtnEl = null;
+  #chatStatusEl = null;
+  #chatCooldownTimer = null;
+  #chatCooldownUntil = 0;
 
   // ── Estado de dados
   /** @type {import('../domain/Card.js').Card[]} */
@@ -43,6 +79,10 @@ export class HandModal {
 
   /** Callback chamado apos confirmar par. */
   onPairFormed = null;
+  #chatOnSend = null;
+  #chatMyUid = null;
+  #chatPlayers = [];
+  #chatMsgIds = new Set();
 
   // ─────────────────────────────────────────────────────────────────────
   // API publica
@@ -68,7 +108,69 @@ export class HandModal {
     this.#trackEl  = track;
     viewport.append(track);
 
-    modal.append(header, viewport);
+    const chat = Dom.create('div', { classes: 'hand-modal__chat' });
+    this.#chatFeedEl = Dom.create('div', { classes: 'hand-modal__chat-feed' });
+
+    const quickRow = Dom.create('div', { classes: 'hand-modal__chat-phrases' });
+    for (const phrase of QUICK_CHAT_PHRASES) {
+      const phraseBtn = Dom.create('button', {
+        classes: 'hand-modal__chat-chip',
+        text: phrase,
+        attrs: { type: 'button' },
+      });
+      phraseBtn.addEventListener('click', () => this.#emitChat(phrase));
+      quickRow.append(phraseBtn);
+    }
+
+    const emojiRow = Dom.create('div', { classes: 'hand-modal__chat-emojis' });
+    for (const emoji of QUICK_CHAT_EMOJIS) {
+      const emojiBtn = Dom.create('button', {
+        classes: 'hand-modal__chat-emoji',
+        text: emoji,
+        attrs: { type: 'button', 'aria-label': `Enviar ${emoji}` },
+      });
+      emojiBtn.addEventListener('click', () => this.#emitChat(emoji));
+      emojiRow.append(emojiBtn);
+    }
+
+    const inputRow = Dom.create('div', { classes: 'hand-modal__chat-input-row' });
+    this.#chatInputEl = Dom.create('input', {
+      classes: 'hand-modal__chat-input',
+      attrs: {
+        type: 'text',
+        maxlength: '200',
+        placeholder: 'Manda no chat...',
+        autocomplete: 'off',
+      },
+    });
+    const sendBtn = Dom.create('button', {
+      classes: 'hand-modal__chat-send',
+      text: 'Enviar',
+      attrs: { type: 'button' },
+    });
+    this.#chatSendBtnEl = sendBtn;
+    this.#chatStatusEl = Dom.create('div', {
+      classes: 'hand-modal__chat-status',
+      text: '',
+      attrs: { 'aria-live': 'polite' },
+    });
+
+    const sendFromInput = () => {
+      const text = (this.#chatInputEl?.value || '').trim();
+      if (!text) return;
+      this.#chatInputEl.value = '';
+      this.#emitChat(text);
+    };
+
+    sendBtn.addEventListener('click', sendFromInput);
+    this.#chatInputEl.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') sendFromInput();
+    });
+
+    inputRow.append(this.#chatInputEl, sendBtn);
+    chat.append(this.#chatFeedEl, quickRow, emojiRow, inputRow, this.#chatStatusEl);
+
+    modal.append(header, viewport, chat);
     document.body.append(modal);
 
     this.#initDrag(viewport, track);
@@ -140,10 +242,80 @@ export class HandModal {
     this.#el          = null;
     this.#trackEl     = null;
     this.#countEl     = null;
+    this.#chatFeedEl  = null;
+    this.#chatInputEl = null;
+    this.#chatSendBtnEl = null;
+    this.#chatStatusEl = null;
+    if (this.#chatCooldownTimer) {
+      clearInterval(this.#chatCooldownTimer);
+      this.#chatCooldownTimer = null;
+    }
+    this.#chatCooldownUntil = 0;
     this.#cards       = [];
     this.#itemEls     = new Map();
     this.#selectedId  = null;
     this.#formedPairs = [];
+    this.#chatOnSend  = null;
+    this.#chatMyUid   = null;
+    this.#chatPlayers = [];
+    this.#chatMsgIds  = new Set();
+  }
+
+  /**
+   * Configura callbacks e contexto do chat da modal.
+   * @param {{ myUid: string, players: Array, onSend: (text: string) => Promise<void>|void }} options
+   */
+  configureChat({ myUid, players, onSend }) {
+    this.#chatMyUid = myUid || null;
+    this.#chatPlayers = players || [];
+    this.#chatOnSend = onSend || null;
+  }
+
+  /**
+   * Renderiza uma mensagem em formato de bolha no chat da modal.
+   * @param {{ msgId?: string, uid?: string, name?: string, text?: string, ts?: number }} message
+   */
+  appendChatMessage(message) {
+    if (!this.#chatFeedEl || !message?.text) return;
+
+    const identity = message.msgId || `${message.uid || 'anon'}-${message.ts || Date.now()}-${message.text}`;
+    if (this.#chatMsgIds.has(identity)) return;
+    this.#chatMsgIds.add(identity);
+
+    const isMine = Boolean(this.#chatMyUid && message.uid === this.#chatMyUid);
+    const player = this.#chatPlayers.find((candidate) => candidate.uid === message.uid);
+    const label = isMine ? 'Voce' : (message.name || player?.name || 'Jogador');
+
+    const row = Dom.create('div', {
+      classes: ['hand-modal__chat-msg', isMine ? 'hand-modal__chat-msg--mine' : ''],
+    });
+    const name = Dom.create('span', {
+      classes: 'hand-modal__chat-msg-name',
+      text: label,
+    });
+    const bubble = Dom.create('p', {
+      classes: 'hand-modal__chat-bubble',
+      text: message.text,
+    });
+    bubble.classList.add('hand-modal__chat-bubble--pop');
+    setTimeout(() => bubble.classList.remove('hand-modal__chat-bubble--pop'), 260);
+
+    row.append(name, bubble);
+    this.#chatFeedEl.append(row);
+
+    while (this.#chatFeedEl.children.length > 50) {
+      this.#chatFeedEl.firstChild?.remove();
+    }
+
+    requestAnimationFrame(() => {
+      this.#chatFeedEl.scrollTop = this.#chatFeedEl.scrollHeight;
+    });
+  }
+
+  clearChatMessages() {
+    if (this.#chatFeedEl) this.#chatFeedEl.innerHTML = '';
+    this.#chatMsgIds.clear();
+    this.#setChatStatus('', false);
   }
 
   // ─────────────────────────────────────────────────────────────────────
@@ -374,6 +546,93 @@ export class HandModal {
     if (!this.#countEl) return;
     const n = this.#cards.length;
     this.#countEl.textContent = n + ' carta' + (n !== 1 ? 's' : '');
+  }
+
+  async #emitChat(text) {
+    const payload = (text || '').trim();
+    if (!payload || typeof this.#chatOnSend !== 'function') return;
+
+    if (Date.now() < this.#chatCooldownUntil) {
+      this.#startChatCooldown();
+      return;
+    }
+
+    const sanitized = this.#sanitizeChatText(payload);
+    if (sanitized !== payload) {
+      this.#setChatStatus('Mensagem moderada automaticamente.', false);
+    }
+
+    try {
+      const wasSent = await this.#chatOnSend(sanitized);
+      if (wasSent === false) {
+        this.#setChatStatus('Aguarde 1s para enviar novamente.', true);
+        this.#startChatCooldown();
+        return;
+      }
+
+      this.#setChatStatus('Mensagem enviada!', false);
+      this.#startChatCooldown();
+    } catch (error) {
+      console.warn('[HandModal] Falha ao enviar mensagem de chat:', error);
+      this.#setChatStatus('Erro ao enviar mensagem.', true);
+    }
+  }
+
+  #startChatCooldown() {
+    this.#chatCooldownUntil = Date.now() + CHAT_COOLDOWN_MS;
+    this.#toggleChatControls(true);
+
+    if (this.#chatCooldownTimer) {
+      clearInterval(this.#chatCooldownTimer);
+      this.#chatCooldownTimer = null;
+    }
+
+    this.#chatCooldownTimer = setInterval(() => {
+      const leftMs = this.#chatCooldownUntil - Date.now();
+      if (leftMs <= 0) {
+        clearInterval(this.#chatCooldownTimer);
+        this.#chatCooldownTimer = null;
+        this.#toggleChatControls(false);
+        this.#setChatStatus('', false);
+        return;
+      }
+
+      const leftSeconds = Math.max(1, Math.ceil(leftMs / 1000));
+      this.#setChatStatus(`Aguarde ${leftSeconds}s...`, true);
+    }, 80);
+  }
+
+  #toggleChatControls(disabled) {
+    if (!this.#el) return;
+
+    this.#chatInputEl?.toggleAttribute('disabled', disabled);
+    this.#chatSendBtnEl?.toggleAttribute('disabled', disabled);
+
+    const buttons = this.#el.querySelectorAll(
+      '.hand-modal__chat-chip, .hand-modal__chat-emoji'
+    );
+    buttons.forEach((buttonEl) => buttonEl.toggleAttribute('disabled', disabled));
+    this.#el.classList.toggle('hand-modal__chat--cooldown', disabled);
+  }
+
+  #setChatStatus(text, isWarning) {
+    if (!this.#chatStatusEl) return;
+    this.#chatStatusEl.textContent = text || '';
+    this.#chatStatusEl.classList.toggle('hand-modal__chat-status--warn', Boolean(isWarning));
+  }
+
+  #sanitizeChatText(text) {
+    let sanitized = text;
+
+    for (const pattern of CHAT_CENSOR_PATTERNS) {
+      sanitized = sanitized.replace(pattern, (match) => {
+        const visibleLength = match.replace(/\s/g, '').length;
+        if (visibleLength <= 0) return match;
+        return '*'.repeat(Math.min(visibleLength, 8));
+      });
+    }
+
+    return sanitized;
   }
 
   // ─────────────────────────────────────────────────────────────────────

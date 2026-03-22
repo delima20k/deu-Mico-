@@ -83,6 +83,186 @@
   display: none;
 }
 
+/* ── Chat em tempo real (abaixo da mao) ───────────────────────────── */
+
+.hand-modal__chat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 10px;
+  border-top: 1px solid rgba(168, 230, 168, 0.14);
+  background: linear-gradient(180deg, rgba(7, 24, 7, 0.25) 0%, rgba(7, 24, 7, 0.62) 100%);
+}
+
+.hand-modal__chat-feed {
+  max-height: 108px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(168, 230, 168, 0.35) transparent;
+}
+
+.hand-modal__chat-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+}
+
+.hand-modal__chat-msg--mine {
+  align-items: flex-end;
+}
+
+.hand-modal__chat-msg-name {
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: rgba(168, 230, 168, 0.74);
+}
+
+.hand-modal__chat-bubble {
+  margin: 0;
+  max-width: min(82vw, 420px);
+  padding: 6px 10px;
+  border-radius: 14px;
+  color: rgba(241, 255, 241, 0.96);
+  background: rgba(39, 84, 39, 0.78);
+  border: 1px solid rgba(120, 220, 120, 0.25);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35);
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(11px, 2.9vw, 13px);
+  line-height: 1.22;
+  word-break: break-word;
+}
+
+.hand-modal__chat-bubble--pop {
+  animation: hm-chat-pop 0.2s cubic-bezier(0.2, 0.8, 0.28, 1.3);
+}
+
+@keyframes hm-chat-pop {
+  0% { transform: scale(0.9); opacity: 0.2; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hand-modal__chat-bubble--pop {
+    animation: none;
+  }
+}
+
+.hand-modal__chat-msg--mine .hand-modal__chat-bubble {
+  background: linear-gradient(135deg, rgba(58, 119, 58, 0.92), rgba(70, 140, 70, 0.92));
+  border-color: rgba(162, 255, 162, 0.36);
+}
+
+.hand-modal__chat-phrases {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.hand-modal__chat-phrases::-webkit-scrollbar {
+  display: none;
+}
+
+.hand-modal__chat-chip {
+  border: 1px solid rgba(110, 200, 110, 0.38);
+  background: rgba(14, 49, 14, 0.82);
+  color: rgba(205, 245, 205, 0.96);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.hand-modal__chat-chip:active {
+  transform: scale(0.96);
+}
+
+.hand-modal__chat-emojis {
+  display: flex;
+  gap: 6px;
+}
+
+.hand-modal__chat-emoji {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(110, 200, 110, 0.4);
+  background: rgba(12, 44, 12, 0.86);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.hand-modal__chat-emoji:active {
+  transform: scale(0.92);
+}
+
+.hand-modal__chat-input-row {
+  display: flex;
+  gap: 6px;
+}
+
+.hand-modal__chat-input {
+  flex: 1;
+  min-width: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(110, 200, 110, 0.36);
+  background: rgba(8, 29, 8, 0.9);
+  color: #eaffea;
+  padding: 7px 10px;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 12px;
+  outline: none;
+}
+
+.hand-modal__chat-input::placeholder {
+  color: rgba(190, 235, 190, 0.5);
+}
+
+.hand-modal__chat-send {
+  border: 1px solid rgba(132, 228, 132, 0.5);
+  background: linear-gradient(135deg, rgba(28, 110, 28, 0.95), rgba(50, 150, 50, 0.95));
+  color: #fff;
+  border-radius: 10px;
+  padding: 0 12px;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.hand-modal__chat-send:active {
+  transform: scale(0.95);
+}
+
+.hand-modal__chat-status {
+  min-height: 14px;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: rgba(168, 230, 168, 0.72);
+  padding: 0 2px;
+}
+
+.hand-modal__chat-status--warn {
+  color: rgba(255, 225, 120, 0.96);
+}
+
+.hand-modal__chat--cooldown .hand-modal__chat-input,
+.hand-modal__chat--cooldown .hand-modal__chat-send,
+.hand-modal__chat--cooldown .hand-modal__chat-chip,
+.hand-modal__chat--cooldown .hand-modal__chat-emoji {
+  opacity: 0.6;
+}
+
 /* ── Track (flex de itens) ─────────────────────────────────────────── */
 
 .hand-modal__track {
