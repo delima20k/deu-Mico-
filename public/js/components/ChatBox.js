@@ -261,44 +261,49 @@ export class ChatBox {
     const avatarUrl = player?.avatarUrl || msg.avatarUrl || '';
     const senderName = isMine ? 'Você' : (msg.name || player?.name || 'Jogador');
 
-    const wrapper = Dom.create('div', {
-      classes: ['chat-message', isMine ? 'chat-message--mine' : ''].filter(Boolean),
-    });
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chat-message' + (isMine ? ' chat-message--mine' : '');
 
-    // Coluna esquerda: avatar + nome abaixo
-    const avatarCol = Dom.create('div', { classes: 'chat-message__avatar-col' });
+    // Coluna avatar + nome (sempre à esquerda)
+    const avatarCol = document.createElement('div');
+    avatarCol.className = 'chat-message__avatar-col';
 
-    let avatarEl;
     if (avatarUrl) {
-      avatarEl = Dom.create('img', {
-        classes: 'chat-message__avatar',
-        attrs: { src: avatarUrl, alt: senderName },
-      });
+      const img = document.createElement('img');
+      img.className = 'chat-message__avatar';
+      img.src = avatarUrl;
+      img.alt = senderName;
+      img.onerror = () => {
+        img.style.display = 'none';
+        const fallback = document.createElement('div');
+        fallback.className = 'chat-message__avatar chat-message__avatar--initials';
+        fallback.textContent = (senderName[0] || '?').toUpperCase();
+        avatarCol.insertBefore(fallback, avatarCol.firstChild);
+      };
+      avatarCol.appendChild(img);
     } else {
-      avatarEl = Dom.create('div', { classes: 'chat-message__avatar chat-message__avatar--initials' });
-      const initial = Dom.create('span', {
-        text: (senderName[0] || '?').toUpperCase(),
-      });
-      avatarEl.append(initial);
+      const initial = document.createElement('div');
+      initial.className = 'chat-message__avatar chat-message__avatar--initials';
+      initial.textContent = (senderName[0] || '?').toUpperCase();
+      avatarCol.appendChild(initial);
     }
 
-    const nameEl = Dom.create('span', {
-      classes: 'chat-message__name',
-      text: senderName,
-    });
-
-    avatarCol.append(avatarEl, nameEl);
+    const nameEl = document.createElement('span');
+    nameEl.className = 'chat-message__name';
+    nameEl.textContent = senderName;
+    avatarCol.appendChild(nameEl);
 
     // Conteúdo da mensagem
-    const content = Dom.create('div', { classes: 'chat-message__content' });
-    const textEl = Dom.create('span', {
-      classes: 'chat-message__text',
-      text: msg.text,
-    });
-    content.append(textEl);
+    const content = document.createElement('div');
+    content.className = 'chat-message__content';
+    const textEl = document.createElement('span');
+    textEl.className = 'chat-message__text';
+    textEl.textContent = msg.text || '';
+    content.appendChild(textEl);
 
-    wrapper.append(avatarCol, content);
-    this.#messagesContainer.append(wrapper);
+    wrapper.appendChild(avatarCol);
+    wrapper.appendChild(content);
+    this.#messagesContainer.appendChild(wrapper);
 
     // Limita a 50 mensagens visíveis
     while (this.#messagesContainer.children.length > 50) {

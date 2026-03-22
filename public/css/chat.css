@@ -261,19 +261,24 @@
    MENSAGENS
    ============================================ */
 
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .chat-message {
   display: flex;
   flex-direction: row;
   align-items: flex-start;
   gap: 8px;
-  max-width: 85%;
-  margin-bottom: 8px;
-  animation: msg-in 0.7s ease both;
-}
-
-@keyframes msg-in {
-  from { opacity: 0; transform: translateY(16px); }
-  to   { opacity: 1; transform: translateY(0); }
+  margin-bottom: 10px;
+  animation: msg-in 1s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 /* Mensagem do próprio jogador — alinhada à direita */
@@ -288,6 +293,7 @@
   align-items: center;
   gap: 3px;
   flex-shrink: 0;
+  width: 40px;
 }
 
 /* Avatar como <img> direto */
@@ -296,58 +302,57 @@
   height: 36px;
   border-radius: 50%;
   object-fit: cover;
-  flex-shrink: 0;
   display: block;
-  background: #333;
+  flex-shrink: 0;
 }
 
 /* Fallback quando não há avatarUrl (div com inicial) */
 .chat-message__avatar--initials {
-  background: #444;
-  color: #fff;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #3a4a5c;
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: bold;
   flex-shrink: 0;
-}
-
-.chat-message__avatar--initials span {
-  font-size: 14px;
-  font-weight: bold;
-  color: #fff;
-  line-height: 1;
-}
-
-.chat-message__content {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 12px 12px 12px 4px;
-  padding: 6px 12px 8px;
-}
-
-.chat-message--mine .chat-message__content {
-  background: rgba(74, 144, 217, 0.25);
-  border-radius: 12px 12px 4px 12px;
+  border: 1.5px solid #4a90d9;
 }
 
 .chat-message__name {
-  font-size: 10px;
-  color: #aaa;
+  font-size: 9px;
+  color: #aab4c0;
   text-align: center;
-  max-width: 40px;
+  width: 40px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.2;
+}
+
+.chat-message__content {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 0 10px 10px 10px;
+  padding: 7px 11px;
+  min-width: 0;
+}
+
+.chat-message--mine .chat-message__content {
+  background: rgba(74, 144, 217, 0.22);
+  border-radius: 10px 0 10px 10px;
 }
 
 .chat-message__text {
   font-size: 13px;
-  color: #ddd;
-  margin: 0;
+  color: #e0e8f0;
   word-break: break-word;
   line-height: 1.4;
 }
+
 
 /* ============================================
    RESPONSIVO — Desktop
