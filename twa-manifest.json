@@ -30,7 +30,7 @@
   "isMetaQuest": false,
   "fullScopeUrl": "https://www.deu-mico.com.br/",
   "minSdkVersion": 23,
-  "orientation": "natural",
+  "orientation": "any",
   "fingerprints": [
     {
       "name": "PLACEHOLDER — substituir pelo SHA-256 real do keystore",

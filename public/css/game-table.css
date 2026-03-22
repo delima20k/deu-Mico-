@@ -53,6 +53,47 @@
   pointer-events: none;
 }
 
+.game-table-chat-trail {
+  position: absolute;
+  inset: 0;
+  z-index: 220;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.game-table-chat-trail__msg {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  max-width: min(64vw, 320px);
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(214, 255, 214, 0.38);
+  background: linear-gradient(135deg, rgba(18, 67, 18, 0.92), rgba(28, 98, 28, 0.92));
+  color: rgba(240, 255, 240, 0.98);
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(11px, 2.6vw, 13px);
+  line-height: 1.15;
+  letter-spacing: 0.02em;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  will-change: transform, opacity, top, left;
+}
+
+.game-table-chat-trail__msg--me {
+  border-color: rgba(255, 228, 145, 0.62);
+  background: linear-gradient(135deg, rgba(112, 82, 20, 0.96), rgba(162, 124, 31, 0.94));
+  color: rgba(255, 246, 220, 0.98);
+  box-shadow: 0 8px 22px rgba(95, 70, 18, 0.44);
+}
+
+.game-table-chat-trail__msg--other {
+  border-color: rgba(214, 255, 214, 0.38);
+  background: linear-gradient(135deg, rgba(18, 67, 18, 0.92), rgba(28, 98, 28, 0.92));
+  color: rgba(240, 255, 240, 0.98);
+}
+
 /* ============================================
    PLAYER BADGE - Avatar + Nome
    ============================================ */
