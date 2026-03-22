@@ -226,8 +226,8 @@ export class GameTableScreen extends Screen {
     this.#myUid   = params.myUid   || this.#getCurrentUserUid();
     this.#players = params.players || await this.#generateMockPlayers();
 
-    // Libera rotação landscape apenas na mesa de jogo
-    try { if (screen.orientation?.unlock) screen.orientation.unlock(); } catch (_) {}
+    // Mesa sempre em horizontal quando possível (PWA/Android)
+    this.#lockGameOrientation();
 
     console.log(`\n[GameTableScreen] 🎮 ===== TELA DA MESA ABERTA =====`);
     console.log(`[GameTableScreen] 📋 ID da Partida: ${this.#matchId}`);
@@ -574,8 +574,8 @@ export class GameTableScreen extends Screen {
     this.#visibilityHandler = null;
     this.#receivedPlayerLeftEvents.clear();
 
-    // Volta a travar orientação em portrait ao sair da mesa
-    try { if (screen.orientation?.lock) screen.orientation.lock('portrait').catch(() => {}); } catch (_) {}
+    // Fora da mesa, o app volta para portrait quando possível
+    this.#lockPortraitOrientation();
 
     // Para o heartbeat Firebase (ping periódico)
     FirebaseService.getInstance().stopHeartbeat();
@@ -658,6 +658,22 @@ export class GameTableScreen extends Screen {
     }
 
     console.log(`[GameTableScreen] 👋 Saída concluída\n`);
+  }
+
+  #lockGameOrientation() {
+    try {
+      if (!screen.orientation?.lock) return;
+      screen.orientation.lock('landscape-primary').catch(() => {
+        screen.orientation.lock('landscape').catch(() => {});
+      });
+    } catch (_) {}
+  }
+
+  #lockPortraitOrientation() {
+    try {
+      if (!screen.orientation?.lock) return;
+      screen.orientation.lock('portrait').catch(() => {});
+    } catch (_) {}
   }
 
   /**
