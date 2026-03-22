@@ -284,6 +284,13 @@
   z-index: 1;
 }
 
+@media (orientation: landscape) and (max-height: 500px) and (hover: none) and (pointer: coarse) {
+  .hand-modal__item {
+    width: clamp(44px, 11vw, 65px);
+    height: clamp(66px, 16.5vw, 98px);
+  }
+}
+
 /* Hover: levanta a carta */
 .hand-modal__item:hover {
   transform: translateY(-16px);
