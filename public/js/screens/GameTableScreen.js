@@ -1335,6 +1335,7 @@ export class GameTableScreen extends Screen {
       const isPortrait = window.matchMedia
         ? window.matchMedia('(orientation: portrait)').matches
         : window.innerHeight >= window.innerWidth;
+      const orientationRotate = isPortrait ? ' rotate(-90deg)' : '';
       const endY = -56;
       const endX = -56;
 
@@ -1350,7 +1351,7 @@ export class GameTableScreen extends Screen {
       bubble.style.left = `${startX}px`;
       bubble.style.top = `${startY}px`;
       bubble.style.opacity = '0';
-      bubble.style.transform = 'translate(-50%, -50%) scale(0.56)';
+      bubble.style.transform = `translate(-50%, -50%) scale(0.56)${orientationRotate}`;
       this.#chatTrailLayerEl.append(bubble);
 
       const speed = this.#getChatTrailSpeed();
@@ -1365,7 +1366,7 @@ export class GameTableScreen extends Screen {
           const popT = Math.min(1, elapsed / popDuration);
           const popEase = 1 - Math.pow(1 - popT, 3);
           const scale = 0.56 + (1 - 0.56) * popEase;
-          bubble.style.transform = `translate(-50%, -50%) scale(${scale})`;
+          bubble.style.transform = `translate(-50%, -50%) scale(${scale})${orientationRotate}`;
           bubble.style.opacity = `${0.2 + 0.8 * popEase}`;
           requestAnimationFrame(tick);
           return;
@@ -1382,7 +1383,7 @@ export class GameTableScreen extends Screen {
 
         bubble.style.left = `${x}px`;
         bubble.style.top = `${y}px`;
-        bubble.style.transform = 'translate(-50%, -50%) scale(1)';
+        bubble.style.transform = `translate(-50%, -50%) scale(1)${orientationRotate}`;
         bubble.style.opacity = riseT < 0.74 ? '1' : `${Math.max(0, 1 - (riseT - 0.74) / 0.26)}`;
 
         if (elapsed < totalDuration) {
