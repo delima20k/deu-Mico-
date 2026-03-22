@@ -1333,10 +1333,7 @@ export class GameTableScreen extends Screen {
       const startX = layerRect.width / 2;
       const startY = layerRect.height / 2;
       const endY = -56;
-      const isPortrait = window.matchMedia
-        ? window.matchMedia('(orientation: portrait)').matches
-        : window.innerHeight >= window.innerWidth;
-      const driftX = isPortrait ? 0 : (message.isMine ? -18 : 18);
+      const driftX = 0;
 
       const text = (message.text || '').trim();
       if (!text) return resolve();
