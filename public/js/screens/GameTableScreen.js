@@ -1331,10 +1331,13 @@ export class GameTableScreen extends Screen {
 
       const layerRect = this.#chatTrailLayerEl.getBoundingClientRect();
       const startX = layerRect.width / 2;
-      const startY = layerRect.height / 2;
       const isPortrait = window.matchMedia
         ? window.matchMedia('(orientation: portrait)').matches
         : window.innerHeight >= window.innerWidth;
+      const portraitRightOffset = 42;
+      const startY = isPortrait
+        ? (layerRect.height / 2) + portraitRightOffset
+        : layerRect.height / 2;
       const orientationRotate = isPortrait ? ' rotate(-90deg)' : '';
       const endY = -56;
       const endX = -56;
