@@ -40,18 +40,21 @@ import { AdConfig }           from '../services/adConfig.js';
 const CHAT_TRAIL_SPEED_MODE = 'turbo';
 const CHAT_TRAIL_SPEED_PRESETS = {
   turbo: {
-    mineDurationMs: 620,
-    otherDurationMs: 760,
+    mineDurationMs: 1500,
+    otherDurationMs: 1700,
+    popDurationMs: 180,
     gapMs: 30,
   },
   fast: {
-    mineDurationMs: 820,
-    otherDurationMs: 980,
+    mineDurationMs: 1850,
+    otherDurationMs: 2100,
+    popDurationMs: 210,
     gapMs: 45,
   },
   slow: {
-    mineDurationMs: 1180,
-    otherDurationMs: 1420,
+    mineDurationMs: 2400,
+    otherDurationMs: 2800,
+    popDurationMs: 240,
     gapMs: 120,
   },
 };
@@ -1322,50 +1325,15 @@ export class GameTableScreen extends Screen {
     return CHAT_TRAIL_SPEED_PRESETS[CHAT_TRAIL_SPEED_MODE] || CHAT_TRAIL_SPEED_PRESETS.fast;
   }
 
-  #findChatTrailAnchors() {
-    const playersRoot = this.#gameTableView?.getPlayersContainer();
-    if (!playersRoot) return { fromEl: null, toEl: null };
-
-    const avatarEls = Array.from(playersRoot.querySelectorAll('.player-badge__avatar'));
-    if (avatarEls.length < 2) return { fromEl: null, toEl: null };
-
-    // Em qualquer orientação, pega o avatar com maior Y (mais embaixo na tela)
-    // e o avatar com menor Y (mais em cima na tela), garantindo trilha vertical ascendente.
-    const sortedByY = avatarEls
-      .map((el) => {
-        const rect = el.getBoundingClientRect();
-        return {
-          el,
-          centerY: rect.top + rect.height / 2,
-        };
-      })
-      .sort((a, b) => a.centerY - b.centerY);
-
-    const toEl = sortedByY[0]?.el || null;
-    const fromEl = sortedByY[sortedByY.length - 1]?.el || null;
-
-    if (!fromEl || !toEl || fromEl === toEl) {
-      return { fromEl: null, toEl: null };
-    }
-
-    return { fromEl, toEl };
-  }
-
   #animateChatTrail(message) {
     return new Promise((resolve) => {
       if (!this.#chatTrailLayerEl) return resolve();
 
-      const { fromEl, toEl } = this.#findChatTrailAnchors();
-      if (!fromEl || !toEl) return resolve();
-
       const layerRect = this.#chatTrailLayerEl.getBoundingClientRect();
-      const fromRect = fromEl.getBoundingClientRect();
-      const toRect = toEl.getBoundingClientRect();
-
-      const startX = fromRect.left + fromRect.width / 2 - layerRect.left;
-      const startY = fromRect.top + fromRect.height / 2 - layerRect.top;
-      const endX = toRect.left + toRect.width / 2 - layerRect.left;
-      const endY = toRect.top + toRect.height / 2 - layerRect.top;
+      const startX = layerRect.width / 2;
+      const startY = layerRect.height / 2;
+      const endY = -56;
+      const driftX = message.isMine ? -18 : 18;
 
       const text = (message.text || '').trim();
       if (!text) return resolve();
@@ -1378,24 +1346,39 @@ export class GameTableScreen extends Screen {
 
       bubble.style.left = `${startX}px`;
       bubble.style.top = `${startY}px`;
+      bubble.style.opacity = '0';
+      bubble.style.transform = 'translate(-50%, -50%) scale(0.56)';
       this.#chatTrailLayerEl.append(bubble);
 
       const speed = this.#getChatTrailSpeed();
-      const duration = message.isMine ? speed.mineDurationMs : speed.otherDurationMs;
-      const arcHeight = Math.max(42, Math.abs(endY - startY) * 0.2);
+      const popDuration = speed.popDurationMs || 200;
+      const riseDuration = message.isMine ? speed.mineDurationMs : speed.otherDurationMs;
+      const totalDuration = popDuration + riseDuration;
       const startTime = performance.now();
 
       const tick = (now) => {
-        const raw = Math.min(1, (now - startTime) / duration);
-        const eased = 1 - Math.pow(1 - raw, 3);
-        const x = startX + (endX - startX) * eased;
-        const y = startY + (endY - startY) * eased - Math.sin(Math.PI * eased) * arcHeight;
+        const elapsed = now - startTime;
+        if (elapsed < popDuration) {
+          const popT = Math.min(1, elapsed / popDuration);
+          const popEase = 1 - Math.pow(1 - popT, 3);
+          const scale = 0.56 + (1 - 0.56) * popEase;
+          bubble.style.transform = `translate(-50%, -50%) scale(${scale})`;
+          bubble.style.opacity = `${0.2 + 0.8 * popEase}`;
+          requestAnimationFrame(tick);
+          return;
+        }
+
+        const riseElapsed = elapsed - popDuration;
+        const riseT = Math.min(1, riseElapsed / riseDuration);
+        const x = startX + driftX * riseT;
+        const y = startY + (endY - startY) * riseT;
 
         bubble.style.left = `${x}px`;
         bubble.style.top = `${y}px`;
-        bubble.style.opacity = eased < 0.84 ? '1' : `${Math.max(0, 1 - (eased - 0.84) / 0.16)}`;
+        bubble.style.transform = 'translate(-50%, -50%) scale(1)';
+        bubble.style.opacity = riseT < 0.74 ? '1' : `${Math.max(0, 1 - (riseT - 0.74) / 0.26)}`;
 
-        if (raw < 1) {
+        if (elapsed < totalDuration) {
           requestAnimationFrame(tick);
           return;
         }

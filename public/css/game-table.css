@@ -78,6 +78,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  will-change: transform, opacity, top, left;
 }
 
 .game-table-chat-trail__msg--me {
