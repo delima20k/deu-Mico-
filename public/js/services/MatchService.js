@@ -169,6 +169,7 @@ export class MatchService {
       await this.#matchRepository.pushChatMessage(matchId, {
         uid,
         name,
+        avatarUrl: currentUser.photoURL || '',
         text: trimmedText,
         ts: now,
       });

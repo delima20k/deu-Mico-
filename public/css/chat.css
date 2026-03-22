@@ -267,11 +267,12 @@
   align-items: flex-start;
   gap: 8px;
   max-width: 85%;
-  animation: msg-in 0.65s ease-out;
+  margin-bottom: 8px;
+  animation: msg-in 0.7s ease both;
 }
 
 @keyframes msg-in {
-  from { opacity: 0; transform: translateY(14px); }
+  from { opacity: 0; transform: translateY(16px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
@@ -285,7 +286,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   flex-shrink: 0;
 }
 
@@ -302,16 +303,21 @@
 
 /* Fallback quando não há avatarUrl (div com inicial) */
 .chat-message__avatar--initials {
+  background: #444;
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  font-size: 14px;
+  font-weight: bold;
+  flex-shrink: 0;
 }
 
 .chat-message__avatar--initials span {
-  font-size: 13px;
-  font-weight: 700;
-  color: #aaa;
+  font-size: 14px;
+  font-weight: bold;
+  color: #fff;
+  line-height: 1;
 }
 
 .chat-message__content {
