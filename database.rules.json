@@ -1,0 +1,119 @@
+{
+  "rules": {
+
+    // ── Perfis de usuário ──────────────────────────────────────────
+    // Qualquer usuário autenticado pode LER perfis (exibir nome/avatar em partidas)
+    // Apenas o próprio usuário pode ESCREVER no seu perfil
+    "users": {
+      "$uid": {
+        ".read":  "auth != null",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+
+    // ── Lobbies / Matchmaking ──────────────────────────────────────
+    // Fila: cada usuário escreve apenas sua própria entrada
+    // Lock/startToken: coordenação feita via transações entre usuários autenticados
+    // Assign: o coordenador escreve atribuições para outros UIDs → requer só auth
+    "lobbies": {
+      "$lobbyType": {
+        "queue": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        },
+        "lock": {
+          ".read":  "auth != null",
+          ".write": "auth != null"
+        },
+        "startToken": {
+          ".read":  "auth != null",
+          ".write": "auth != null"
+        },
+        "assign": {
+          ".read":  "auth != null",
+          ".write": "auth != null"
+        },
+        "deadlineTs": {
+          ".read":  "auth != null",
+          ".write": "auth != null"
+        },
+        "lastJoinTs": {
+          ".read":  "auth != null",
+          ".write": "auth != null"
+        }
+      }
+    },
+
+    // ── Partidas ───────────────────────────────────────────────────
+    // Apenas usuários autenticados lêem/escrevem dados de partidas
+    // presence: cada jogador escreve apenas sua própria entrada
+    // gameState: somente o servidor (Admin SDK via api/next-turn.js) pode gravar
+    "matches": {
+      "$matchId": {
+        ".read": "auth != null",
+        "meta": {
+          ".write": "auth != null"
+        },
+        "state": {
+          ".write": "auth != null"
+        },
+        "presence": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        },
+        "chat": {
+          ".write": "auth != null"
+        },
+        "chatPlayback": {
+          ".write": "auth != null"
+        },
+        "chatAudioCleanup": {
+          ".write": "auth != null"
+        },
+        "gameState": {
+          ".write": false
+        }
+      }
+    },
+
+    // ── Torneios ───────────────────────────────────────────────────
+    // Leitura pública para autenticados (ranking/leaderboard)
+    // enrollmentIndex: cada usuário inscreve apenas o próprio UID
+    "tournaments": {
+      ".read": "auth != null",
+      "list": {
+        ".write": "auth != null"
+      },
+      "currentTournamentId": {
+        ".write": "auth != null"
+      },
+      "instances": {
+        ".write": "auth != null"
+      },
+      "currentJoinableInstanceId": {
+        ".write": "auth != null"
+      },
+      "enrollmentIndex": {
+        "$tournamentId": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        }
+      },
+      "leaderboard": {
+        ".write": "auth != null"
+      }
+    },
+
+    // ── Rankings gerais ────────────────────────────────────────────
+    // Leitura pública para autenticados, escrita via transações autenticadas
+    "rankings": {
+      ".read":  "auth != null",
+      ".write": "auth != null"
+    }
+
+  }
+}
