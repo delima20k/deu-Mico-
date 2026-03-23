@@ -72,6 +72,7 @@ export class HandModal {
   #chatOnSendAudio = null;
   #isAudioRecording = false;
   #isAudioStopInFlight = false;
+  #isAudioEnvironmentBlocked = false;
   #audioRecorder = AudioChatRecorderService.getInstance();
 
   // ── Estado de dados
@@ -320,6 +321,7 @@ export class HandModal {
     this.#chatPlayers = [];
     this.#isAudioRecording = false;
     this.#isAudioStopInFlight = false;
+    this.#isAudioEnvironmentBlocked = false;
   }
 
   /**
@@ -636,7 +638,8 @@ export class HandModal {
     this.#chatInputEl?.toggleAttribute('disabled', disabled);
     const hasText = ((this.#chatInputEl?.value || '').trim().length > 0);
     this.#chatSendBtnEl?.toggleAttribute('disabled', disabled || !hasText);
-    this.#chatAudioBtnEl?.toggleAttribute('disabled', disabled);
+    const shouldDisableAudio = disabled || this.#isAudioEnvironmentBlocked || typeof this.#chatOnSendAudio !== 'function';
+    this.#chatAudioBtnEl?.toggleAttribute('disabled', shouldDisableAudio);
 
     const buttons = this.#el.querySelectorAll(
       '.hand-modal__chat-chip, .hand-modal__chat-emoji'
@@ -700,7 +703,8 @@ export class HandModal {
     audioBtn.hidden = hasText;
 
     sendBtn.toggleAttribute('disabled', isInputDisabled || !hasText);
-    audioBtn.toggleAttribute('disabled', isInputDisabled || typeof this.#chatOnSendAudio !== 'function');
+    const shouldDisableAudio = isInputDisabled || this.#isAudioEnvironmentBlocked || typeof this.#chatOnSendAudio !== 'function';
+    audioBtn.toggleAttribute('disabled', shouldDisableAudio);
   }
 
   #setAudioButtonVisualState(state) {
@@ -716,10 +720,16 @@ export class HandModal {
     this.#chatAudioBtnIconEl.textContent = '🎙';
   }
 
-  #isAudioRecordingSupported() {
-    const hasMediaDevices = Boolean(navigator?.mediaDevices?.getUserMedia);
-    const hasMediaRecorder = typeof window.MediaRecorder === 'function';
-    return hasMediaDevices && hasMediaRecorder;
+  #applyAudioButtonBlockedState(audioBtn, reason) {
+    if (!audioBtn) return;
+
+    this.#isAudioEnvironmentBlocked = true;
+    audioBtn.disabled = true;
+    audioBtn.classList.remove('hand-modal__chat-audio-btn--recording');
+    audioBtn.classList.add('hand-modal__chat-audio-btn--disabled');
+    audioBtn.setAttribute('aria-disabled', 'true');
+    audioBtn.title = reason || 'Microfone bloqueado neste ambiente';
+    this.#setAudioButtonVisualState('idle');
   }
 
   async #emitChatAudio(audioPayload) {
@@ -749,12 +759,19 @@ export class HandModal {
   #setupAudioButton(audioBtn) {
     if (!audioBtn) return;
 
-    if (!this.#isAudioRecordingSupported()) {
-      audioBtn.disabled = true;
-      audioBtn.title = 'Audio nao suportado';
-      audioBtn.setAttribute('aria-disabled', 'true');
+    const support = this.#audioRecorder.getRecordingSupportStatus();
+    if (!support.canRecord) {
+      const reason = support.friendlyMessage || 'Microfone bloqueado neste ambiente.';
+      this.#applyAudioButtonBlockedState(audioBtn, reason);
+      this.#setChatStatus(reason, true);
       return;
     }
+
+    this.#isAudioEnvironmentBlocked = false;
+    audioBtn.disabled = false;
+    audioBtn.classList.remove('hand-modal__chat-audio-btn--disabled');
+    audioBtn.removeAttribute('title');
+    audioBtn.setAttribute('aria-disabled', 'false');
 
     const start = async (event) => {
       event?.preventDefault?.();
@@ -766,8 +783,11 @@ export class HandModal {
         this.#setAudioButtonVisualState('recording');
         this.#setChatStatus('Gravando audio... solte para enviar.', false);
       } catch (error) {
-        this.#setChatStatus('Falha ao iniciar gravacao.', true);
-        console.warn('[HandModal] Falha ao iniciar gravacao de audio:', error);
+        const details = this.#audioRecorder.describeRecordingError(error);
+        this.#setChatStatus(details.friendlyMessage || 'Falha ao iniciar gravacao.', true);
+        if (details.hardBlocked) {
+          this.#applyAudioButtonBlockedState(audioBtn, details.friendlyMessage);
+        }
       }
     };
 

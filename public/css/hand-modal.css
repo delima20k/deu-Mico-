@@ -273,6 +273,15 @@
   background: linear-gradient(135deg, rgba(115, 28, 28, 0.95), rgba(158, 42, 42, 0.95));
 }
 
+.hand-modal__chat-audio-btn--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hand-modal__chat-audio-btn--disabled:active {
+  transform: none;
+}
+
 .hand-modal__chat-audio-icon {
   line-height: 1;
 }

@@ -53,6 +53,9 @@ export class ChatBox {
   /** @type {boolean} Finalização de gravação em andamento */
   #isAudioStopInFlight = false;
 
+  /** @type {boolean} Ambiente bloqueia gravação de áudio */
+  #isAudioEnvironmentBlocked = false;
+
   /** @type {AudioChatRecorderService} */
   #audioRecorder = AudioChatRecorderService.getInstance();
 
@@ -217,6 +220,7 @@ export class ChatBox {
     this.#audioBtnIconEl = null;
     this.#isAudioRecording = false;
     this.#isAudioStopInFlight = false;
+    this.#isAudioEnvironmentBlocked = false;
     this.#audioStatusEl = null;
     if (this.#audioStatusTimer) {
       window.clearTimeout(this.#audioStatusTimer);
@@ -258,6 +262,15 @@ export class ChatBox {
         const img = Dom.create('img', {
           attrs: { src: player.avatarUrl, alt: player.name },
         });
+        img.addEventListener('error', () => {
+          if (img.parentElement !== avatarCircle) return;
+          img.remove();
+          const fallback = Dom.create('span', {
+            classes: 'chat-modal__avatar-initials',
+            text: this.#getInitialFromName(player.name),
+          });
+          avatarCircle.append(fallback);
+        }, { once: true });
         avatarCircle.append(img);
       } else {
         const initials = Dom.create('span', {
@@ -331,8 +344,9 @@ export class ChatBox {
     try {
       this.#setupAudioButton(btnAudio);
     } catch (error) {
-      console.error('[AudioChatRealtime] Falha no setup do botão de áudio:', error);
-      this.#setAudioButtonUnsupported(btnAudio);
+      const details = this.#audioRecorder.describeRecordingError(error);
+      this.#setAudioButtonUnsupported(btnAudio, details.friendlyMessage || 'Microfone indisponivel neste ambiente.');
+      this.#setAudioSendStatus({ state: 'failed', text: details.friendlyMessage || 'Microfone indisponivel neste ambiente.' });
     }
 
     inputArea.append(this.#input, btnAudio, btnSend, this.#audioStatusEl);
@@ -497,7 +511,7 @@ export class ChatBox {
 
     const start = async (event) => {
       event?.preventDefault?.();
-      if (this.#isAudioRecording || this.#isAudioStopInFlight) return;
+      if (this.#isAudioRecording || this.#isAudioStopInFlight || this.#isAudioEnvironmentBlocked || btnAudio.disabled) return;
 
       try {
         this.#setAudioSendStatus({ state: 'idle', text: '' });
@@ -507,8 +521,11 @@ export class ChatBox {
         this.#setAudioButtonVisualState('recording');
         console.log('[AudioChatRealtime] press-to-talk ativo');
       } catch (error) {
-        this.#setAudioSendStatus({ state: 'failed', text: 'falha ao iniciar gravação' });
-        console.warn('[AudioChatRealtime] Falha ao iniciar gravação:', error);
+        const details = this.#audioRecorder.describeRecordingError(error);
+        this.#setAudioSendStatus({ state: 'failed', text: details.friendlyMessage || 'Falha ao iniciar gravacao' });
+        if (details.hardBlocked) {
+          this.#setAudioButtonUnsupported(btnAudio, details.friendlyMessage || 'Microfone bloqueado neste ambiente.');
+        }
       }
     };
 
@@ -596,12 +613,19 @@ export class ChatBox {
   #setupAudioButton(btnAudio) {
     if (!btnAudio) return;
 
-    if (!this.#isAudioRecordingSupported()) {
-      this.#setAudioButtonUnsupported(btnAudio);
+    const support = this.#audioRecorder.getRecordingSupportStatus();
+    if (!support.canRecord) {
+      this.#setAudioButtonUnsupported(btnAudio, support.friendlyMessage || 'Microfone bloqueado neste ambiente.');
+      this.#setAudioSendStatus({
+        state: 'failed',
+        text: support.friendlyMessage || 'Microfone bloqueado neste ambiente.',
+      });
       return;
     }
 
+    this.#isAudioEnvironmentBlocked = false;
     btnAudio.disabled = false;
+    btnAudio.classList.remove('chat-modal__audio-btn--disabled');
     btnAudio.removeAttribute('title');
     btnAudio.setAttribute('aria-disabled', 'false');
     this.#setAudioButtonVisualState('idle');
@@ -609,12 +633,13 @@ export class ChatBox {
   }
 
   /** @private */
-  #setAudioButtonUnsupported(btnAudio) {
+  #setAudioButtonUnsupported(btnAudio, reason = 'Microfone bloqueado neste ambiente.') {
     if (!btnAudio) return;
+    this.#isAudioEnvironmentBlocked = true;
     btnAudio.disabled = true;
     btnAudio.classList.remove('chat-modal__audio-btn--recording');
     btnAudio.classList.add('chat-modal__audio-btn--disabled');
-    btnAudio.title = 'Áudio não suportado';
+    btnAudio.title = reason;
     btnAudio.setAttribute('aria-disabled', 'true');
     this.#setAudioButtonVisualState('unsupported');
   }
@@ -634,12 +659,6 @@ export class ChatBox {
   }
 
   /** @private */
-  #isAudioRecordingSupported() {
-    const hasMediaDevices = Boolean(navigator?.mediaDevices?.getUserMedia);
-    const hasMediaRecorder = typeof window.MediaRecorder === 'function';
-    return hasMediaDevices && hasMediaRecorder;
-  }
-
   /** @private */
   #setAudioSendStatus(status) {
     if (!this.#audioStatusEl) return;

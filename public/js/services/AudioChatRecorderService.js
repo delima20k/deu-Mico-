@@ -41,11 +41,96 @@ export class AudioChatRecorderService {
   /** @type {number} */
   #timesliceMs = 250;
 
+  /** @type {{code: string, friendlyMessage: string, hardBlocked: boolean}|null} */
+  #environmentBlock = null;
+
   static getInstance() {
     if (!AudioChatRecorderService.#instance) {
       AudioChatRecorderService.#instance = new AudioChatRecorderService();
     }
     return AudioChatRecorderService.#instance;
+  }
+
+  /**
+   * Retorna diagnóstico de capacidade para gravação no ambiente atual.
+   * @returns {{
+   *  isSupported: boolean,
+   *  canRecord: boolean,
+   *  secureContext: boolean,
+   *  hasMediaDevices: boolean,
+   *  hasGetUserMedia: boolean,
+   *  hasMediaRecorder: boolean,
+   *  permissionsPolicySupported: boolean,
+   *  microphoneAllowedByPolicy: boolean|null,
+   *  blockCode: string|null,
+   *  friendlyMessage: string,
+   *  hardBlocked: boolean,
+   * }}
+   */
+  getRecordingSupportStatus() {
+    const secureContext = this.#isSecureContext();
+    const hasMediaDevices = Boolean(navigator?.mediaDevices);
+    const hasGetUserMedia = typeof navigator?.mediaDevices?.getUserMedia === 'function';
+    const hasMediaRecorder = typeof window.MediaRecorder === 'function';
+    const policy = this.#readMicrophonePermissionsPolicy();
+
+    let blockCode = null;
+    let friendlyMessage = '';
+    let hardBlocked = false;
+
+    if (this.#environmentBlock?.hardBlocked) {
+      blockCode = this.#environmentBlock.code;
+      friendlyMessage = this.#environmentBlock.friendlyMessage;
+      hardBlocked = true;
+    } else if (!secureContext) {
+      blockCode = 'INSECURE_CONTEXT';
+      friendlyMessage = 'Microfone indisponivel fora de contexto seguro (HTTPS).';
+      hardBlocked = true;
+    } else if (!hasMediaDevices || !hasGetUserMedia || !hasMediaRecorder) {
+      blockCode = 'UNSUPPORTED_BROWSER';
+      friendlyMessage = 'Seu navegador nao suporta gravacao de audio.';
+      hardBlocked = true;
+    } else if (policy.supported && policy.allowed === false) {
+      blockCode = 'PERMISSIONS_POLICY_BLOCKED';
+      friendlyMessage = 'Microfone bloqueado neste ambiente.';
+      hardBlocked = true;
+    }
+
+    return {
+      isSupported: hasGetUserMedia && hasMediaRecorder,
+      canRecord: !blockCode,
+      secureContext,
+      hasMediaDevices,
+      hasGetUserMedia,
+      hasMediaRecorder,
+      permissionsPolicySupported: policy.supported,
+      microphoneAllowedByPolicy: policy.allowed,
+      blockCode,
+      friendlyMessage,
+      hardBlocked,
+    };
+  }
+
+  /**
+   * Retorna mensagem amigável e metadados para UX.
+   * @param {any} error
+   * @returns {{code: string, friendlyMessage: string, hardBlocked: boolean}}
+   */
+  describeRecordingError(error) {
+    if (error?.code && error?.friendlyMessage) {
+      return {
+        code: error.code,
+        friendlyMessage: error.friendlyMessage,
+        hardBlocked: Boolean(error.hardBlocked),
+      };
+    }
+
+    const mapped = this.#mapRecordingError(error);
+    return {
+      code: mapped.code,
+      friendlyMessage: mapped.friendlyMessage,
+      hardBlocked: mapped.hardBlocked,
+    };
   }
 
   /**
@@ -58,12 +143,30 @@ export class AudioChatRecorderService {
       return;
     }
 
-    if (!navigator?.mediaDevices?.getUserMedia || typeof window.MediaRecorder !== 'function') {
-      throw new Error('[AudioChat] MediaRecorder não suportado neste navegador');
+    const supportStatus = this.getRecordingSupportStatus();
+    if (!supportStatus.canRecord) {
+      throw this.#buildRecordingError({
+        code: supportStatus.blockCode || 'UNSUPPORTED_ENVIRONMENT',
+        friendlyMessage: supportStatus.friendlyMessage || 'Gravacao indisponivel neste ambiente.',
+        hardBlocked: Boolean(supportStatus.hardBlocked),
+      });
     }
 
     const mimeType = this.#resolveSupportedMimeType();
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    let stream = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (error) {
+      const mapped = this.#mapRecordingError(error);
+      if (mapped.hardBlocked) {
+        this.#environmentBlock = {
+          code: mapped.code,
+          friendlyMessage: mapped.friendlyMessage,
+          hardBlocked: true,
+        };
+      }
+      throw this.#buildRecordingError(mapped, error);
+    }
 
     this.#chunks = [];
     this.#chunkCount = 0;
@@ -78,7 +181,24 @@ export class AudioChatRecorderService {
       ...(mimeType ? { mimeType } : {}),
       audioBitsPerSecond: 32000,
     };
-    const recorder = new MediaRecorder(stream, recorderOptions);
+    let recorder = null;
+    try {
+      recorder = new MediaRecorder(stream, recorderOptions);
+    } catch (error) {
+      const mapped = this.#mapRecordingError(error);
+      if (mapped.hardBlocked) {
+        this.#environmentBlock = {
+          code: mapped.code,
+          friendlyMessage: mapped.friendlyMessage,
+          hardBlocked: true,
+        };
+      }
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+      this.#stream = null;
+      throw this.#buildRecordingError(mapped, error);
+    }
 
     recorder.ondataavailable = (event) => {
       if (event?.data && event.data.size > 0) {
@@ -88,7 +208,23 @@ export class AudioChatRecorderService {
     };
 
     // Chunks curtos preparam o terreno para upload progressivo no futuro.
-    recorder.start(this.#timesliceMs);
+    try {
+      recorder.start(this.#timesliceMs);
+    } catch (error) {
+      const mapped = this.#mapRecordingError(error);
+      if (mapped.hardBlocked) {
+        this.#environmentBlock = {
+          code: mapped.code,
+          friendlyMessage: mapped.friendlyMessage,
+          hardBlocked: true,
+        };
+      }
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+      this.#cleanup();
+      throw this.#buildRecordingError(mapped, error);
+    }
     this.#mediaRecorder = recorder;
 
     console.log(`[AudioChatRealtime] start cycle=${this.#recordingCycle} mimeType="${mimeType || recorder.mimeType || 'default'}" timeslice=${this.#timesliceMs}ms`);
@@ -244,5 +380,92 @@ export class AudioChatRecorderService {
     }
 
     return supported;
+  }
+
+  #isSecureContext() {
+    if (window.isSecureContext) return true;
+
+    const protocol = (window.location?.protocol || '').toLowerCase();
+    const hostname = (window.location?.hostname || '').toLowerCase();
+
+    if (protocol === 'https:') return true;
+    return hostname === 'localhost' || hostname === '127.0.0.1';
+  }
+
+  #readMicrophonePermissionsPolicy() {
+    const policy = document?.permissionsPolicy || document?.featurePolicy || null;
+    if (!policy || typeof policy.allowsFeature !== 'function') {
+      return { supported: false, allowed: null };
+    }
+
+    try {
+      const allowed = policy.allowsFeature('microphone');
+      return { supported: true, allowed: Boolean(allowed) };
+    } catch (_error) {
+      return { supported: true, allowed: null };
+    }
+  }
+
+  #mapRecordingError(error) {
+    const name = String(error?.name || '');
+    const message = String(error?.message || '').toLowerCase();
+
+    if (name === 'NotAllowedError') {
+      if (message.includes('permissions policy') || message.includes('not allowed in this document') || message.includes('feature policy')) {
+        return {
+          code: 'PERMISSIONS_POLICY_BLOCKED',
+          friendlyMessage: 'Microfone bloqueado neste ambiente.',
+          hardBlocked: true,
+        };
+      }
+
+      return {
+        code: 'MIC_PERMISSION_DENIED',
+        friendlyMessage: 'Permita o microfone nas configuracoes do navegador.',
+        hardBlocked: false,
+      };
+    }
+
+    if (name === 'NotFoundError') {
+      return {
+        code: 'MIC_NOT_FOUND',
+        friendlyMessage: 'Nenhum microfone foi encontrado neste dispositivo.',
+        hardBlocked: false,
+      };
+    }
+
+    if (name === 'SecurityError') {
+      return {
+        code: 'MIC_SECURITY_BLOCKED',
+        friendlyMessage: 'Microfone bloqueado por configuracao de seguranca do navegador/site.',
+        hardBlocked: true,
+      };
+    }
+
+    if (name === 'NotReadableError' || name === 'AbortError' || name === 'TrackStartError') {
+      return {
+        code: 'MIC_DEVICE_UNAVAILABLE',
+        friendlyMessage: 'Microfone ocupado ou indisponivel no momento.',
+        hardBlocked: false,
+      };
+    }
+
+    return {
+      code: 'AUDIO_RECORDING_FAILED',
+      friendlyMessage: 'Nao foi possivel iniciar a gravacao de audio.',
+      hardBlocked: false,
+    };
+  }
+
+  #buildRecordingError(mapped, cause = null) {
+    const error = new Error(mapped.friendlyMessage);
+    error.name = 'AudioChatRecordingError';
+    error.code = mapped.code;
+    error.friendlyMessage = mapped.friendlyMessage;
+    error.hardBlocked = Boolean(mapped.hardBlocked);
+    if (cause) {
+      error.cause = cause;
+    }
+    return error;
   }
 }

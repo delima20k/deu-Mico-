@@ -39,26 +39,31 @@ export class ProfileHeader {
       classes: 'profile-header__avatar-container',
     });
 
-    // Resolve URL do avatar: proxy em produção, direto em dev
-    let finalSrc = AppConfig.avatarProxyUrl(this.#profile.avatarUrl);
-
-    finalSrc = finalSrc || 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2250%22 fill=%22%23ccc%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-size=%2248%22 fill=%22%23999%22%3E%3F%3C/text%3E%3C/svg%3E';
-
-    const avatar = Dom.create('img', {
-      classes: 'profile-header__avatar',
-      attrs: {
-        src: finalSrc,
-        alt: `Perfil de ${this.#profile.name}`,
-        crossOrigin: 'anonymous',
-      },
+    const finalSrc = AppConfig.avatarProxyUrl(this.#profile.avatarUrl);
+    const fallback = Dom.create('span', {
+      classes: 'profile-header__avatar-fallback',
+      text: this.#getInitial(),
     });
 
-    avatar.addEventListener('error', (e) => {
-      console.error('[ProfileHeader] Erro ao carregar imagem do avatar:', e);
-      avatar.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2250%22 fill=%22%23ccc%22/%3E%3C/svg%3E';
-    });
+    if (finalSrc) {
+      const avatar = Dom.create('img', {
+        classes: 'profile-header__avatar',
+        attrs: {
+          src: finalSrc,
+          alt: `Perfil de ${this.#profile.name || 'Jogador'}`,
+        },
+      });
 
-    avatarContainer.append(avatar);
+      avatar.addEventListener('error', () => {
+        avatar.style.display = 'none';
+        fallback.style.display = '';
+      }, { once: true });
+
+      avatarContainer.append(avatar, fallback);
+      fallback.style.display = 'none';
+    } else {
+      avatarContainer.append(fallback);
+    }
 
     // Nome
     const name = Dom.create('p', {
@@ -87,9 +92,20 @@ export class ProfileHeader {
   updateAvatar(dataUrl) {
     if (!this.#el) return;
     const avatar = this.#el.querySelector('.profile-header__avatar');
+    const fallback = this.#el.querySelector('.profile-header__avatar-fallback');
     if (avatar) {
+      avatar.style.display = '';
       avatar.src = dataUrl;
     }
+    if (fallback) {
+      fallback.textContent = this.#getInitial();
+      fallback.style.display = 'none';
+    }
+  }
+
+  #getInitial() {
+    const name = (this.#profile?.name || '').trim();
+    return (name[0] || '?').toUpperCase();
   }
 
   /**
