@@ -1444,8 +1444,6 @@ export class GameTableScreen extends Screen {
       const playerAvatarUrl = this.#getPlayerAvatarForChatMessage(message);
 
       if (!text && !audioSrc) return resolve();
-      const label = `${playerName}: ${text}`;
-
       const bubble = Dom.create('div', {
         classes: [
           'game-table-chat-trail__msg',
@@ -1508,7 +1506,19 @@ export class GameTableScreen extends Screen {
           fallbackSpeakingTimeout = setTimeout(() => setSpeaking(false), fallbackDuration);
         });
       } else {
-        bubble.textContent = label;
+        const avatarEl = this.#buildTrailAvatarElement(playerName, playerAvatarUrl);
+        const contentEl = Dom.create('div', { classes: 'game-table-chat-trail__content' });
+        const nameEl = Dom.create('span', {
+          classes: 'game-table-chat-trail__name',
+          text: playerName,
+        });
+        const textEl = Dom.create('span', {
+          classes: 'game-table-chat-trail__text',
+          text,
+        });
+
+        contentEl.append(nameEl, textEl);
+        bubble.append(avatarEl, contentEl);
       }
 
       bubble.style.left = `${startX}px`;

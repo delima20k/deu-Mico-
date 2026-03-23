@@ -63,6 +63,9 @@
 
 .game-table-chat-trail__msg {
   position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   transform: translate(-50%, -50%);
   max-width: min(64vw, 320px);
   padding: 7px 10px;
@@ -82,7 +85,11 @@
 }
 
 .game-table-chat-trail__msg--text {
-  white-space: nowrap;
+  max-width: min(72vw, 340px);
+  border-radius: 12px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .game-table-chat-trail__msg--audio {
@@ -139,6 +146,16 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
+}
+
+.game-table-chat-trail__text {
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 11px;
+  color: rgba(236, 252, 236, 0.96);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .game-table-chat-trail__voice {

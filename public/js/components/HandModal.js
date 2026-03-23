@@ -59,8 +59,12 @@ export class HandModal {
   #trackEl  = null;   // .hand-modal__track (itens do carrossel)
   #countEl  = null;   // span de contagem
   #chatRootEl = null;
+  #chatShortcutsEl = null;
   #chatComposerEl = null;
+  #chatPanelChatEl = null;
+  #chatPanelQuickEl = null;
   #chatToggleBtnEl = null;
+  #chatQuickToggleBtnEl = null;
   #chatInputEl = null;
   #chatSendBtnEl = null;
   #chatAudioBtnEl = null;
@@ -71,6 +75,7 @@ export class HandModal {
   #chatCooldownTimer = null;
   #chatCooldownUntil = 0;
   #chatComposerOpen = false;
+  #chatPanelMode = null;
   #chatOnSendAudio = null;
   #isAudioRecording = false;
   #isAudioStopInFlight = false;
@@ -123,8 +128,18 @@ export class HandModal {
     const chat = Dom.create('div', { classes: 'hand-modal__chat' });
     this.#chatRootEl = chat;
 
+    const shortcuts = Dom.create('div', { classes: 'hand-modal__chat-shortcuts' });
+    this.#chatShortcutsEl = shortcuts;
+
+    const quickToggleBtn = Dom.create('button', {
+      classes: ['hand-modal__chat-shortcut-btn', 'hand-modal__chat-quick-toggle'],
+      text: '😄',
+      attrs: { type: 'button', 'aria-label': 'Abrir atalhos de emojis e frases', 'aria-expanded': 'false' },
+    });
+    this.#chatQuickToggleBtnEl = quickToggleBtn;
+
     const toggleBtn = Dom.create('button', {
-      classes: 'hand-modal__chat-toggle',
+      classes: ['hand-modal__chat-shortcut-btn', 'hand-modal__chat-toggle'],
       text: 'Abrir chat',
       attrs: { type: 'button', 'aria-expanded': 'false' },
     });
@@ -132,6 +147,16 @@ export class HandModal {
 
     const composer = Dom.create('div', { classes: 'hand-modal__chat-composer' });
     this.#chatComposerEl = composer;
+
+    const chatPanel = Dom.create('div', {
+      classes: ['hand-modal__chat-panel', 'hand-modal__chat-panel--chat'],
+    });
+    this.#chatPanelChatEl = chatPanel;
+
+    const quickPanel = Dom.create('div', {
+      classes: ['hand-modal__chat-panel', 'hand-modal__chat-panel--quick'],
+    });
+    this.#chatPanelQuickEl = quickPanel;
 
     this.#chatMessagesEl = Dom.create('div', {
       classes: 'hand-modal__chat-messages',
@@ -143,9 +168,9 @@ export class HandModal {
       const phraseBtn = Dom.create('button', {
         classes: 'hand-modal__chat-chip',
         text: phrase,
-        attrs: { type: 'button' },
+        attrs: { type: 'button', 'aria-label': `Enviar frase ${phrase}` },
       });
-      phraseBtn.addEventListener('click', () => this.#emitChat(phrase));
+      phraseBtn.addEventListener('click', () => this.#emitChat(phrase, { closePanel: true }));
       quickRow.append(phraseBtn);
     }
 
@@ -156,7 +181,7 @@ export class HandModal {
         text: emoji,
         attrs: { type: 'button', 'aria-label': `Enviar ${emoji}` },
       });
-      emojiBtn.addEventListener('click', () => this.#emitChat(emoji));
+      emojiBtn.addEventListener('click', () => this.#emitChat(emoji, { closePanel: true }));
       emojiRow.append(emojiBtn);
     }
 
@@ -174,7 +199,6 @@ export class HandModal {
       classes: ['hand-modal__chat-send', 'hand-modal__chat-send-btn'],
       attrs: { type: 'button', 'aria-label': 'Enviar mensagem' },
     });
-    sendBtn.hidden = true;
     const sendIcon = Dom.create('span', {
       classes: 'hand-modal__chat-send-icon',
       text: '➤',
@@ -184,7 +208,7 @@ export class HandModal {
     this.#chatSendBtnEl = sendBtn;
 
     const audioBtn = Dom.create('button', {
-      classes: 'hand-modal__chat-audio-btn',
+      classes: ['hand-modal__chat-shortcut-btn', 'hand-modal__chat-audio-btn'],
       attrs: { type: 'button', 'aria-label': 'Segure para gravar audio' },
     });
     const audioIcon = Dom.create('span', {
@@ -221,18 +245,25 @@ export class HandModal {
       }
     });
     toggleBtn.addEventListener('click', () => {
-      this.#setChatComposerOpen(!this.#chatComposerOpen);
+      this.#toggleChatPanel('chat');
+    });
+    quickToggleBtn.addEventListener('click', () => {
+      this.#toggleChatPanel('quick');
     });
 
     this.#setupAudioButton(audioBtn);
-    inputRow.append(this.#chatInputEl, audioBtn, sendBtn);
-    composer.append(this.#chatMessagesEl, quickRow, emojiRow, inputRow, this.#chatStatusEl);
-    chat.append(toggleBtn, composer);
+    inputRow.append(this.#chatInputEl, sendBtn);
+    chatPanel.append(this.#chatMessagesEl, inputRow);
+    quickPanel.append(quickRow, emojiRow);
+    composer.append(chatPanel, quickPanel, this.#chatStatusEl);
+
+    shortcuts.append(quickToggleBtn, toggleBtn, audioBtn);
+    chat.append(shortcuts, composer);
 
     modal.append(header, viewport, chat);
     document.body.append(modal);
 
-    this.#setChatComposerOpen(false);
+    this.#setChatPanelMode(null);
     this.#syncChatComposerActions();
 
     this.#initDrag(viewport, track);
@@ -305,8 +336,12 @@ export class HandModal {
     this.#trackEl     = null;
     this.#countEl     = null;
     this.#chatRootEl  = null;
+    this.#chatShortcutsEl = null;
     this.#chatComposerEl = null;
+    this.#chatPanelChatEl = null;
+    this.#chatPanelQuickEl = null;
     this.#chatToggleBtnEl = null;
+    this.#chatQuickToggleBtnEl = null;
     this.#chatInputEl = null;
     this.#chatSendBtnEl = null;
     this.#chatAudioBtnEl = null;
@@ -324,6 +359,7 @@ export class HandModal {
     this.#selectedId  = null;
     this.#formedPairs = [];
     this.#chatComposerOpen = false;
+    this.#chatPanelMode = null;
     this.#chatOnSend  = null;
     this.#chatOnSendAudio = null;
     this.#chatMyUid   = null;
@@ -762,7 +798,7 @@ export class HandModal {
     this.#countEl.textContent = n + ' carta' + (n !== 1 ? 's' : '');
   }
 
-  async #emitChat(text) {
+  async #emitChat(text, options = {}) {
     const payload = (text || '').trim();
     if (!payload || typeof this.#chatOnSend !== 'function') return;
 
@@ -785,6 +821,9 @@ export class HandModal {
       }
 
       this.#setChatStatus('Mensagem enviada!', false);
+      if (options.closePanel) {
+        this.#setChatPanelMode(null);
+      }
       this.#startChatCooldown();
     } catch (error) {
       console.warn('[HandModal] Falha ao enviar mensagem de chat:', error);
@@ -833,17 +872,31 @@ export class HandModal {
     this.#syncChatComposerActions();
   }
 
-  #setChatComposerOpen(open) {
-    this.#chatComposerOpen = Boolean(open);
+  #toggleChatPanel(mode) {
+    const nextMode = this.#chatPanelMode === mode ? null : mode;
+    this.#setChatPanelMode(nextMode);
+  }
+
+  #setChatPanelMode(mode) {
+    const safeMode = mode === 'chat' || mode === 'quick' ? mode : null;
+    this.#chatPanelMode = safeMode;
+    this.#chatComposerOpen = Boolean(safeMode);
+
     if (!this.#chatRootEl) return;
 
     this.#chatRootEl.classList.toggle('hand-modal__chat--open', this.#chatComposerOpen);
-    this.#chatToggleBtnEl?.setAttribute('aria-expanded', this.#chatComposerOpen ? 'true' : 'false');
+    this.#chatComposerEl?.setAttribute('data-mode', safeMode || 'none');
+
+    this.#chatToggleBtnEl?.setAttribute('aria-expanded', safeMode === 'chat' ? 'true' : 'false');
+    this.#chatQuickToggleBtnEl?.setAttribute('aria-expanded', safeMode === 'quick' ? 'true' : 'false');
+    this.#chatToggleBtnEl?.classList.toggle('hand-modal__chat-shortcut-btn--active', safeMode === 'chat');
+    this.#chatQuickToggleBtnEl?.classList.toggle('hand-modal__chat-shortcut-btn--active', safeMode === 'quick');
+
     if (this.#chatToggleBtnEl) {
-      this.#chatToggleBtnEl.textContent = this.#chatComposerOpen ? 'Fechar chat' : 'Abrir chat';
+      this.#chatToggleBtnEl.textContent = safeMode === 'chat' ? 'Fechar chat' : 'Abrir chat';
     }
 
-    if (this.#chatComposerOpen) {
+    if (safeMode === 'chat') {
       setTimeout(() => this.#chatInputEl?.focus(), 120);
     }
 
@@ -874,21 +927,17 @@ export class HandModal {
     const inputEl = this.#chatInputEl;
     const rowEl = inputEl?.closest('.hand-modal__chat-input-row');
     const sendBtn = this.#chatSendBtnEl;
-    const audioBtn = this.#chatAudioBtnEl;
 
-    if (!rowEl || !sendBtn || !audioBtn) return;
+    if (!rowEl || !sendBtn) return;
 
     const hasText = ((inputEl.value || '').trim().length > 0);
     const isInputDisabled = inputEl.hasAttribute('disabled');
 
     rowEl.classList.toggle('hand-modal__chat-input-row--has-text', hasText);
-
-    sendBtn.hidden = !hasText;
-    audioBtn.hidden = hasText;
-
     sendBtn.toggleAttribute('disabled', isInputDisabled || !hasText);
+
     const shouldDisableAudio = isInputDisabled || this.#isAudioEnvironmentBlocked || typeof this.#chatOnSendAudio !== 'function';
-    audioBtn.toggleAttribute('disabled', shouldDisableAudio);
+    this.#chatAudioBtnEl?.toggleAttribute('disabled', shouldDisableAudio);
   }
 
   #setAudioButtonVisualState(state) {
