@@ -18,7 +18,7 @@ export class TournamentService {
   static #instance = null;
 
   static DEFAULT_TOURNAMENT_ID = '2026_march_1';
-  static DEFAULT_MAX_PARTICIPANTS = 8;
+  static DEFAULT_MAX_PARTICIPANTS = 6;
   static COUNTDOWN_MS = 60_000;
 
   // Normalizacao de pontos: 100 = 0.1 ponto, 300 = 0.3 pontos.

@@ -353,8 +353,11 @@ export class MatchRoomScreen extends Screen {
       rightSection.append(this.#queueBar.create());
 
       this.#chatBox = new ChatBox({
-        roomKey: this.#matchId,
-        userId: this.#userId,
+        matchId: this.#matchId,
+        myUid: this.#userId,
+        players: [
+          { uid: this.#userId, name: 'Você', avatarUrl: null },
+        ],
       });
       rightSection.append(this.#chatBox.create());
 

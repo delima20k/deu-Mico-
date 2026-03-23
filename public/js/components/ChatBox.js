@@ -38,6 +38,9 @@ export class ChatBox {
   /** @type {HTMLButtonElement|null} Botão de gravação de áudio */
   #audioBtn = null;
 
+  /** @type {HTMLElement|null} Ícone interno do botão de áudio */
+  #audioBtnIconEl = null;
+
   /** @type {Function|null} Unsubscriber do listener Firebase */
   #unsubscribe = null;
 
@@ -96,6 +99,43 @@ export class ChatBox {
     this.#matchId = matchId;
     this.#myUid = myUid;
     this.#players = players || [];
+
+    // Compatibilidade com chamadas legadas (roomKey/userId e players em objeto).
+    const legacyOptions = arguments[0] || {};
+    if (!this.#matchId && legacyOptions.roomKey) {
+      this.#matchId = legacyOptions.roomKey;
+    }
+    if (!this.#myUid && legacyOptions.userId) {
+      this.#myUid = legacyOptions.userId;
+    }
+
+    if (!Array.isArray(this.#players)) {
+      if (this.#players && typeof this.#players === 'object') {
+        this.#players = Object.entries(this.#players).map(([uid, value]) => ({
+          uid,
+          name: value?.name || 'Jogador',
+          avatarUrl: value?.avatarUrl || '',
+        }));
+      } else {
+        this.#players = [];
+      }
+    }
+
+    this.#players = this.#players.map((player) => ({
+      ...player,
+      avatarUrl: this.#normalizeAvatarUrl(player?.avatarUrl),
+    }));
+  }
+
+  /** @private */
+  #normalizeAvatarUrl(value) {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  /** @private */
+  #getInitialFromName(name) {
+    const trimmed = (name || '').trim();
+    return (trimmed[0] || '?').toUpperCase();
   }
 
   /**
@@ -174,6 +214,7 @@ export class ChatBox {
     this.#audioAckedMsgIds.clear();
     this.#audioAutoHandledMsgIds.clear();
     this.#audioBtn = null;
+    this.#audioBtnIconEl = null;
     this.#isAudioRecording = false;
     this.#isAudioStopInFlight = false;
     this.#audioStatusEl = null;
@@ -260,10 +301,21 @@ export class ChatBox {
     });
     const btnAudio = Dom.create('button', {
       classes: 'chat-modal__audio-btn',
-      text: '🎙',
+      text: '',
       attrs: { type: 'button', 'aria-label': 'Segure para gravar áudio' },
     });
+    const audioIcon = Dom.create('span', {
+      classes: 'chat-modal__audio-btn-icon',
+      text: '🎙',
+      attrs: { 'aria-hidden': 'true' },
+    });
+    const audioLabel = Dom.create('span', {
+      classes: 'chat-modal__audio-btn-label',
+      text: 'Áudio',
+    });
+    btnAudio.append(audioIcon, audioLabel);
     this.#audioBtn = btnAudio;
+    this.#audioBtnIconEl = audioIcon;
 
     const sendHandler = () => {
       const text = this.#input.value.trim();
@@ -276,7 +328,12 @@ export class ChatBox {
     this.#input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') sendHandler();
     });
-    this.#attachAudioPressEvents(btnAudio);
+    try {
+      this.#setupAudioButton(btnAudio);
+    } catch (error) {
+      console.error('[AudioChatRealtime] Falha no setup do botão de áudio:', error);
+      this.#setAudioButtonUnsupported(btnAudio);
+    }
 
     inputArea.append(this.#input, btnAudio, btnSend, this.#audioStatusEl);
     panel.append(header, avatarsRow, this.#messagesContainer, inputArea);
@@ -329,9 +386,25 @@ export class ChatBox {
     if (!this.#messagesContainer) return;
 
     const isMine = msg.uid === this.#myUid;
-    const player = this.#players.find(p => p.uid === msg.uid);
-    const avatarUrl = player?.avatarUrl || msg.avatarUrl || '';
+    const incomingAvatarUrl = this.#normalizeAvatarUrl(msg?.avatarUrl);
+    const playerIndex = this.#players.findIndex((p) => p.uid === msg.uid);
+    const player = playerIndex >= 0 ? this.#players[playerIndex] : null;
     const senderName = isMine ? 'Você' : (msg.name || player?.name || 'Jogador');
+    const avatarUrl = incomingAvatarUrl || this.#normalizeAvatarUrl(player?.avatarUrl);
+
+    // Mantem cache local de jogadores atualizado com dados vindos do realtime.
+    if (msg?.uid && (incomingAvatarUrl || msg?.name)) {
+      const updatedPlayer = {
+        uid: msg.uid,
+        name: msg.name || player?.name || 'Jogador',
+        avatarUrl: incomingAvatarUrl || this.#normalizeAvatarUrl(player?.avatarUrl),
+      };
+      if (playerIndex >= 0) {
+        this.#players[playerIndex] = updatedPlayer;
+      } else {
+        this.#players.push(updatedPlayer);
+      }
+    }
 
     const wrapper = document.createElement('div');
     wrapper.className = 'chat-message' + (isMine ? ' chat-message--mine' : '');
@@ -349,14 +422,14 @@ export class ChatBox {
         img.style.display = 'none';
         const fallback = document.createElement('div');
         fallback.className = 'chat-message__avatar chat-message__avatar--initials';
-        fallback.textContent = (senderName[0] || '?').toUpperCase();
+        fallback.textContent = this.#getInitialFromName(senderName);
         avatarCol.insertBefore(fallback, avatarCol.firstChild);
       };
       avatarCol.appendChild(img);
     } else {
       const initial = document.createElement('div');
       initial.className = 'chat-message__avatar chat-message__avatar--initials';
-      initial.textContent = (senderName[0] || '?').toUpperCase();
+      initial.textContent = this.#getInitialFromName(senderName);
       avatarCol.appendChild(initial);
     }
 
@@ -431,7 +504,7 @@ export class ChatBox {
         await this.#audioRecorder.startRecording();
         this.#isAudioRecording = true;
         btnAudio.classList.add('chat-modal__audio-btn--recording');
-        btnAudio.textContent = '●';
+        this.#setAudioButtonVisualState('recording');
         console.log('[AudioChatRealtime] press-to-talk ativo');
       } catch (error) {
         this.#setAudioSendStatus({ state: 'failed', text: 'falha ao iniciar gravação' });
@@ -446,7 +519,7 @@ export class ChatBox {
       this.#isAudioStopInFlight = true;
       this.#isAudioRecording = false;
       btnAudio.classList.remove('chat-modal__audio-btn--recording');
-      btnAudio.textContent = '🎙';
+      this.#setAudioButtonVisualState('idle');
 
       try {
         const result = await this.#audioRecorder.stopRecording();
@@ -486,7 +559,7 @@ export class ChatBox {
       this.#isAudioRecording = false;
       this.#isAudioStopInFlight = false;
       btnAudio.classList.remove('chat-modal__audio-btn--recording');
-      btnAudio.textContent = '🎙';
+      this.#setAudioButtonVisualState('idle');
       this.#audioRecorder.cancelRecording();
       this.#setAudioSendStatus({ state: 'idle', text: '' });
     };
@@ -517,6 +590,54 @@ export class ChatBox {
       });
       btnAudio.addEventListener('mouseleave', cancel);
     }
+  }
+
+  /** @private */
+  #setupAudioButton(btnAudio) {
+    if (!btnAudio) return;
+
+    if (!this.#isAudioRecordingSupported()) {
+      this.#setAudioButtonUnsupported(btnAudio);
+      return;
+    }
+
+    btnAudio.disabled = false;
+    btnAudio.removeAttribute('title');
+    btnAudio.setAttribute('aria-disabled', 'false');
+    this.#setAudioButtonVisualState('idle');
+    this.#attachAudioPressEvents(btnAudio);
+  }
+
+  /** @private */
+  #setAudioButtonUnsupported(btnAudio) {
+    if (!btnAudio) return;
+    btnAudio.disabled = true;
+    btnAudio.classList.remove('chat-modal__audio-btn--recording');
+    btnAudio.classList.add('chat-modal__audio-btn--disabled');
+    btnAudio.title = 'Áudio não suportado';
+    btnAudio.setAttribute('aria-disabled', 'true');
+    this.#setAudioButtonVisualState('unsupported');
+  }
+
+  /** @private */
+  #setAudioButtonVisualState(state) {
+    if (!this.#audioBtnIconEl || !this.#audioBtn) return;
+
+    this.#audioBtn.classList.toggle('chat-modal__audio-btn--disabled', state === 'unsupported');
+
+    if (state === 'recording') {
+      this.#audioBtnIconEl.textContent = '●';
+      return;
+    }
+
+    this.#audioBtnIconEl.textContent = '🎙';
+  }
+
+  /** @private */
+  #isAudioRecordingSupported() {
+    const hasMediaDevices = Boolean(navigator?.mediaDevices?.getUserMedia);
+    const hasMediaRecorder = typeof window.MediaRecorder === 'function';
+    return hasMediaDevices && hasMediaRecorder;
   }
 
   /** @private */

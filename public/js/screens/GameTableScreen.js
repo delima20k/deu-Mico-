@@ -1308,6 +1308,9 @@ export class GameTableScreen extends Screen {
       onSend: async (text) => {
         return MatchService.getInstance().sendMessage(this.#matchId, text);
       },
+      onSendAudio: async (audioPayload) => {
+        return MatchService.getInstance().sendAudioMessage(this.#matchId, audioPayload);
+      },
     });
 
     this.#chatTrailQueue = [];

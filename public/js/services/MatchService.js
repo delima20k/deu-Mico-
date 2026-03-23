@@ -190,9 +190,12 @@ export class MatchService {
       this.#lastMessageTime.set(uid, now);
 
       // 4. Nome: prefere displayName do próprio currentUser, fallback para parte local do email
+      const profile = await authService.getProfile(uid).catch(() => null);
       const name = currentUser.displayName
+        || profile?.displayName
         || currentUser.email?.split('@')[0]
         || 'Jogador';
+      const avatarUrl = profile?.avatarUrl || currentUser.photoURL || '';
 
       // 5. Envia mensagem usando push() para chave ordenada do Firebase
       console.log(`[Chat] sending uid=${uid.slice(0, 8)}... matchId=${matchId}`);
@@ -201,7 +204,7 @@ export class MatchService {
         type: 'text',
         uid,
         name,
-        avatarUrl: currentUser.photoURL || '',
+        avatarUrl,
         text: trimmedText,
         ts: now,
       });
@@ -259,9 +262,12 @@ export class MatchService {
       const durationMs = Math.max(0, Number(audioData?.durationMs || 0));
       const signature = audioData?.signature
         || this.#buildAudioSignature(blob.size, durationMs, audioData?.recordedAt || now);
+      const profile = await authService.getProfile(uid).catch(() => null);
       const name = currentUser.displayName
+        || profile?.displayName
         || currentUser.email?.split('@')[0]
         || 'Jogador';
+      const avatarUrl = profile?.avatarUrl || currentUser.photoURL || '';
 
       const signatureKey = `${uid}:${signature}`;
       this.#cleanupStaleAudioSignatures(now);
@@ -292,7 +298,7 @@ export class MatchService {
         matchId,
         uid,
         name,
-        avatarUrl: currentUser.photoURL || '',
+        avatarUrl,
         blob,
         mimeType,
         durationMs,

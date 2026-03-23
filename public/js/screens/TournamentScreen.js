@@ -14,6 +14,7 @@ import { HeaderBar } from '../components/HeaderBar.js';
 import { TournamentCard } from '../components/TournamentCard.js';
 import { TournamentService } from '../services/TournamentService.js';
 import { AuthService } from '../services/AuthService.js';
+import { AudioService } from '../services/AudioService.js';
 import { Dom } from '../utils/Dom.js';
 
 export class TournamentScreen extends Screen {
@@ -58,6 +59,18 @@ export class TournamentScreen extends Screen {
 
   /** @type {boolean} */
   #isStartingTournament = false;
+
+  /** @type {number|null} */
+  #lastEnrolledCount = null;
+
+  /** @type {number} */
+  #justJoinedAt = 0;
+
+  /** @type {number} */
+  #entryNoticeVisibleUntil = 0;
+
+  /** @type {ReturnType<typeof setTimeout>|null} */
+  #entryNoticeTimer = null;
 
   /**
    * @param {import('../core/ScreenManager.js').ScreenManager} screenManager
@@ -174,6 +187,10 @@ export class TournamentScreen extends Screen {
     this.#unsubLeaderboard = null;
 
     this.#clearCountdownTicker();
+    this.#clearEntryNoticeTimer();
+    this.#entryNoticeVisibleUntil = 0;
+    this.#lastEnrolledCount = null;
+    this.#justJoinedAt = 0;
   }
 
   /**
@@ -185,7 +202,20 @@ export class TournamentScreen extends Screen {
     this.#unsubLeaderboard?.();
 
     this.#unsubTournament = await this.#tournamentService.subscribeCurrentTournament((state) => {
+      const nextEnrolledCount = Number(state?.enrolledCount || 0);
+      const prevEnrolledCount = this.#lastEnrolledCount;
+
+      if (state && prevEnrolledCount !== null && nextEnrolledCount > prevEnrolledCount) {
+        const enteredCount = nextEnrolledCount - prevEnrolledCount;
+        const localJoinWindowActive = (Date.now() - this.#justJoinedAt) < 3000;
+        if (!localJoinWindowActive) {
+          this.#showEntryNotice(enteredCount, nextEnrolledCount);
+          AudioService.getInstance().playForce('tournament-opponent-entry');
+        }
+      }
+
       this.#currentTournament = state;
+      this.#lastEnrolledCount = state ? nextEnrolledCount : null;
       this.#renderTournamentState();
     });
 
@@ -249,6 +279,12 @@ export class TournamentScreen extends Screen {
     }
 
     if (status === 'waiting') {
+      if (Date.now() < this.#entryNoticeVisibleUntil) {
+        this.#countdownEl.classList.add('tournament-screen__countdown--hidden');
+        this.#clearCountdownTicker();
+        return;
+      }
+
       this.#statusBannerEl.textContent = missing > 0
         ? `Faltam ${missing} jogador${missing > 1 ? 'es' : ''} para completar o campeonato.`
         : 'Vagas completas. Countdown sera iniciado automaticamente.';
@@ -337,6 +373,34 @@ export class TournamentScreen extends Screen {
     }
   }
 
+  /** @private */
+  #clearEntryNoticeTimer() {
+    if (this.#entryNoticeTimer !== null) {
+      clearTimeout(this.#entryNoticeTimer);
+      this.#entryNoticeTimer = null;
+    }
+  }
+
+  /** @private */
+  #showEntryNotice(enteredCount, totalCount) {
+    if (!this.#statusBannerEl) return;
+
+    const safeEntered = Math.max(1, Number(enteredCount || 1));
+    const safeTotal = Math.max(0, Number(totalCount || 0));
+    const enteredLabel = safeEntered > 1
+      ? `Entraram mais ${safeEntered} jogadores no campeonato.`
+      : 'Entrou mais um no campeonato.';
+
+    this.#statusBannerEl.textContent = `${enteredLabel} Total agora: ${safeTotal}.`;
+    this.#entryNoticeVisibleUntil = Date.now() + 3200;
+
+    this.#clearEntryNoticeTimer();
+    this.#entryNoticeTimer = setTimeout(() => {
+      this.#entryNoticeVisibleUntil = 0;
+      this.#renderTournamentState();
+    }, 3200);
+  }
+
   /**
    * @param {number} totalSeconds
    * @returns {string}
@@ -374,6 +438,9 @@ export class TournamentScreen extends Screen {
   async #onJoinTournament() {
     try {
       const result = await this.#tournamentService.joinCurrentTournament();
+      if (result?.joined) {
+        this.#justJoinedAt = Date.now();
+      }
       console.log(
         `[Tournament] join result joined=${result.joined} alreadyJoined=${result.alreadyJoined}`
       );

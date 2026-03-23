@@ -210,7 +210,8 @@
 /* Input area */
 .chat-modal__input-area {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 8px;
   padding: 10px 16px 14px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -218,7 +219,8 @@
 }
 
 .chat-modal__input {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 40px;
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -259,19 +261,33 @@
 }
 
 .chat-modal__audio-btn {
-  width: 40px;
+  min-width: 40px;
   height: 40px;
+  padding: 0 10px;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
-  font-size: 17px;
+  font-size: 13px;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   flex-shrink: 0;
+  white-space: nowrap;
   transition: transform 0.12s ease, background 0.15s ease;
+}
+
+.chat-modal__audio-btn-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.chat-modal__audio-btn-label {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .chat-modal__audio-btn:active {
@@ -284,8 +300,18 @@
   box-shadow: 0 0 0 3px rgba(230, 57, 70, 0.22);
 }
 
+.chat-modal__audio-btn--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.chat-modal__audio-btn--disabled:active {
+  transform: none;
+}
+
 .chat-modal__audio-status {
-  width: 100%;
+  flex-basis: 100%;
   font-size: 11px;
   line-height: 1.2;
   color: #9fb3cc;
@@ -387,20 +413,21 @@
 
 .chat-message__content {
   flex: 1;
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.94);
   border-radius: 0 10px 10px 10px;
   padding: 7px 11px;
   min-width: 0;
 }
 
 .chat-message--mine .chat-message__content {
-  background: rgba(74, 144, 217, 0.22);
+  background: #d8ecff;
   border-radius: 10px 0 10px 10px;
 }
 
 .chat-message__text {
-  font-size: 13px;
-  color: #e0e8f0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #000;
   word-break: break-word;
   line-height: 1.4;
 }
@@ -418,7 +445,7 @@
 
 .chat-message__meta {
   font-size: 11px;
-  color: #aebbd1;
+  color: #25364a;
   line-height: 1;
 }
 

@@ -148,6 +148,7 @@ export class App {
     AudioService.getInstance().load('game-over',     'audio/game-over.mp3',      1.0);
     AudioService.getInstance().load('vitoria-comum', 'audio/vitoria-comun.mp3',  1.0);
     AudioService.getInstance().load('fala-vitaria',  'audio/fala-vitaria.mp3',   1.0);
+    AudioService.getInstance().load('tournament-opponent-entry', 'audio/entrada-de-oponente.mp3', 0.95);
     SoundManager.getInstance().load('made', 'audio/made.mp3', 0.8);
 
     // 5. Firebase — não bloqueia; funciona mesmo sem config

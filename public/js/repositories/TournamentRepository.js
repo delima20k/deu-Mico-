@@ -104,7 +104,7 @@ export class TournamentRepository {
     await dbMod.set(ref, {
       ...payload,
       id: tournamentId,
-      maxParticipants: payload.maxParticipants ?? 8,
+      maxParticipants: payload.maxParticipants ?? 6,
       enrolledCount: payload.enrolledCount ?? 0,
       enrolledUsers: payload.enrolledUsers || {},
       countdownStartAt: payload.countdownStartAt ?? null,
@@ -188,8 +188,13 @@ export class TournamentRepository {
 
     const result = await dbMod.runTransaction(ref, (current) => {
       if (current) {
+        const normalizedMaxParticipants = Math.max(
+          2,
+          Math.min(6, Number(current.maxParticipants || defaults.maxParticipants || 6))
+        );
         return {
           ...current,
+          maxParticipants: normalizedMaxParticipants,
           updatedAt: now,
         };
       }
@@ -201,7 +206,7 @@ export class TournamentRepository {
         prize: defaults.prize || 'Premiacao especial do campeonato',
         startDate: defaults.startDate || new Date(now).toISOString(),
         status: defaults.status || 'waiting',
-        maxParticipants: defaults.maxParticipants ?? 8,
+        maxParticipants: defaults.maxParticipants ?? 6,
         enrolledCount: 0,
         enrolledUsers: {},
         countdownStartAt: null,
@@ -285,7 +290,7 @@ export class TournamentRepository {
         prize: 'Premiacao especial do campeonato',
         startDate: new Date(now).toISOString(),
         status: 'waiting',
-        maxParticipants: 8,
+        maxParticipants: 6,
         enrolledCount: 0,
         enrolledUsers: {},
         countdownStartAt: null,
@@ -295,7 +300,7 @@ export class TournamentRepository {
       };
 
       const enrolledUsers = { ...(base.enrolledUsers || {}) };
-      const maxParticipants = base.maxParticipants ?? 8;
+      const maxParticipants = Math.max(2, Math.min(6, Number(base.maxParticipants || 6)));
       let enrolledCount = Number(base.enrolledCount || 0);
 
       if (!enrolledUsers[uid]) {
@@ -331,6 +336,7 @@ export class TournamentRepository {
 
       return {
         ...base,
+        maxParticipants,
         enrolledUsers,
         enrolledCount,
         status,

@@ -18,6 +18,7 @@
  */
 
 import { Dom } from '../utils/Dom.js';
+import { AudioChatRecorderService } from '../services/AudioChatRecorderService.js';
 
 const BACK_IMG  = 'img/carta_verso.png';
 const FLIP_DELAY = 320; // ms apos adicionar a carta antes de virar
@@ -62,10 +63,16 @@ export class HandModal {
   #chatToggleBtnEl = null;
   #chatInputEl = null;
   #chatSendBtnEl = null;
+  #chatAudioBtnEl = null;
+  #chatAudioBtnIconEl = null;
   #chatStatusEl = null;
   #chatCooldownTimer = null;
   #chatCooldownUntil = 0;
   #chatComposerOpen = false;
+  #chatOnSendAudio = null;
+  #isAudioRecording = false;
+  #isAudioStopInFlight = false;
+  #audioRecorder = AudioChatRecorderService.getInstance();
 
   // ── Estado de dados
   /** @type {import('../domain/Card.js').Card[]} */
@@ -156,11 +163,31 @@ export class HandModal {
       },
     });
     const sendBtn = Dom.create('button', {
-      classes: 'hand-modal__chat-send',
-      text: 'Enviar',
-      attrs: { type: 'button' },
+      classes: ['hand-modal__chat-send', 'hand-modal__chat-send-btn'],
+      attrs: { type: 'button', 'aria-label': 'Enviar mensagem' },
     });
+    sendBtn.hidden = true;
+    const sendIcon = Dom.create('span', {
+      classes: 'hand-modal__chat-send-icon',
+      text: '➤',
+      attrs: { 'aria-hidden': 'true' },
+    });
+    sendBtn.append(sendIcon);
     this.#chatSendBtnEl = sendBtn;
+
+    const audioBtn = Dom.create('button', {
+      classes: 'hand-modal__chat-audio-btn',
+      attrs: { type: 'button', 'aria-label': 'Segure para gravar audio' },
+    });
+    const audioIcon = Dom.create('span', {
+      classes: 'hand-modal__chat-audio-icon',
+      text: '🎙',
+      attrs: { 'aria-hidden': 'true' },
+    });
+    audioBtn.append(audioIcon);
+    this.#chatAudioBtnEl = audioBtn;
+    this.#chatAudioBtnIconEl = audioIcon;
+
     this.#chatStatusEl = Dom.create('div', {
       classes: 'hand-modal__chat-status',
       text: '',
@@ -171,18 +198,26 @@ export class HandModal {
       const text = (this.#chatInputEl?.value || '').trim();
       if (!text) return;
       this.#chatInputEl.value = '';
+      this.#syncChatComposerActions();
       this.#emitChat(text);
     };
 
     sendBtn.addEventListener('click', sendFromInput);
+    const syncInputState = () => this.#syncChatComposerActions();
+    this.#chatInputEl.addEventListener('input', syncInputState);
+    this.#chatInputEl.addEventListener('keyup', syncInputState);
     this.#chatInputEl.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') sendFromInput();
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        sendFromInput();
+      }
     });
     toggleBtn.addEventListener('click', () => {
       this.#setChatComposerOpen(!this.#chatComposerOpen);
     });
 
-    inputRow.append(this.#chatInputEl, sendBtn);
+    this.#setupAudioButton(audioBtn);
+    inputRow.append(this.#chatInputEl, audioBtn, sendBtn);
     composer.append(quickRow, emojiRow, inputRow, this.#chatStatusEl);
     chat.append(toggleBtn, composer);
 
@@ -190,6 +225,7 @@ export class HandModal {
     document.body.append(modal);
 
     this.#setChatComposerOpen(false);
+    this.#syncChatComposerActions();
 
     this.#initDrag(viewport, track);
     return modal;
@@ -265,6 +301,8 @@ export class HandModal {
     this.#chatToggleBtnEl = null;
     this.#chatInputEl = null;
     this.#chatSendBtnEl = null;
+    this.#chatAudioBtnEl = null;
+    this.#chatAudioBtnIconEl = null;
     this.#chatStatusEl = null;
     if (this.#chatCooldownTimer) {
       clearInterval(this.#chatCooldownTimer);
@@ -277,18 +315,23 @@ export class HandModal {
     this.#formedPairs = [];
     this.#chatComposerOpen = false;
     this.#chatOnSend  = null;
+    this.#chatOnSendAudio = null;
     this.#chatMyUid   = null;
     this.#chatPlayers = [];
+    this.#isAudioRecording = false;
+    this.#isAudioStopInFlight = false;
   }
 
   /**
    * Configura callbacks e contexto do chat da modal.
-   * @param {{ myUid: string, players: Array, onSend: (text: string) => Promise<void>|void }} options
+   * @param {{ myUid: string, players: Array, onSend: (text: string) => Promise<void>|void, onSendAudio?: (audioPayload: object) => Promise<void>|void }} options
    */
-  configureChat({ myUid, players, onSend }) {
+  configureChat({ myUid, players, onSend, onSendAudio }) {
     this.#chatMyUid = myUid || null;
     this.#chatPlayers = players || [];
     this.#chatOnSend = onSend || null;
+    this.#chatOnSendAudio = onSendAudio || null;
+    this.#syncChatComposerActions();
   }
 
   /**
@@ -591,13 +634,16 @@ export class HandModal {
     if (!this.#el) return;
 
     this.#chatInputEl?.toggleAttribute('disabled', disabled);
-    this.#chatSendBtnEl?.toggleAttribute('disabled', disabled);
+    const hasText = ((this.#chatInputEl?.value || '').trim().length > 0);
+    this.#chatSendBtnEl?.toggleAttribute('disabled', disabled || !hasText);
+    this.#chatAudioBtnEl?.toggleAttribute('disabled', disabled);
 
     const buttons = this.#el.querySelectorAll(
       '.hand-modal__chat-chip, .hand-modal__chat-emoji'
     );
     buttons.forEach((buttonEl) => buttonEl.toggleAttribute('disabled', disabled));
     this.#el.classList.toggle('hand-modal__chat--cooldown', disabled);
+    this.#syncChatComposerActions();
   }
 
   #setChatComposerOpen(open) {
@@ -613,6 +659,8 @@ export class HandModal {
     if (this.#chatComposerOpen) {
       setTimeout(() => this.#chatInputEl?.focus(), 120);
     }
+
+    this.#syncChatComposerActions();
   }
 
   #setChatStatus(text, isWarning) {
@@ -633,6 +681,152 @@ export class HandModal {
     }
 
     return sanitized;
+  }
+
+  #syncChatComposerActions() {
+    const inputEl = this.#chatInputEl;
+    const rowEl = inputEl?.closest('.hand-modal__chat-input-row');
+    const sendBtn = this.#chatSendBtnEl;
+    const audioBtn = this.#chatAudioBtnEl;
+
+    if (!rowEl || !sendBtn || !audioBtn) return;
+
+    const hasText = ((inputEl.value || '').trim().length > 0);
+    const isInputDisabled = inputEl.hasAttribute('disabled');
+
+    rowEl.classList.toggle('hand-modal__chat-input-row--has-text', hasText);
+
+    sendBtn.hidden = !hasText;
+    audioBtn.hidden = hasText;
+
+    sendBtn.toggleAttribute('disabled', isInputDisabled || !hasText);
+    audioBtn.toggleAttribute('disabled', isInputDisabled || typeof this.#chatOnSendAudio !== 'function');
+  }
+
+  #setAudioButtonVisualState(state) {
+    if (!this.#chatAudioBtnIconEl || !this.#chatAudioBtnEl) return;
+
+    this.#chatAudioBtnEl.classList.toggle('hand-modal__chat-audio-btn--recording', state === 'recording');
+
+    if (state === 'recording') {
+      this.#chatAudioBtnIconEl.textContent = '●';
+      return;
+    }
+
+    this.#chatAudioBtnIconEl.textContent = '🎙';
+  }
+
+  #isAudioRecordingSupported() {
+    const hasMediaDevices = Boolean(navigator?.mediaDevices?.getUserMedia);
+    const hasMediaRecorder = typeof window.MediaRecorder === 'function';
+    return hasMediaDevices && hasMediaRecorder;
+  }
+
+  async #emitChatAudio(audioPayload) {
+    if (typeof this.#chatOnSendAudio !== 'function') return;
+
+    if (Date.now() < this.#chatCooldownUntil) {
+      this.#startChatCooldown();
+      return;
+    }
+
+    try {
+      const wasSent = await this.#chatOnSendAudio(audioPayload);
+      if (wasSent === false) {
+        this.#setChatStatus('Aguarde 1s para enviar novamente.', true);
+        this.#startChatCooldown();
+        return;
+      }
+
+      this.#setChatStatus('Audio enviado!', false);
+      this.#startChatCooldown();
+    } catch (error) {
+      console.warn('[HandModal] Falha ao enviar audio de chat:', error);
+      this.#setChatStatus('Erro ao enviar audio.', true);
+    }
+  }
+
+  #setupAudioButton(audioBtn) {
+    if (!audioBtn) return;
+
+    if (!this.#isAudioRecordingSupported()) {
+      audioBtn.disabled = true;
+      audioBtn.title = 'Audio nao suportado';
+      audioBtn.setAttribute('aria-disabled', 'true');
+      return;
+    }
+
+    const start = async (event) => {
+      event?.preventDefault?.();
+      if (this.#isAudioRecording || this.#isAudioStopInFlight || audioBtn.disabled) return;
+
+      try {
+        await this.#audioRecorder.startRecording();
+        this.#isAudioRecording = true;
+        this.#setAudioButtonVisualState('recording');
+        this.#setChatStatus('Gravando audio... solte para enviar.', false);
+      } catch (error) {
+        this.#setChatStatus('Falha ao iniciar gravacao.', true);
+        console.warn('[HandModal] Falha ao iniciar gravacao de audio:', error);
+      }
+    };
+
+    const stopAndSend = async (event) => {
+      event?.preventDefault?.();
+      if (!this.#isAudioRecording || this.#isAudioStopInFlight) return;
+
+      this.#isAudioStopInFlight = true;
+      this.#isAudioRecording = false;
+      this.#setAudioButtonVisualState('idle');
+
+      try {
+        const result = await this.#audioRecorder.stopRecording();
+        await this.#emitChatAudio(result);
+      } catch (error) {
+        this.#setChatStatus('Falha ao enviar audio.', true);
+        console.warn('[HandModal] Falha ao finalizar envio de audio:', error);
+      } finally {
+        this.#isAudioStopInFlight = false;
+      }
+    };
+
+    const cancel = (event) => {
+      event?.preventDefault?.();
+      if (!this.#isAudioRecording) return;
+
+      this.#isAudioRecording = false;
+      this.#isAudioStopInFlight = false;
+      this.#setAudioButtonVisualState('idle');
+      this.#audioRecorder.cancelRecording();
+      this.#setChatStatus('', false);
+    };
+
+    if (typeof window.PointerEvent === 'function') {
+      audioBtn.addEventListener('pointerdown', async (event) => {
+        if (typeof event.pointerId === 'number') {
+          audioBtn.setPointerCapture(event.pointerId);
+        }
+        await start(event);
+      });
+      audioBtn.addEventListener('pointerup', stopAndSend);
+      audioBtn.addEventListener('pointercancel', cancel);
+      audioBtn.addEventListener('lostpointercapture', cancel);
+    } else {
+      audioBtn.addEventListener('touchstart', (event) => {
+        void start(event);
+      }, { passive: false });
+      audioBtn.addEventListener('touchend', (event) => {
+        void stopAndSend(event);
+      }, { passive: false });
+      audioBtn.addEventListener('touchcancel', cancel, { passive: false });
+      audioBtn.addEventListener('mousedown', (event) => {
+        void start(event);
+      });
+      audioBtn.addEventListener('mouseup', (event) => {
+        void stopAndSend(event);
+      });
+      audioBtn.addEventListener('mouseleave', cancel);
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────
