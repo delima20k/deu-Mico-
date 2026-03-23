@@ -185,8 +185,10 @@ export class RegisterScreen extends Screen {
           avatarUrl: user.photoURL || null,
         }).catch(err => console.warn('[RegisterScreen] Erro ao salvar perfil:', err));
         await AuthService.getInstance().sendEmailVerification().catch(() => {});
+        // Faz logout imediato para forçar verificação de e-mail antes de entrar
+        await AuthService.getInstance().signOut().catch(() => {});
         showFeedback('Conta criada! Verifique seu e-mail para ativar a conta antes de jogar.', false);
-        setTimeout(() => this.#onSuccess(user), 2500);
+        setTimeout(() => this.#manager.show('LoginScreen'), 2500);
       } catch (err) {
         showFeedback(this.#friendlyError(err));
       } finally {
