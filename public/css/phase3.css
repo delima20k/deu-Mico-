@@ -493,6 +493,26 @@
   display: none;
 }
 
+.tournament-screen__reward-slot {
+  margin-top: 10px;
+  padding: 10px 10px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tournament-screen__reward-hint {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.82);
+  line-height: 1.35;
+}
+
+.tournament-screen__ad-slot {
+  margin-top: 12px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
 /* ---------- TournamentCard ---------- */
 .tournament-card {
   background: var(--color-white);
@@ -534,6 +554,30 @@
 
 .tournament-card__join-btn:hover {
   opacity: 0.9;
+}
+
+.tournament-card__leave-btn {
+  margin-top: 10px;
+  width: 100%;
+  padding: clamp(11px, 2.3vw, 14px);
+  background: linear-gradient(135deg, #d74e3e 0%, #ab2d20 100%);
+  color: white;
+  border: none;
+  border-radius: var(--radius-btn);
+  font-size: clamp(0.9rem, 1.9vw, 1rem);
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.tournament-card__leave-btn:hover {
+  opacity: 0.9;
+}
+
+.tournament-card__leave-btn:disabled,
+.tournament-card__join-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* ---------- Leaderboard Table ---------- */

@@ -707,6 +707,105 @@ export class TournamentRepository {
   }
 
   /**
+   * Desiste da inscrição do torneio atual.
+   * Remove o usuário da instância e atualiza enrolledCount em transação.
+   * @param {string} tournamentId
+   * @param {string} uid
+   * @returns {Promise<{left: boolean, instanceId: string|null, reason?: string}>}
+   */
+  async leaveTournament(tournamentId, uid) {
+    if (!uid) {
+      throw new Error('[TournamentRound] leaveTournament sem uid');
+    }
+
+    const { db, dbMod } = this.#getDbContext();
+    const enrolled = await this.#resolveIndexedEnrollment(tournamentId, uid);
+    const fallbackEnrollment = enrolled.instance
+      ? enrolled
+      : await this.findUserEnrollment(tournamentId, uid);
+
+    const instance = fallbackEnrollment.instance;
+    if (!instance?.instanceId) {
+      await this.#clearEnrollmentIndex(tournamentId, uid);
+      return { left: false, instanceId: null, reason: 'not_enrolled' };
+    }
+
+    const instanceRef = dbMod.ref(db, `tournaments/instances/${instance.instanceId}`);
+
+    const result = await dbMod.runTransaction(instanceRef, (current) => {
+      if (!current) return current;
+
+      const now = Date.now();
+      const status = current.status || 'waiting';
+      const enrolledUsers = { ...(current.enrolledUsers || {}) };
+      const activePlayers = { ...(current.activePlayers || {}) };
+      let enrolledCount = Number(current.enrolledCount || 0);
+
+      if (!enrolledUsers[uid]) {
+        return current;
+      }
+
+      // Regra de desistência: permitida somente antes de iniciar a partida ativa.
+      if (status === 'active') {
+        return {
+          ...current,
+          updatedAt: now,
+        };
+      }
+
+      delete enrolledUsers[uid];
+      if (activePlayers[uid]) {
+        delete activePlayers[uid];
+      }
+
+      enrolledCount = Math.max(0, enrolledCount - 1);
+
+      let nextStatus = status;
+      let nextPhase = current.phase || 'waiting';
+      let countdownStartAt = current.countdownStartAt || null;
+      let countdownEndsAt = current.countdownEndsAt || null;
+      let lastSystemNotice = current.lastSystemNotice || null;
+
+      if (status === 'countdown' && enrolledCount < Number(current.maxParticipants || 6)) {
+        nextStatus = 'waiting';
+        nextPhase = 'waiting';
+        countdownStartAt = null;
+        countdownEndsAt = null;
+        lastSystemNotice = {
+          type: 'countdown_canceled',
+          ts: now,
+          text: 'Inscricao alterada. Countdown cancelado',
+          eventId: `countdown_cancel_${current.instanceId || instance.instanceId}_${now}`,
+        };
+      }
+
+      return {
+        ...current,
+        enrolledUsers,
+        activePlayers,
+        enrolledCount,
+        status: nextStatus,
+        phase: nextPhase,
+        countdownStartAt,
+        countdownEndsAt,
+        lastSystemNotice,
+        updatedAt: now,
+      };
+    });
+
+    const updated = result.snapshot.exists()
+      ? { instanceId: instance.instanceId, ...result.snapshot.val() }
+      : null;
+
+    if (!updated?.enrolledUsers?.[uid]) {
+      await this.#clearEnrollmentIndex(tournamentId, uid);
+      return { left: true, instanceId: instance.instanceId };
+    }
+
+    return { left: false, instanceId: instance.instanceId, reason: 'instance_active' };
+  }
+
+  /**
    * @param {string} tournamentId
    * @param {string} uid
    * @returns {Promise<{instance: Object|null}>}
@@ -1299,5 +1398,111 @@ export class TournamentRepository {
     });
 
     return result.snapshot.exists() ? result.snapshot.val() : null;
+  }
+
+  /**
+   * Registra estatística no ranking geral (somente partidas fora de campeonato).
+   * @param {{uid: string, name?: string, avatarUrl?: string, matchId: string, pairs?: number, won?: boolean, eventTs?: number}} payload
+   * @returns {Promise<Object|null>}
+   */
+  async recordGeneralMatchStats(payload) {
+    const uid = payload?.uid;
+    const matchId = payload?.matchId;
+    if (!uid || !matchId) {
+      throw new Error('[Ranking] recordGeneralMatchStats requer uid e matchId');
+    }
+
+    const { db, dbMod } = this.#getDbContext();
+    const ref = dbMod.ref(db, `rankings/general/${uid}`);
+    const pairs = Math.max(0, Number(payload?.pairs || 0));
+    const won = !!payload?.won;
+    const pointsDelta = pairs + (won ? 3 : 0);
+    const eventId = `match_${matchId}`;
+
+    const result = await dbMod.runTransaction(ref, (current) => {
+      const now = Number(payload?.eventTs || Date.now());
+      const base = current || {
+        uid,
+        name: payload?.name || 'Jogador',
+        avatarUrl: payload?.avatarUrl || '',
+        totalPoints: 0,
+        totalPairs: 0,
+        wins: 0,
+        matches: 0,
+        processedMatches: {},
+        createdAt: now,
+      };
+
+      const processedMatches = { ...(base.processedMatches || {}) };
+      if (processedMatches[eventId]) {
+        return base;
+      }
+
+      processedMatches[eventId] = now;
+      const keys = Object.keys(processedMatches);
+      if (keys.length > 240) {
+        keys
+          .sort((a, b) => Number(processedMatches[a] || 0) - Number(processedMatches[b] || 0))
+          .slice(0, keys.length - 180)
+          .forEach((key) => delete processedMatches[key]);
+      }
+
+      return {
+        ...base,
+        uid,
+        name: payload?.name || base.name || 'Jogador',
+        avatarUrl: payload?.avatarUrl ?? base.avatarUrl ?? '',
+        totalPoints: Number(base.totalPoints || 0) + pointsDelta,
+        totalPairs: Number(base.totalPairs || 0) + pairs,
+        wins: Number(base.wins || 0) + (won ? 1 : 0),
+        matches: Number(base.matches || 0) + 1,
+        processedMatches,
+        updatedAt: now,
+        lastMatchAt: now,
+      };
+    });
+
+    return result.snapshot.exists() ? result.snapshot.val() : null;
+  }
+
+  /**
+   * Observa ranking geral Top N em tempo real.
+   * @param {number} limit
+   * @param {(rows: Array<Object>) => void} callback
+   * @returns {Function}
+   */
+  subscribeGeneralLeaderboard(limit, callback) {
+    const { db, dbMod } = this.#getDbContext();
+    const safeLimit = Math.max(1, Number(limit || 100));
+    const ref = dbMod.ref(db, 'rankings/general');
+
+    const unsubscribe = dbMod.onValue(ref, (snap) => {
+      const map = snap.exists() ? (snap.val() || {}) : {};
+      const rows = Object.entries(map)
+        .map(([uid, row]) => ({
+          uid,
+          name: row?.name || 'Jogador',
+          avatarUrl: row?.avatarUrl || '',
+          totalPoints: Number(row?.totalPoints || 0),
+          totalPairs: Number(row?.totalPairs || 0),
+          wins: Number(row?.wins || 0),
+          matches: Number(row?.matches || 0),
+          updatedAt: Number(row?.updatedAt || 0),
+        }))
+        .sort((a, b) => {
+          if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+          if (b.wins !== a.wins) return b.wins - a.wins;
+          if (b.totalPairs !== a.totalPairs) return b.totalPairs - a.totalPairs;
+          return b.updatedAt - a.updatedAt;
+        })
+        .slice(0, safeLimit)
+        .map((row, index) => ({ ...row, rank: index + 1 }));
+
+      callback(rows);
+    }, (error) => {
+      console.error('[Ranking] subscribeGeneralLeaderboard error:', error);
+    });
+
+    return () => unsubscribe();
   }
 }

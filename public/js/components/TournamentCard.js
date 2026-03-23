@@ -18,6 +18,9 @@ export class TournamentCard {
   /** @type {Function|null} */
   #onJoin = null;
 
+  /** @type {Function|null} */
+  #onLeave = null;
+
   /** @type {HTMLElement|null} */
   #el = null;
 
@@ -25,10 +28,12 @@ export class TournamentCard {
    * @param {Object} options
    * @param {Object} options.tournament - dados do torneio
    * @param {Function} [options.onJoin] - callback ao participar
+   * @param {Function} [options.onLeave] - callback ao desistir
    */
-  constructor({ tournament, onJoin = null }) {
+  constructor({ tournament, onJoin = null, onLeave = null }) {
     this.#tournament = tournament;
     this.#onJoin = onJoin;
+    this.#onLeave = onLeave;
   }
 
   /**
@@ -75,7 +80,18 @@ export class TournamentCard {
       this.#onJoin?.();
     });
 
-    card.append(name, date, prize, enrolled, btn);
+    const btnLeave = Dom.create('button', {
+      classes: 'tournament-card__leave-btn',
+      text: 'DESISTIR DO CAMPEONATO',
+      attrs: { type: 'button' },
+    });
+
+    btnLeave.addEventListener('click', () => {
+      SoundManager.getInstance().play('made');
+      this.#onLeave?.();
+    });
+
+    card.append(name, date, prize, enrolled, btn, btnLeave);
     this.#el = card;
     return card;
   }

@@ -171,6 +171,21 @@ export class TournamentService {
   }
 
   /**
+   * Remove a inscrição do usuário atual na instância ativa do campeonato.
+   * @returns {Promise<{left: boolean, instanceId: string|null, reason?: string}>}
+   */
+  async leaveCurrentTournament() {
+    const tournamentId = await this.ensureCurrentTournament();
+    const currentUser = await this.#authService.getCurrentUser();
+
+    if (!currentUser?.uid) {
+      throw new Error('[Tournament] Usuario nao autenticado para desistir');
+    }
+
+    return this.#repo.leaveTournament(tournamentId, currentUser.uid);
+  }
+
+  /**
    * Tenta iniciar torneio apos countdown (idempotente).
    * @returns {Promise<boolean>}
    */
@@ -304,6 +319,41 @@ export class TournamentService {
       milliDelta,
       eventId,
       isDecisive,
+    });
+  }
+
+  /**
+   * Registra estatística no ranking geral (partidas fora de campeonato).
+   * @param {{uid: string, name?: string, avatarUrl?: string, matchId: string, pairs?: number, won?: boolean, eventTs?: number}} data
+   * @returns {Promise<void>}
+   */
+  async recordGeneralMatchResult(data) {
+    if (!data?.uid || !data?.matchId) return;
+
+    await this.#repo.recordGeneralMatchStats({
+      uid: data.uid,
+      name: data.name || 'Jogador',
+      avatarUrl: data.avatarUrl || '',
+      matchId: data.matchId,
+      pairs: Number(data.pairs || 0),
+      won: !!data.won,
+      eventTs: Number(data.eventTs || Date.now()),
+    });
+  }
+
+  /**
+   * Observa Top 100 do ranking geral (fora de campeonato).
+   * @param {(rows: Array<Object>) => void} callback
+   * @returns {Function}
+   */
+  subscribeGeneralLeaderboardTop100(callback) {
+    return this.#repo.subscribeGeneralLeaderboard(100, (rows) => {
+      callback(rows.map((entry) => ({
+        ...entry,
+        avgPairs: entry.matches > 0
+          ? (Number(entry.totalPairs || 0) / Number(entry.matches || 1)).toFixed(2)
+          : '0.00',
+      })));
     });
   }
 }

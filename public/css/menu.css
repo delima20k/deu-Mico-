@@ -398,6 +398,106 @@
 }
 
 /* ========================================================
+   MODAL: RANKING GERAL TOP 100
+   ======================================================== */
+
+.menu-ranking-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(12, 18, 9, 0.62);
+  padding: clamp(12px, 3vw, 24px);
+}
+
+.menu-ranking-modal__panel {
+  width: min(980px, 100%);
+  max-height: min(88vh, 860px);
+  background: #ffffff;
+  color: #1f2a1f;
+  border-radius: 16px;
+  padding: clamp(14px, 3vw, 22px);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.33);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.menu-ranking-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.menu-ranking-modal__title {
+  margin: 0;
+  font-size: clamp(1.2rem, 3.2vw, 1.6rem);
+  font-weight: 900;
+  color: #175e2f;
+}
+
+.menu-ranking-modal__subtitle {
+  margin: 0;
+  font-size: clamp(0.82rem, 2vw, 0.96rem);
+  color: #607263;
+}
+
+.menu-ranking-modal__close {
+  border: none;
+  border-radius: 10px;
+  background: #e6efe6;
+  color: #124e28;
+  font-weight: 700;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.menu-ranking-modal__table-wrap {
+  border: 1px solid #d9e7d9;
+  border-radius: 12px;
+  overflow: auto;
+  max-height: min(68vh, 650px);
+}
+
+.menu-ranking-modal__table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 620px;
+}
+
+.menu-ranking-modal__table thead {
+  background: #1f8f47;
+  color: #fff;
+}
+
+.menu-ranking-modal__table th,
+.menu-ranking-modal__table td {
+  padding: 10px 8px;
+  text-align: center;
+  border-bottom: 1px solid #edf3ed;
+  font-size: clamp(0.78rem, 1.8vw, 0.92rem);
+}
+
+.menu-ranking-modal__table tbody tr:nth-child(even) {
+  background: #f6fbf6;
+}
+
+@media (max-width: 640px) {
+  .menu-ranking-modal {
+    padding: 8px;
+  }
+
+  .menu-ranking-modal__panel {
+    max-height: 92vh;
+    border-radius: 12px;
+    padding: 10px;
+  }
+}
+
+/* ========================================================
    RESPONSIVE
    ======================================================== */
 

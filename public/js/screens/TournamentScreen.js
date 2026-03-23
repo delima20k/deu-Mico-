@@ -14,8 +14,10 @@ import { HeaderBar } from '../components/HeaderBar.js';
 import { TournamentCard } from '../components/TournamentCard.js';
 import { TournamentService } from '../services/TournamentService.js';
 import { AuthService } from '../services/AuthService.js';
-import { AudioService } from '../services/AudioService.js';
 import { Dom } from '../utils/Dom.js';
+import { AdService } from '../services/adService.js';
+import { AdConfig } from '../services/adConfig.js';
+import { MatchService } from '../services/MatchService.js';
 
 export class TournamentScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
@@ -66,6 +68,9 @@ export class TournamentScreen extends Screen {
   /** @type {boolean} */
   #isJoiningTournament = false;
 
+  /** @type {boolean} */
+  #isLeavingTournament = false;
+
   /** @type {number|null} */
   #lastEnrolledCount = null;
 
@@ -89,6 +94,18 @@ export class TournamentScreen extends Screen {
 
   /** @type {ReturnType<typeof setTimeout>|null} */
   #entryNoticeTimer = null;
+
+  /** @type {HTMLButtonElement|null} */
+  #rewardTournamentBtnEl = null;
+
+  /** @type {HTMLButtonElement|null} */
+  #rewardRankingBtnEl = null;
+
+  /** @type {HTMLElement|null} */
+  #rewardTournamentHintEl = null;
+
+  /** @type {HTMLElement|null} */
+  #rewardRankingHintEl = null;
 
   /**
    * @param {import('../core/ScreenManager.js').ScreenManager} screenManager
@@ -156,6 +173,7 @@ export class TournamentScreen extends Screen {
         enrolledCount: 0,
       },
       onJoin: () => this.#onJoinTournament(),
+      onLeave: () => this.#onLeaveTournament(),
     });
 
     const tournamentCardEl = this.#tournamentCard.create();
@@ -170,7 +188,37 @@ export class TournamentScreen extends Screen {
       text: 'Inicio em 60s',
     });
 
-    tournamentSection.append(sectionTitle, tournamentCardEl, this.#statusBannerEl, this.#countdownEl);
+    const tournamentRewardSlot = Dom.create('div', {
+      classes: 'reward-slot tournament-screen__reward-slot',
+      attrs: { id: 'rewarded-tournament-slot' },
+    });
+    this.#rewardTournamentBtnEl = Dom.create('button', {
+      classes: 'reward-slot__btn',
+      text: 'Assistir video e desbloquear beneficios',
+      attrs: { type: 'button' },
+    });
+    this.#rewardTournamentHintEl = Dom.create('p', {
+      classes: 'tournament-screen__reward-hint',
+      text: 'Disponivel para partidas de campeonato com 3+ jogadores.',
+    });
+    this.#rewardTournamentBtnEl.addEventListener('click', () => {
+      void this.#onWatchRewardedBenefits('tournament');
+    });
+    tournamentRewardSlot.append(this.#rewardTournamentBtnEl, this.#rewardTournamentHintEl);
+
+    const tournamentAdBanner = Dom.create('div', {
+      classes: 'ad-slot tournament-screen__ad-slot',
+      attrs: { id: 'ad-banner-tournament' },
+    });
+
+    tournamentSection.append(
+      sectionTitle,
+      tournamentCardEl,
+      this.#statusBannerEl,
+      this.#countdownEl,
+      tournamentRewardSlot,
+      tournamentAdBanner,
+    );
 
     // Seção leaderboard
     const leaderboardSection = Dom.create('section', {
@@ -183,13 +231,46 @@ export class TournamentScreen extends Screen {
     });
 
     const leaderboardTable = this.#buildLeaderboardTable();
-    leaderboardSection.append(leaderboardTitle, leaderboardTable);
+    const rankingRewardSlot = Dom.create('div', {
+      classes: 'reward-slot tournament-screen__reward-slot',
+      attrs: { id: 'rewarded-ranking-slot' },
+    });
+    this.#rewardRankingBtnEl = Dom.create('button', {
+      classes: 'reward-slot__btn',
+      text: 'Assistir video (Ranking) e ganhar beneficio',
+      attrs: { type: 'button' },
+    });
+    this.#rewardRankingHintEl = Dom.create('p', {
+      classes: 'tournament-screen__reward-hint',
+      text: 'Beneficios validos para a partida atual do campeonato (3+ jogadores).',
+    });
+    this.#rewardRankingBtnEl.addEventListener('click', () => {
+      void this.#onWatchRewardedBenefits('ranking');
+    });
+    rankingRewardSlot.append(this.#rewardRankingBtnEl, this.#rewardRankingHintEl);
+
+    const rankingAdBanner = Dom.create('div', {
+      classes: 'ad-slot tournament-screen__ad-slot',
+      attrs: { id: 'ad-banner-ranking' },
+    });
+
+    leaderboardSection.append(
+      leaderboardTitle,
+      leaderboardTable,
+      rankingRewardSlot,
+      rankingAdBanner,
+    );
 
     // Container principal
     const mainContainer = Dom.create('main', { classes: 'tournament-screen__main' });
     mainContainer.append(btnBack, title, tournamentSection, leaderboardSection);
 
     container.append(mainContainer);
+
+    AdService.getInstance().showBanner(AdConfig.bannerPlacements.tournament);
+    AdService.getInstance().showBanner(AdConfig.bannerPlacements.ranking);
+
+    this.#refreshRewardButtonsState();
 
     await this.#startRealtimeBindings();
   }
@@ -213,6 +294,15 @@ export class TournamentScreen extends Screen {
     this.#lastObservedInstanceId = null;
     this.#navigatedMatchId = null;
     this.#justJoinedAt = 0;
+    this.#isLeavingTournament = false;
+
+    this.#rewardTournamentBtnEl = null;
+    this.#rewardRankingBtnEl = null;
+    this.#rewardTournamentHintEl = null;
+    this.#rewardRankingHintEl = null;
+
+    AdService.getInstance().hideBanner(AdConfig.bannerPlacements.tournament);
+    AdService.getInstance().hideBanner(AdConfig.bannerPlacements.ranking);
   }
 
   /**
@@ -250,7 +340,6 @@ export class TournamentScreen extends Screen {
 
         if (joinEventKey && joinEventKey !== this.#lastJoinEventId && joinUid && joinUid !== this.#myUid) {
           this.#showEntryNotice(selected?.lastJoinEvent?.name || 'Jogador', nextEnrolledCount);
-          AudioService.getInstance().playForce('tournament-opponent-entry');
         }
         if (joinEventKey) {
           this.#lastJoinEventId = joinEventKey;
@@ -275,6 +364,7 @@ export class TournamentScreen extends Screen {
       this.#currentTournament = selected;
       this.#lastEnrolledCount = selected ? nextEnrolledCount : null;
       this.#renderTournamentState();
+      this.#refreshRewardButtonsState();
       void this.#maybeNavigateToCurrentMatch();
     });
 
@@ -338,7 +428,7 @@ export class TournamentScreen extends Screen {
       ?.querySelector('.tournament-card__join-btn');
 
     if (joinBtn) {
-      joinBtn.disabled = this.#isJoiningTournament || isJoined || status === 'active';
+      joinBtn.disabled = this.#isJoiningTournament || this.#isLeavingTournament || isJoined || status === 'active';
       joinBtn.textContent = this.#isJoiningTournament
         ? 'INSCREVENDO...'
         : isJoined
@@ -346,6 +436,18 @@ export class TournamentScreen extends Screen {
         : status === 'active'
           ? 'EM ANDAMENTO'
           : 'PARTICIPAR';
+    }
+
+    const leaveBtn = this.#tournamentCard
+      .getElement()
+      ?.querySelector('.tournament-card__leave-btn');
+
+    if (leaveBtn) {
+      const canLeave = isJoined && status !== 'active';
+      leaveBtn.disabled = this.#isJoiningTournament || this.#isLeavingTournament || !canLeave;
+      leaveBtn.textContent = this.#isLeavingTournament
+        ? 'DESISTINDO...'
+        : 'DESISTIR DO CAMPEONATO';
     }
 
     if (status === 'waiting') {
@@ -386,6 +488,121 @@ export class TournamentScreen extends Screen {
       this.#countdownEl.classList.add('tournament-screen__countdown--hidden');
       this.#clearCountdownTicker();
     }
+
+    this.#refreshRewardButtonsState();
+  }
+
+  /**
+   * @returns {{eligible:boolean, matchId:string|null, playersCount:number, status:string}}
+   * @private
+   */
+  #resolveRewardEligibility() {
+    const state = this.#currentTournament;
+    const status = String(state?.status || 'waiting');
+    const matchId = state?.currentMatchId || null;
+    const playersCount = state?.activePlayers
+      ? Object.keys(state.activePlayers || {}).length
+      : Number(state?.enrolledCount || 0);
+
+    const eligible = status === 'active' && !!matchId && playersCount >= 3;
+    return {
+      eligible,
+      matchId,
+      playersCount,
+      status,
+    };
+  }
+
+  /** @private */
+  #refreshRewardButtonsState() {
+    const eligibility = this.#resolveRewardEligibility();
+    const canUseRewarded = AdConfig.enableRewarded;
+
+    const btns = [this.#rewardTournamentBtnEl, this.#rewardRankingBtnEl].filter(Boolean);
+    btns.forEach((btn) => {
+      btn.disabled = !canUseRewarded || !eligibility.eligible;
+      btn.textContent = eligibility.eligible
+        ? 'Assistir video e liberar beneficios da partida'
+        : 'Rewarded disponivel no inicio da partida (3+ jogadores)';
+    });
+
+    const hints = [this.#rewardTournamentHintEl, this.#rewardRankingHintEl].filter(Boolean);
+    let hintText = 'Disponivel para partidas de campeonato com 3+ jogadores.';
+    if (!canUseRewarded) {
+      hintText = 'Rewarded desativado na configuracao atual.';
+    } else if (eligibility.status !== 'active' || !eligibility.matchId) {
+      hintText = 'Quando a rodada iniciar, voce pode assistir e liberar beneficios para a partida.';
+    } else if (eligibility.playersCount < 3) {
+      hintText = 'Esta partida tem menos de 3 jogadores. Beneficios indisponiveis.';
+    }
+
+    hints.forEach((hintEl) => {
+      hintEl.textContent = hintText;
+    });
+  }
+
+  /**
+   * @param {'tournament'|'ranking'} source
+   * @private
+   */
+  async #onWatchRewardedBenefits(source) {
+    if (!AdConfig.enableRewarded) return;
+
+    const btnPrimary = source === 'ranking' ? this.#rewardRankingBtnEl : this.#rewardTournamentBtnEl;
+    const hintPrimary = source === 'ranking' ? this.#rewardRankingHintEl : this.#rewardTournamentHintEl;
+    const eligibility = this.#resolveRewardEligibility();
+
+    if (!eligibility.eligible || !eligibility.matchId || !this.#myUid) {
+      if (hintPrimary) {
+        hintPrimary.textContent = 'Beneficio so pode ser ativado com partida ativa de campeonato (3+ jogadores).';
+      }
+      this.#refreshRewardButtonsState();
+      return;
+    }
+
+    if (btnPrimary) {
+      btnPrimary.disabled = true;
+      btnPrimary.textContent = 'Carregando...';
+    }
+
+    const result = await AdService.getInstance()
+      .showRewarded(source === 'ranking'
+        ? AdConfig.rewardedTriggers.rankingBenefits
+        : AdConfig.rewardedTriggers.tournamentBenefits)
+      .catch(() => ({ rewarded: false }));
+
+    if (!result.rewarded) {
+      if (hintPrimary) {
+        hintPrimary.textContent = 'Video nao concluido. Nenhum beneficio foi liberado.';
+      }
+      this.#refreshRewardButtonsState();
+      return;
+    }
+
+    AdService.getInstance().grantReward(AdConfig.rewardTypes.tournamentBenefits);
+    AdService.getInstance().grantReward(AdConfig.rewardTypes.revealMico);
+    AdService.getInstance().grantReward(AdConfig.rewardTypes.dealerSkipLeft);
+
+    await MatchService.getInstance().grantTournamentMatchBenefits(
+      eligibility.matchId,
+      this.#myUid,
+      {
+        grantRevealMico: true,
+        grantDealerSkipLeft: true,
+        source: `tournament_screen_${source}`,
+      },
+    ).catch((error) => {
+      console.error('[TournamentScreen] Falha ao gravar beneficios rewarded:', error);
+    });
+
+    if (hintPrimary) {
+      hintPrimary.textContent = 'Beneficios liberados para esta partida: revelar Mico (1x) e pular 1 jogador na distribuicao se voce for dealer.';
+    }
+    if (btnPrimary) {
+      btnPrimary.textContent = 'Beneficios liberados para a partida atual';
+    }
+
+    this.#refreshRewardButtonsState();
   }
 
   /**
@@ -635,6 +852,46 @@ export class TournamentScreen extends Screen {
           : 'Nao foi possivel participar agora. Tente novamente.';
     } finally {
       this.#isJoiningTournament = false;
+      this.#renderTournamentState();
+    }
+  }
+
+  /**
+   * Handler: usuário clica para desistir do torneio.
+   * @private
+   */
+  async #onLeaveTournament() {
+    if (this.#isLeavingTournament) {
+      return;
+    }
+
+    const currentUser = await AuthService.getInstance().getCurrentUser().catch(() => null);
+    if (!currentUser?.uid) {
+      this.#statusBannerEl.textContent = 'Voce precisa estar logado para desistir do campeonato.';
+      return;
+    }
+
+    this.#myUid = currentUser.uid;
+    this.#isLeavingTournament = true;
+    this.#renderTournamentState();
+
+    try {
+      const result = await this.#tournamentService.leaveCurrentTournament();
+      if (result?.left) {
+        this.#statusBannerEl.textContent = 'Inscricao removida com sucesso.';
+      } else if (result?.reason === 'instance_active') {
+        this.#statusBannerEl.textContent = 'Nao e possivel desistir: a rodada ja iniciou.';
+      } else {
+        this.#statusBannerEl.textContent = 'Voce nao estava inscrito nesta rodada.';
+      }
+      console.log(
+        `[TournamentRound] leave result left=${!!result?.left} reason=${result?.reason || 'none'} instanceId=${result?.instanceId || 'n/a'}`
+      );
+    } catch (error) {
+      console.error('[TournamentRound] Falha ao desistir do campeonato:', error);
+      this.#statusBannerEl.textContent = 'Nao foi possivel desistir agora. Tente novamente.';
+    } finally {
+      this.#isLeavingTournament = false;
       this.#renderTournamentState();
     }
   }

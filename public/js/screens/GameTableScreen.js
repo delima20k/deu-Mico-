@@ -176,8 +176,35 @@ export class GameTableScreen extends Screen {
   /** @type {string|null} */
   #tournamentResultHandledForMatchId = null;
 
+  /** @type {string|null} */
+  #generalRankingReportedForMatchId = null;
+
   /** @type {ReturnType<typeof setTimeout>|null} */
   #tournamentRedirectTimer = null;
+
+  /** @type {Function|null} */
+  #tournamentAdBenefitsMapUnsub = null;
+
+  /** @type {Function|null} */
+  #tournamentMyBenefitsUnsub = null;
+
+  /** @type {Object} */
+  #tournamentAdBenefitsMap = {};
+
+  /** @type {Object|null} */
+  #myTournamentBenefits = null;
+
+  /** @type {HTMLElement|null} */
+  #tournamentBenefitsPanelEl = null;
+
+  /** @type {HTMLButtonElement|null} */
+  #watchBenefitsBtnEl = null;
+
+  /** @type {HTMLButtonElement|null} */
+  #revealMicoBtnEl = null;
+
+  /** @type {HTMLElement|null} */
+  #benefitsHintEl = null;
 
   // ── Gerenciamento de turnos ────────────────────────────────────────
 
@@ -254,6 +281,9 @@ export class GameTableScreen extends Screen {
     this.#tournamentInstanceId = params.tournamentInstanceId || null;
     this.#tournamentId = params.tournamentId || null;
     this.#tournamentResultHandledForMatchId = null;
+    this.#generalRankingReportedForMatchId = null;
+    this.#tournamentAdBenefitsMap = {};
+    this.#myTournamentBenefits = null;
 
     if (this.#tournamentRedirectTimer !== null) {
       clearTimeout(this.#tournamentRedirectTimer);
@@ -422,6 +452,42 @@ export class GameTableScreen extends Screen {
       });
       btnRankingEl.addEventListener('click', () => this.#onViewRanking());
       mainEl.append(btnRankingEl);
+
+      if (this.#isTournamentBenefitsEligible()) {
+        this.#tournamentBenefitsPanelEl = Dom.create('section', {
+          classes: 'game-table-screen__benefits-panel',
+        });
+
+        this.#watchBenefitsBtnEl = Dom.create('button', {
+          classes: 'game-table-screen__btn-benefits-watch',
+          text: '🎬 Assistir video (beneficios)',
+          attrs: { type: 'button' },
+        });
+        this.#watchBenefitsBtnEl.addEventListener('click', () => {
+          void this.#onWatchTournamentBenefits();
+        });
+
+        this.#revealMicoBtnEl = Dom.create('button', {
+          classes: 'game-table-screen__btn-reveal-mico',
+          text: '🎯 Ver quem esta com o mico',
+          attrs: { type: 'button' },
+        });
+        this.#revealMicoBtnEl.addEventListener('click', () => {
+          void this.#onRevealMicoBenefitRequested();
+        });
+
+        this.#benefitsHintEl = Dom.create('p', {
+          classes: 'game-table-screen__benefits-hint',
+          text: 'Beneficios de campeonato para partidas com 3+ jogadores.',
+        });
+
+        this.#tournamentBenefitsPanelEl.append(
+          this.#watchBenefitsBtnEl,
+          this.#revealMicoBtnEl,
+          this.#benefitsHintEl,
+        );
+        mainEl.append(this.#tournamentBenefitsPanelEl);
+      }
     }
 
     container.append(mainEl);
@@ -434,6 +500,10 @@ export class GameTableScreen extends Screen {
 
     // Assina canal de animações push — sincroniza animações entre todos os clientes
     this.#subscribeAnimEvents();
+
+    // Benefícios rewarded de campeonato (sincronizados por partida/uid)
+    this.#subscribeTournamentAdBenefits();
+    this.#refreshTournamentBenefitsUI();
 
     // Proteção de segundo plano: não remove jogador ao minimizar o PWA
     this.#setupVisibilityHandler();
@@ -624,6 +694,19 @@ export class GameTableScreen extends Screen {
       clearTimeout(this.#tournamentRedirectTimer);
       this.#tournamentRedirectTimer = null;
     }
+
+    this.#tournamentAdBenefitsMapUnsub?.();
+    this.#tournamentAdBenefitsMapUnsub = null;
+    this.#tournamentMyBenefitsUnsub?.();
+    this.#tournamentMyBenefitsUnsub = null;
+    this.#tournamentAdBenefitsMap = {};
+    this.#myTournamentBenefits = null;
+    this.#tournamentBenefitsPanelEl?.remove();
+    this.#tournamentBenefitsPanelEl = null;
+    this.#watchBenefitsBtnEl = null;
+    this.#revealMicoBtnEl = null;
+    this.#benefitsHintEl = null;
+    document.querySelector('.mico-reveal-modal')?.remove();
 
     // Para o heartbeat Firebase (ping periódico)
     FirebaseService.getInstance().stopHeartbeat();
@@ -1156,6 +1239,300 @@ export class GameTableScreen extends Screen {
   }
 
   /**
+   * @returns {boolean}
+   * @private
+   */
+  #isTournamentBenefitsEligible() {
+    return this.#roomType === 'tournament' && Array.isArray(this.#players) && this.#players.length >= 3;
+  }
+
+  /**
+   * Assina estado de benefícios rewarded no Firebase para sincronizar todos os clientes.
+   * @private
+   */
+  #subscribeTournamentAdBenefits() {
+    this.#tournamentAdBenefitsMapUnsub?.();
+    this.#tournamentAdBenefitsMapUnsub = null;
+    this.#tournamentMyBenefitsUnsub?.();
+    this.#tournamentMyBenefitsUnsub = null;
+
+    if (!this.#isTournamentBenefitsEligible() || !this.#matchId || !this.#myUid) return;
+
+    const matchService = MatchService.getInstance();
+
+    this.#tournamentAdBenefitsMapUnsub = matchService.subscribeTournamentMatchBenefitsMap(
+      this.#matchId,
+      (mapData) => {
+        this.#tournamentAdBenefitsMap = mapData || {};
+        this.#refreshTournamentBenefitsUI();
+      },
+    );
+
+    this.#tournamentMyBenefitsUnsub = matchService.subscribeTournamentMatchBenefits(
+      this.#matchId,
+      this.#myUid,
+      (benefits) => {
+        this.#myTournamentBenefits = benefits || null;
+        this.#refreshTournamentBenefitsUI();
+      },
+    );
+  }
+
+  /**
+   * @returns {boolean}
+   * @private
+   */
+  #hasCardsBeenDealt() {
+    return [...this.#handMap.values()].some((hand) => Array.isArray(hand) && hand.length > 0);
+  }
+
+  /**
+   * @param {string} text
+   * @private
+   */
+  #setBenefitsHint(text) {
+    if (!this.#benefitsHintEl) return;
+    this.#benefitsHintEl.textContent = String(text || '');
+  }
+
+  /**
+   * Atualiza estado visual dos botões de benefício.
+   * @private
+   */
+  #refreshTournamentBenefitsUI() {
+    if (!this.#tournamentBenefitsPanelEl) return;
+
+    const eligible = this.#isTournamentBenefitsEligible();
+    const canRewarded = eligible && AdConfig.enableRewarded;
+    const rewards = this.#myTournamentBenefits?.rewards || {};
+    const revealMicoGranted = Boolean(rewards?.revealMico?.grantedAt);
+    const revealMicoConsumed = Boolean(rewards?.revealMico?.consumedAt);
+    const dealerSkipGranted = Boolean(rewards?.dealerSkipLeft?.grantedAt);
+    const dealerSkipConsumed = Boolean(rewards?.dealerSkipLeft?.consumedAt);
+    const hasAnyBenefitGranted = revealMicoGranted || dealerSkipGranted;
+    const hasStarted = this.#hasCardsBeenDealt();
+    const canRevealMicoNow = revealMicoGranted && !revealMicoConsumed && hasStarted;
+
+    if (this.#watchBenefitsBtnEl) {
+      this.#watchBenefitsBtnEl.disabled = !canRewarded || hasAnyBenefitGranted;
+      this.#watchBenefitsBtnEl.textContent = hasAnyBenefitGranted
+        ? '✅ Beneficios ja liberados para esta partida'
+        : '🎬 Assistir video (beneficios)';
+    }
+
+    if (this.#revealMicoBtnEl) {
+      this.#revealMicoBtnEl.style.display = revealMicoGranted ? '' : 'none';
+      this.#revealMicoBtnEl.disabled = !canRevealMicoNow;
+      this.#revealMicoBtnEl.textContent = revealMicoConsumed
+        ? '🎯 Beneficio de revelar mico ja utilizado'
+        : '🎯 Ver quem esta com o mico';
+    }
+
+    if (!eligible) {
+      this.#setBenefitsHint('Beneficios disponiveis apenas em campeonato com 3+ jogadores.');
+      return;
+    }
+    if (!AdConfig.enableRewarded) {
+      this.#setBenefitsHint('Rewarded desativado na configuracao atual.');
+      return;
+    }
+    if (!hasAnyBenefitGranted) {
+      this.#setBenefitsHint('Assista ao video para desbloquear: revelar mico (1x) e pular 1 jogador na distribuicao se voce for dealer.');
+      return;
+    }
+    if (!hasStarted) {
+      this.#setBenefitsHint('Beneficios liberados. O botao de revelar mico aparece apos inicio da partida.');
+      return;
+    }
+    if (revealMicoConsumed) {
+      this.#setBenefitsHint('Beneficio de revelar mico ja foi consumido nesta partida.');
+      return;
+    }
+    if (dealerSkipGranted && dealerSkipConsumed) {
+      this.#setBenefitsHint('Beneficio de distribuicao do dealer ja foi consumido nesta partida.');
+      return;
+    }
+    this.#setBenefitsHint('Beneficios ativos para esta partida.');
+  }
+
+  /**
+   * @private
+   */
+  async #onWatchTournamentBenefits() {
+    if (!this.#isTournamentBenefitsEligible() || !this.#matchId || !this.#myUid) {
+      this.#setBenefitsHint('Beneficio indisponivel neste contexto.');
+      return;
+    }
+
+    if (this.#watchBenefitsBtnEl) {
+      this.#watchBenefitsBtnEl.disabled = true;
+      this.#watchBenefitsBtnEl.textContent = 'Carregando...';
+    }
+
+    const result = await AdService.getInstance()
+      .showRewarded(AdConfig.rewardedTriggers.tournamentBenefits)
+      .catch(() => ({ rewarded: false }));
+
+    if (!result.rewarded) {
+      this.#setBenefitsHint('Video nao concluido. Nenhum beneficio liberado.');
+      this.#refreshTournamentBenefitsUI();
+      return;
+    }
+
+    AdService.getInstance().grantReward(AdConfig.rewardTypes.tournamentBenefits);
+    AdService.getInstance().grantReward(AdConfig.rewardTypes.revealMico);
+    AdService.getInstance().grantReward(AdConfig.rewardTypes.dealerSkipLeft);
+
+    await MatchService.getInstance().grantTournamentMatchBenefits(this.#matchId, this.#myUid, {
+      grantRevealMico: true,
+      grantDealerSkipLeft: true,
+      source: 'game_table_tournament',
+    }).catch((error) => {
+      console.error('[AdBenefits] Falha ao gravar benefícios no Firebase:', error);
+    });
+
+    this.#setBenefitsHint('Beneficios liberados para esta partida.');
+    this.#refreshTournamentBenefitsUI();
+  }
+
+  /**
+   * @private
+   */
+  async #onRevealMicoBenefitRequested() {
+    if (!this.#isTournamentBenefitsEligible() || !this.#matchId || !this.#myUid) {
+      this.#setBenefitsHint('Beneficio indisponivel neste contexto.');
+      return;
+    }
+
+    if (!this.#hasCardsBeenDealt()) {
+      this.#setBenefitsHint('Este beneficio fica disponivel apos o inicio da partida.');
+      this.#refreshTournamentBenefitsUI();
+      return;
+    }
+
+    if (this.#revealMicoBtnEl) {
+      this.#revealMicoBtnEl.disabled = true;
+      this.#revealMicoBtnEl.textContent = 'Processando...';
+    }
+
+    const consumeResult = await MatchService.getInstance().consumeTournamentMatchBenefit(
+      this.#matchId,
+      this.#myUid,
+      'revealMico',
+      {
+        phase: 'match_started',
+        reason: 'reveal_mico_button',
+      },
+    ).catch(() => ({ consumed: false, state: null }));
+
+    if (!consumeResult.consumed) {
+      this.#setBenefitsHint('Beneficio de revelar mico ja foi usado ou nao esta ativo.');
+      this.#refreshTournamentBenefitsUI();
+      return;
+    }
+
+    const micoPlayer = this.#findCurrentMicoHolderPlayer();
+    if (!micoPlayer) {
+      this.#setBenefitsHint('Nao foi possivel identificar quem esta com o mico agora.');
+      this.#refreshTournamentBenefitsUI();
+      return;
+    }
+
+    this.#showMicoHolderModal(micoPlayer);
+    this.#setBenefitsHint(`Revelado: ${micoPlayer.name} esta com o mico.`);
+    this.#refreshTournamentBenefitsUI();
+  }
+
+  /**
+   * @returns {{uid:string,name:string,avatarUrl:string}|null}
+   * @private
+   */
+  #findCurrentMicoHolderPlayer() {
+    for (const [uid, hand] of this.#handMap.entries()) {
+      if (!Array.isArray(hand) || hand.length === 0) continue;
+      const hasMico = hand.some((card) => Boolean(card?.isMico));
+      if (!hasMico) continue;
+
+      const player = this.#players.find((p) => p.uid === uid);
+      return {
+        uid,
+        name: player?.name || 'Jogador',
+        avatarUrl: player?.avatarUrl || '',
+      };
+    }
+    return null;
+  }
+
+  /**
+   * @param {{uid:string,name:string,avatarUrl:string}} player
+   * @private
+   */
+  #showMicoHolderModal(player) {
+    document.querySelector('.mico-reveal-modal')?.remove();
+
+    const overlay = Dom.create('div', { classes: 'mico-reveal-modal' });
+    const card = Dom.create('div', { classes: 'mico-reveal-modal__card' });
+    const title = Dom.create('h3', {
+      classes: 'mico-reveal-modal__title',
+      text: 'Quem esta com o mico agora',
+    });
+
+    const avatarWrap = Dom.create('div', { classes: 'mico-reveal-modal__avatar-wrap' });
+    if (player.avatarUrl) {
+      const avatar = Dom.create('img', {
+        classes: 'mico-reveal-modal__avatar',
+        attrs: {
+          src: player.avatarUrl,
+          alt: player.name,
+          loading: 'lazy',
+          referrerpolicy: 'no-referrer',
+        },
+      });
+      avatar.addEventListener('error', () => {
+        avatarWrap.innerHTML = '';
+        avatarWrap.append(Dom.create('span', {
+          classes: 'mico-reveal-modal__avatar-fallback',
+          text: (player.name || '?').slice(0, 1).toUpperCase(),
+        }));
+      });
+      avatarWrap.append(avatar);
+    } else {
+      avatarWrap.append(Dom.create('span', {
+        classes: 'mico-reveal-modal__avatar-fallback',
+        text: (player.name || '?').slice(0, 1).toUpperCase(),
+      }));
+    }
+
+    const name = Dom.create('p', {
+      classes: 'mico-reveal-modal__name',
+      text: player.name,
+    });
+    const subtitle = Dom.create('p', {
+      classes: 'mico-reveal-modal__subtitle',
+      text: 'Use com sabedoria. Este beneficio so pode ser usado 1 vez por partida.',
+    });
+    const btnClose = Dom.create('button', {
+      classes: 'mico-reveal-modal__close',
+      text: 'OK',
+      attrs: { type: 'button' },
+    });
+
+    const close = () => {
+      overlay.classList.add('mico-reveal-modal--closing');
+      setTimeout(() => overlay.remove(), 180);
+    };
+
+    btnClose.addEventListener('click', close);
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) close();
+    });
+
+    card.append(title, avatarWrap, name, subtitle, btnClose);
+    overlay.append(card);
+    document.body.append(overlay);
+  }
+
+  /**
    * Processa evento de estado de jogo recebido do Firebase.
    * Executado em TODOS os clientes quando o dealer aciona embaralhar ou entregar.
    * @param {{ phase: string, ts: number, cardOrder?: string[] }} state
@@ -1237,6 +1614,7 @@ export class GameTableScreen extends Screen {
       // Sincroniza offset de turno e ativa UI de roubo/observação
       if (state.turnOffset != null) this.#turnOffset = state.turnOffset;
       this.#onTurnStart(state.activeUid, state.targetUid);
+      this.#refreshTournamentBenefitsUI();
     }
 
     if (state.phase === 'card_stolen') {
@@ -1301,12 +1679,46 @@ export class GameTableScreen extends Screen {
 
     const dealerUid = this.#shuffleController?.youngestPlayer?.id;
     const dealerIdx = sortedSeats.findIndex(s => s.uid === dealerUid);
+
+    const dealerBenefits = dealerUid
+      ? (this.#tournamentAdBenefitsMap?.[dealerUid] || null)
+      : null;
+    const dealerSkipLeftGranted = Boolean(dealerBenefits?.rewards?.dealerSkipLeft?.grantedAt);
+    const dealerSkipLeftConsumed = Boolean(dealerBenefits?.rewards?.dealerSkipLeft?.consumedAt);
+    const shouldSkipLeftOnDeal = this.#isTournamentBenefitsEligible()
+      && sortedSeats.length >= 3
+      && dealerSkipLeftGranted
+      && !dealerSkipLeftConsumed;
+
     // A distribuição começa pelo jogador imediatamente à ESQUERDA do dealer
     // (sentido anti-horário no mapa CW = índice anterior no array sortedSeats).
     // O dealer recebe por último em cada rodada.
     const dealerStart = dealerIdx >= 0 ? dealerIdx : 0;
     const N = sortedSeats.length;
-    const firstReceiverIdx = (dealerStart - 1 + N) % N;
+    const firstDealStep = shouldSkipLeftOnDeal ? 2 : 1;
+    const firstReceiverIdx = (dealerStart - firstDealStep + N) % N;
+
+    if (shouldSkipLeftOnDeal) {
+      console.log('[AdBenefits] dealer_skip_left ativo: distribuicao iniciada pulando 1 jogador a esquerda');
+
+      if (dealerUid === this.#myUid) {
+        void MatchService.getInstance().consumeTournamentMatchBenefit(
+          this.#matchId,
+          this.#myUid,
+          'dealerSkipLeft',
+          {
+            phase: 'dealing',
+            reason: 'dealer_skip_left_applied',
+          },
+        ).then(({ consumed }) => {
+          if (consumed) {
+            this.#setBenefitsHint('Beneficio aplicado: distribuicao iniciou pulando 1 jogador a esquerda.');
+          }
+        }).catch((error) => {
+          console.warn('[AdBenefits] Falha ao consumir dealerSkipLeft:', error);
+        });
+      }
+    }
 
     const dealOrderSeats = [
       ...sortedSeats.slice(firstReceiverIdx),
@@ -1401,6 +1813,7 @@ export class GameTableScreen extends Screen {
         console.log('[GameTableScreen] ✅ Cartas entregues a todos os jogadores');
         this.#deckActionPanel?.setState('done');
         this.#showChatButton();
+        this.#refreshTournamentBenefitsUI();
         this.#initGamePlay(dealerUid);
       },
     });
@@ -2463,6 +2876,43 @@ export class GameTableScreen extends Screen {
 
     if (isTournamentMatch) {
       void this.#handleTournamentAfterGameOver(state, panel, btnBack);
+    } else {
+      void this.#reportGeneralRankingAfterGameOver(state);
+    }
+  }
+
+  /**
+   * Atualiza ranking geral (fora de campeonato) com resultado da partida.
+   * @param {{ micoUid?: string, pairCounts?: Record<string,number> }} state
+   * @returns {Promise<void>}
+   * @private
+   */
+  async #reportGeneralRankingAfterGameOver(state) {
+    if (this.#roomType === 'tournament') return;
+    if (this.#generalRankingReportedForMatchId === this.#matchId) return;
+    this.#generalRankingReportedForMatchId = this.#matchId;
+
+    const me = this.#players.find((p) => p.uid === this.#myUid);
+    if (!me?.uid) return;
+
+    const pairsFromState = Number(state?.pairCounts?.[this.#myUid] || 0);
+    const pairsFromBadge = Number(this.#pairsBadges.get(this.#myUid)?.pairCount || 0);
+    const pairs = Math.max(0, pairsFromState || pairsFromBadge || 0);
+    const won = state?.micoUid ? state.micoUid !== this.#myUid : false;
+
+    try {
+      await this.#tournamentService.recordGeneralMatchResult({
+        uid: me.uid,
+        name: me.name || 'Jogador',
+        avatarUrl: me.avatarUrl || '',
+        matchId: this.#matchId,
+        pairs,
+        won,
+        eventTs: Date.now(),
+      });
+      console.log(`[Ranking] geral atualizado uid=${me.uid.slice(0, 8)}... matchId=${this.#matchId}`);
+    } catch (error) {
+      console.error('[Ranking] Falha ao atualizar ranking geral:', error);
     }
   }
 

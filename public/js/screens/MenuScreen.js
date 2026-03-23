@@ -24,6 +24,7 @@ import { App } from '../core/App.js';
 import { AudioService } from '../services/AudioService.js';
 import { AdService } from '../services/adService.js';
 import { AdConfig }  from '../services/adConfig.js';
+import { TournamentService } from '../services/TournamentService.js';
 
 export class MenuScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
@@ -35,6 +36,18 @@ export class MenuScreen extends Screen {
   /** @type {SideMenu} */
   #sideMenu;
 
+  /** @type {TournamentService} */
+  #tournamentService;
+
+  /** @type {Function|null} */
+  #unsubGeneralRanking = null;
+
+  /** @type {HTMLElement|null} */
+  #generalRankingModalEl = null;
+
+  /** @type {HTMLElement|null} */
+  #generalRankingTbodyEl = null;
+
   /**
    * @param {import('../core/ScreenManager.js').ScreenManager} screenManager
    */
@@ -43,6 +56,7 @@ export class MenuScreen extends Screen {
     this.#screenManager = screenManager;
     this.#headerBar     = null;
     this.#sideMenu      = null;
+    this.#tournamentService = TournamentService.getInstance();
   }
 
   // -------------------------------------------------------
@@ -110,6 +124,7 @@ export class MenuScreen extends Screen {
   onExit() {
     AudioService.getInstance().stopLoop('menu-bgm');
     AdService.getInstance().hideBanner(AdConfig.bannerPlacements.menu);
+    this.#closeGeneralRankingModal();
   }
 
   // -------------------------------------------------------
@@ -162,9 +177,8 @@ export class MenuScreen extends Screen {
       this.#screenManager.show('RoomsScreen');
     });
     this.#sideMenu.on('ranking', () => {
-      console.log('[MenuScreen] Navegando para Ranking');
-      AudioService.getInstance().stopLoop('menu-bgm');
-      // TODO: implementar em futuro
+      console.log('[MenuScreen] Abrindo Ranking Geral');
+      this.#openGeneralRankingModal();
     });
     this.#sideMenu.on('campeonato', () => {
       console.log('[MenuScreen] Navegando para Campeonato');
@@ -228,9 +242,8 @@ export class MenuScreen extends Screen {
       text: 'RANKING',
     });
     Dom.on(btnRanking, 'click', () => {
-      console.log('[MenuScreen] Clicado em RANKING');
-      AudioService.getInstance().stopLoop('menu-bgm');
-      // TODO: Implementar em futuro
+      console.log('[MenuScreen] Clicado em RANKING GERAL');
+      this.#openGeneralRankingModal();
     });
 
     buttonsContainer.append(btnSalas, btnCampeonato, btnRanking);
@@ -269,6 +282,116 @@ export class MenuScreen extends Screen {
     container.append(main);
 
     console.log('[MenuScreen] Renderizado para:', userProfile.name);
+  }
+
+  /**
+   * Abre modal com Top 100 geral (fora de campeonato).
+   * @private
+   */
+  #openGeneralRankingModal() {
+    if (this.#generalRankingModalEl) {
+      return;
+    }
+
+    const overlay = Dom.create('div', { classes: 'menu-ranking-modal' });
+    const panel = Dom.create('div', { classes: 'menu-ranking-modal__panel' });
+
+    const header = Dom.create('div', { classes: 'menu-ranking-modal__header' });
+    const title = Dom.create('h2', {
+      classes: 'menu-ranking-modal__title',
+      text: 'Top 100 Geral',
+    });
+    const subtitle = Dom.create('p', {
+      classes: 'menu-ranking-modal__subtitle',
+      text: 'Partidas normais (fora do campeonato)',
+    });
+    const closeBtn = Dom.create('button', {
+      classes: 'menu-ranking-modal__close',
+      text: 'Fechar',
+      attrs: { type: 'button' },
+    });
+    closeBtn.addEventListener('click', () => this.#closeGeneralRankingModal());
+
+    header.append(title, closeBtn);
+
+    const tableWrap = Dom.create('div', { classes: 'menu-ranking-modal__table-wrap' });
+    const table = Dom.create('table', { classes: 'menu-ranking-modal__table' });
+    const thead = Dom.create('thead');
+    const headRow = Dom.create('tr');
+    ['#', 'Jogador', 'Pontos', 'Vitórias', 'Partidas', 'Média de Pares'].forEach((label) => {
+      headRow.append(Dom.create('th', { text: label }));
+    });
+    thead.append(headRow);
+
+    const tbody = Dom.create('tbody');
+    this.#generalRankingTbodyEl = tbody;
+    table.append(thead, tbody);
+    tableWrap.append(table);
+
+    panel.append(header, subtitle, tableWrap);
+    overlay.append(panel);
+
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) {
+        this.#closeGeneralRankingModal();
+      }
+    });
+
+    document.body.append(overlay);
+    this.#generalRankingModalEl = overlay;
+
+    this.#renderGeneralRankingRows([]);
+    this.#unsubGeneralRanking?.();
+    this.#unsubGeneralRanking = this.#tournamentService.subscribeGeneralLeaderboardTop100((rows) => {
+      this.#renderGeneralRankingRows(rows || []);
+    });
+  }
+
+  /**
+   * Fecha modal de ranking geral e listeners.
+   * @private
+   */
+  #closeGeneralRankingModal() {
+    this.#unsubGeneralRanking?.();
+    this.#unsubGeneralRanking = null;
+    this.#generalRankingTbodyEl = null;
+
+    if (this.#generalRankingModalEl) {
+      this.#generalRankingModalEl.remove();
+      this.#generalRankingModalEl = null;
+    }
+  }
+
+  /**
+   * Renderiza linhas do ranking geral.
+   * @param {Array<Object>} rows
+   * @private
+   */
+  #renderGeneralRankingRows(rows) {
+    if (!this.#generalRankingTbodyEl) return;
+
+    this.#generalRankingTbodyEl.innerHTML = '';
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      const emptyRow = Dom.create('tr');
+      emptyRow.append(Dom.create('td', {
+        text: 'Ainda sem pontuacoes. Jogue partidas normais para entrar no Top 100.',
+        attrs: { colspan: '6' },
+      }));
+      this.#generalRankingTbodyEl.append(emptyRow);
+      return;
+    }
+
+    rows.forEach((entry) => {
+      const tr = Dom.create('tr');
+      tr.append(Dom.create('td', { text: `${entry.rank || '-'}` }));
+      tr.append(Dom.create('td', { text: entry.name || 'Jogador' }));
+      tr.append(Dom.create('td', { text: `${entry.totalPoints || 0}` }));
+      tr.append(Dom.create('td', { text: `${entry.wins || 0}` }));
+      tr.append(Dom.create('td', { text: `${entry.matches || 0}` }));
+      tr.append(Dom.create('td', { text: `${entry.avgPairs || '0.00'}` }));
+      this.#generalRankingTbodyEl.append(tr);
+    });
   }
 }
 

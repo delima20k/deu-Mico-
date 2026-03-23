@@ -1391,6 +1391,190 @@ export class MatchService {
     }
   }
 
+  // -------------------------------------------------------
+  // Benefícios de anúncio (campeonato 3+)
+  // -------------------------------------------------------
+
+  /**
+   * Registra benefícios rewarded do usuário para uma partida específica.
+   * Path: /matches/{matchId}/adBenefits/{uid}
+   *
+   * Estrutura:
+   * {
+   *   rewardedAt,
+   *   updatedAt,
+   *   eligibility: { roomType: 'tournament', minPlayers: 3 },
+   *   rewards: {
+   *     revealMico: { grantedAt, consumedAt, consumeCount, source },
+   *     dealerSkipLeft: { grantedAt, consumedAt, consumeCount, source }
+   *   }
+   * }
+   *
+   * @param {string} matchId
+   * @param {string} uid
+   * @param {{ grantRevealMico?: boolean, grantDealerSkipLeft?: boolean, source?: string }} [options]
+   * @returns {Promise<Object|null>}
+   */
+  async grantTournamentMatchBenefits(matchId, uid, options = {}) {
+    const db = this.#matchRepository.getDatabase();
+    const dbMod = this.#matchRepository.getDbModules();
+    if (!db) throw new Error('[AdBenefits] Database não inicializado');
+    if (!matchId || !uid) throw new Error('[AdBenefits] matchId/uid obrigatórios');
+
+    const grantRevealMico = options.grantRevealMico !== false;
+    const grantDealerSkipLeft = options.grantDealerSkipLeft !== false;
+    const source = String(options.source || 'rewarded');
+
+    const ref = dbMod.ref(db, `matches/${matchId}/adBenefits/${uid}`);
+    const tx = await dbMod.runTransaction(ref, (current) => {
+      const now = Date.now();
+      const rewards = current?.rewards || {};
+      const nextRewards = { ...rewards };
+
+      if (grantRevealMico) {
+        const prev = rewards.revealMico || {};
+        nextRewards.revealMico = {
+          grantedAt: prev.grantedAt || now,
+          consumedAt: prev.consumedAt || null,
+          consumeCount: Number(prev.consumeCount || 0),
+          source: prev.source || source,
+        };
+      }
+
+      if (grantDealerSkipLeft) {
+        const prev = rewards.dealerSkipLeft || {};
+        nextRewards.dealerSkipLeft = {
+          grantedAt: prev.grantedAt || now,
+          consumedAt: prev.consumedAt || null,
+          consumeCount: Number(prev.consumeCount || 0),
+          source: prev.source || source,
+        };
+      }
+
+      return {
+        ...(current || {}),
+        rewardedAt: current?.rewardedAt || now,
+        updatedAt: now,
+        eligibility: {
+          roomType: 'tournament',
+          minPlayers: 3,
+        },
+        rewards: nextRewards,
+      };
+    });
+
+    return tx?.snapshot?.val() || null;
+  }
+
+  /**
+   * Consome (uma única vez) um benefício rewarded da partida.
+   * Path: /matches/{matchId}/adBenefits/{uid}/rewards/{benefitKey}
+   *
+   * @param {string} matchId
+   * @param {string} uid
+   * @param {'revealMico'|'dealerSkipLeft'} benefitKey
+   * @param {Object} [meta]
+   * @returns {Promise<{consumed: boolean, state: Object|null}>}
+   */
+  async consumeTournamentMatchBenefit(matchId, uid, benefitKey, meta = {}) {
+    const db = this.#matchRepository.getDatabase();
+    const dbMod = this.#matchRepository.getDbModules();
+    if (!db) throw new Error('[AdBenefits] Database não inicializado');
+    if (!matchId || !uid || !benefitKey) {
+      throw new Error('[AdBenefits] matchId/uid/benefitKey obrigatórios');
+    }
+
+    const ref = dbMod.ref(db, `matches/${matchId}/adBenefits/${uid}/rewards/${benefitKey}`);
+    const tx = await dbMod.runTransaction(ref, (current) => {
+      if (!current?.grantedAt) return current || null;
+      if (current?.consumedAt) return current;
+
+      const now = Date.now();
+      return {
+        ...current,
+        consumedAt: now,
+        consumeCount: Number(current?.consumeCount || 0) + 1,
+        consumeMeta: {
+          ...(current?.consumeMeta || {}),
+          ...meta,
+          ts: now,
+        },
+      };
+    });
+
+    const nextState = tx?.snapshot?.val() || null;
+    return {
+      consumed: Boolean(tx?.committed && nextState?.consumedAt),
+      state: nextState,
+    };
+  }
+
+  /**
+   * Lê snapshot atual dos benefícios rewarded de um usuário na partida.
+   * @param {string} matchId
+   * @param {string} uid
+   * @returns {Promise<Object|null>}
+   */
+  async getTournamentMatchBenefits(matchId, uid) {
+    const db = this.#matchRepository.getDatabase();
+    const dbMod = this.#matchRepository.getDbModules();
+    if (!db) throw new Error('[AdBenefits] Database não inicializado');
+    if (!matchId || !uid) return null;
+
+    const ref = dbMod.ref(db, `matches/${matchId}/adBenefits/${uid}`);
+    const snap = await dbMod.get(ref);
+    return snap.exists() ? snap.val() : null;
+  }
+
+  /**
+   * Observa benefícios rewarded do usuário na partida.
+   * @param {string} matchId
+   * @param {string} uid
+   * @param {(data: Object|null) => void} callback
+   * @returns {Function}
+   */
+  subscribeTournamentMatchBenefits(matchId, uid, callback) {
+    try {
+      const db = this.#matchRepository.getDatabase();
+      const dbMod = this.#matchRepository.getDbModules();
+      if (!db || !matchId || !uid) return () => {};
+
+      const ref = dbMod.ref(db, `matches/${matchId}/adBenefits/${uid}`);
+      return dbMod.onValue(ref, (snap) => {
+        callback(snap.exists() ? snap.val() : null);
+      }, (err) => {
+        console.error('[AdBenefits] Erro no subscribeTournamentMatchBenefits:', err);
+      });
+    } catch (error) {
+      console.error('[AdBenefits] Falha ao assinar benefícios do usuário:', error);
+      return () => {};
+    }
+  }
+
+  /**
+   * Observa mapa completo de benefícios da partida (uid -> benefícios).
+   * @param {string} matchId
+   * @param {(data: Object) => void} callback
+   * @returns {Function}
+   */
+  subscribeTournamentMatchBenefitsMap(matchId, callback) {
+    try {
+      const db = this.#matchRepository.getDatabase();
+      const dbMod = this.#matchRepository.getDbModules();
+      if (!db || !matchId) return () => {};
+
+      const ref = dbMod.ref(db, `matches/${matchId}/adBenefits`);
+      return dbMod.onValue(ref, (snap) => {
+        callback(snap.exists() ? (snap.val() || {}) : {});
+      }, (err) => {
+        console.error('[AdBenefits] Erro no subscribeTournamentMatchBenefitsMap:', err);
+      });
+    } catch (error) {
+      console.error('[AdBenefits] Falha ao assinar mapa de benefícios da partida:', error);
+      return () => {};
+    }
+  }
+
   /**
    * Remove todos os listeners ativos e limpa cache.
    */

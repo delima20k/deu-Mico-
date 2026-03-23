@@ -35,6 +35,7 @@ import { SoundManager }       from '../utils/SoundManager.js';
 import { AudioService }       from '../services/AudioService.js';
 import { FirebaseService }    from '../services/FirebaseService.js';
 import { NavigationService }  from '../services/NavigationService.js';
+import { TournamentGlobalNotifierService } from '../services/TournamentGlobalNotifierService.js';
 import { bindButtonSounds }   from '../utils/ButtonSoundBinder.js';
 
 export class App {
@@ -152,9 +153,11 @@ export class App {
     SoundManager.getInstance().load('made', 'audio/made.mp3', 0.8);
 
     // 5. Firebase — não bloqueia; funciona mesmo sem config
-    FirebaseService.getInstance().init().catch(err => {
-      console.warn('[App] Firebase init falhou silenciosamente:', err.message);
-    });
+    FirebaseService.getInstance().init()
+      .then(() => TournamentGlobalNotifierService.getInstance().start(this.#screenManager))
+      .catch(err => {
+        console.warn('[App] Firebase init falhou silenciosamente:', err.message);
+      });
 
     // 5.5. Reconexão Firebase após background (PWA Android / rede instável)
     // Quando o PWA fica em segundo plano no Android, o SO pode suspender o

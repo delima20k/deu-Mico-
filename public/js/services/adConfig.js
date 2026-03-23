@@ -31,6 +31,8 @@ export const AdConfig = Object.freeze({
     home:     'banner-home',      // exibido no HomeScreen (landing)
     waiting:  'banner-waiting',   // exibido no MatchRoomScreen (aguardando jogadores)
     results:  'banner-results',   // exibido no modal de fim de partida
+    tournament: 'banner-tournament', // exibido na seção de campeonato
+    ranking:    'banner-ranking',    // exibido na seção de ranking
   },
 
   // ── Cooldown (ms) ────────────────────────────────────────────────
@@ -55,6 +57,8 @@ export const AdConfig = Object.freeze({
     firstPlayerBonus: 'rewarded-first-player-bonus',  // jogador mais novo (dealer) ganha extra
     waitingReward:    'rewarded-waiting-bonus',       // sala de espera (bônus opcional)
     rematchReward:    'rewarded-rematch-bonus',       // fim de partida (revanche/bônus)
+    tournamentBenefits: 'rewarded-tournament-benefits', // benefícios de campeonato para a partida
+    rankingBenefits:    'rewarded-ranking-benefits',    // CTA de ranking para benefícios de campeonato
   },
 
   // ── Tipos de recompensa ──────────────────────────────────────────
@@ -63,5 +67,8 @@ export const AdConfig = Object.freeze({
     firstPlayerBonus: 'first_player_bonus',
     waitingReward:    'waiting_bonus',
     rematchReward:    'rematch_bonus',
+    tournamentBenefits: 'tournament_benefits',
+    revealMico:        'reveal_mico_once',
+    dealerSkipLeft:    'dealer_skip_left_once',
   },
 });
