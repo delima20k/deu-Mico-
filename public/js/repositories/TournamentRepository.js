@@ -925,7 +925,6 @@ export class TournamentRepository {
       [`matches/${matchId}/state`]: 'pending',
     });
   }
-  }
 
   // -------------------------------------------------------
   // Leaderboard (ranking)
