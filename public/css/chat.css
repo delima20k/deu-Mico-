@@ -210,6 +210,7 @@
 /* Input area */
 .chat-modal__input-area {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 10px 16px 14px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -255,6 +256,57 @@
 
 .chat-modal__send:active {
   background: #357abd;
+}
+
+.chat-modal__audio-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 17px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+
+.chat-modal__audio-btn:active {
+  transform: scale(0.92);
+}
+
+.chat-modal__audio-btn--recording {
+  background: #e63946;
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 3px rgba(230, 57, 70, 0.22);
+}
+
+.chat-modal__audio-status {
+  width: 100%;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #9fb3cc;
+  display: none;
+  padding-left: 4px;
+}
+
+.chat-modal__audio-status--sending {
+  color: #9fb3cc;
+}
+
+.chat-modal__audio-status--retrying {
+  color: #ffbf69;
+}
+
+.chat-modal__audio-status--sent {
+  color: #6fd7a2;
+}
+
+.chat-modal__audio-status--failed {
+  color: #ff7b7b;
 }
 
 /* ============================================
@@ -351,6 +403,35 @@
   color: #e0e8f0;
   word-break: break-word;
   line-height: 1.4;
+}
+
+.chat-message__audio {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-message__audio-player {
+  width: min(220px, 100%);
+  height: 34px;
+}
+
+.chat-message__meta {
+  font-size: 11px;
+  color: #aebbd1;
+  line-height: 1;
+}
+
+.chat-message__auto-status {
+  font-size: 11px;
+  color: #6fd7a2;
+  line-height: 1.2;
+}
+
+.chat-message__auto-status--blocked {
+  color: #ffbf69;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 

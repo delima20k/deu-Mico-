@@ -11,6 +11,7 @@
  */
 import { Dom } from '../utils/Dom.js';
 import { MatchService } from '../services/MatchService.js';
+import { AudioChatRecorderService } from '../services/AudioChatRecorderService.js';
 
 export class ChatBox {
   /** @type {string} ID da partida */
@@ -34,17 +35,56 @@ export class ChatBox {
   /** @type {HTMLInputElement|null} Campo de input */
   #input = null;
 
+  /** @type {HTMLButtonElement|null} Botão de gravação de áudio */
+  #audioBtn = null;
+
   /** @type {Function|null} Unsubscriber do listener Firebase */
   #unsubscribe = null;
 
   /** @type {boolean} Modal está aberto? */
   #isOpen = false;
 
+  /** @type {boolean} Estado atual da gravação */
+  #isAudioRecording = false;
+
+  /** @type {boolean} Finalização de gravação em andamento */
+  #isAudioStopInFlight = false;
+
+  /** @type {AudioChatRecorderService} */
+  #audioRecorder = AudioChatRecorderService.getInstance();
+
   /** @type {number} Contador de mensagens não lidas */
   #unreadCount = 0;
 
   /** @type {HTMLElement|null} Badge de não lidas */
   #unreadBadge = null;
+
+  /** @type {Set<string>} Mensagens de áudio já confirmadas como reproduzidas */
+  #audioAckedMsgIds = new Set();
+
+  /** @type {Set<string>} Mensagens de áudio já processadas para autoplay */
+  #audioAutoHandledMsgIds = new Set();
+
+  /** @type {Map<string, {message: Object, audioEl: HTMLAudioElement, statusEl: HTMLElement|null}>} */
+  #blockedAutoplayQueue = new Map();
+
+  /** @type {Function|null} Handler global para tentar autoplay no próximo gesto */
+  #retryAutoplayHandler = null;
+
+  /** @type {number} Marca temporal de início do listener para evitar autoplay de histórico */
+  #listeningStartedAt = 0;
+
+  /** @type {HTMLElement|null} Estado discreto de envio do áudio */
+  #audioStatusEl = null;
+
+  /** @type {number|null} */
+  #audioStatusTimer = null;
+
+  /** @type {Map<string, number>} Assinaturas recentes de áudio para dedupe local */
+  #recentAudioSignatures = new Map();
+
+  /** @type {number} */
+  #audioSignatureWindowMs = 5000;
 
   /**
    * @param {Object} options
@@ -129,6 +169,19 @@ export class ChatBox {
     MatchService.getInstance().stopObservingChat(this.#matchId);
     this.#modalEl?.remove();
     this.#modalEl = null;
+    this.#teardownAutoplayRetryListener();
+    this.#blockedAutoplayQueue.clear();
+    this.#audioAckedMsgIds.clear();
+    this.#audioAutoHandledMsgIds.clear();
+    this.#audioBtn = null;
+    this.#isAudioRecording = false;
+    this.#isAudioStopInFlight = false;
+    this.#audioStatusEl = null;
+    if (this.#audioStatusTimer) {
+      window.clearTimeout(this.#audioStatusTimer);
+      this.#audioStatusTimer = null;
+    }
+    this.#recentAudioSignatures.clear();
     this.#btnEl = null;
     this.#isOpen = false;
   }
@@ -187,6 +240,10 @@ export class ChatBox {
 
     // Input area
     const inputArea = Dom.create('div', { classes: 'chat-modal__input-area' });
+    this.#audioStatusEl = Dom.create('span', {
+      classes: 'chat-modal__audio-status',
+      text: '',
+    });
     this.#input = Dom.create('input', {
       classes: 'chat-modal__input',
       attrs: {
@@ -201,6 +258,12 @@ export class ChatBox {
       text: '➤',
       attrs: { type: 'button', 'aria-label': 'Enviar mensagem' },
     });
+    const btnAudio = Dom.create('button', {
+      classes: 'chat-modal__audio-btn',
+      text: '🎙',
+      attrs: { type: 'button', 'aria-label': 'Segure para gravar áudio' },
+    });
+    this.#audioBtn = btnAudio;
 
     const sendHandler = () => {
       const text = this.#input.value.trim();
@@ -213,8 +276,9 @@ export class ChatBox {
     this.#input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') sendHandler();
     });
+    this.#attachAudioPressEvents(btnAudio);
 
-    inputArea.append(this.#input, btnSend);
+    inputArea.append(this.#input, btnAudio, btnSend, this.#audioStatusEl);
     panel.append(header, avatarsRow, this.#messagesContainer, inputArea);
 
     overlay.addEventListener('click', (e) => {
@@ -230,6 +294,7 @@ export class ChatBox {
 
   /** @private */
   #startListening() {
+    this.#listeningStartedAt = Date.now();
     this.#unsubscribe = MatchService.getInstance().subscribeChat(
       this.#matchId,
       (message) => this.#onNewMessage(message),
@@ -239,6 +304,13 @@ export class ChatBox {
   /** @private */
   async #sendMessage(text) {
     await MatchService.getInstance().sendMessage(this.#matchId, text);
+  }
+
+  /** @private */
+  async #sendAudioMessage(audioPayload) {
+    return MatchService.getInstance().sendAudioMessage(this.#matchId, audioPayload, {
+      onStatus: (status) => this.#setAudioSendStatus(status),
+    });
   }
 
   /** @private */
@@ -296,10 +368,34 @@ export class ChatBox {
     // Conteúdo da mensagem
     const content = document.createElement('div');
     content.className = 'chat-message__content';
-    const textEl = document.createElement('span');
-    textEl.className = 'chat-message__text';
-    textEl.textContent = msg.text || '';
-    content.appendChild(textEl);
+
+    if (msg.type === 'audio' && msg.url) {
+      const audioWrap = document.createElement('div');
+      audioWrap.className = 'chat-message__audio';
+
+      const audioEl = document.createElement('audio');
+      audioEl.className = 'chat-message__audio-player';
+      audioEl.controls = true;
+      audioEl.preload = 'metadata';
+      audioEl.src = msg.url;
+
+      const metaEl = document.createElement('span');
+      metaEl.className = 'chat-message__meta';
+      metaEl.textContent = `Audio ${this.#formatDuration(msg.durationMs)}`;
+
+      const autoStatusEl = document.createElement('span');
+      autoStatusEl.className = 'chat-message__auto-status';
+
+      audioWrap.append(audioEl, metaEl, autoStatusEl);
+      content.appendChild(audioWrap);
+
+      this.#handleIncomingAudioMessage(msg, audioEl, autoStatusEl, isMine);
+    } else {
+      const textEl = document.createElement('span');
+      textEl.className = 'chat-message__text';
+      textEl.textContent = msg.text || '';
+      content.appendChild(textEl);
+    }
 
     wrapper.appendChild(avatarCol);
     wrapper.appendChild(content);
@@ -320,6 +416,310 @@ export class ChatBox {
         this.#messagesContainer.scrollTop = this.#messagesContainer.scrollHeight;
       });
     }
+  }
+
+  /** @private */
+  #attachAudioPressEvents(btnAudio) {
+    if (!btnAudio) return;
+
+    const start = async (event) => {
+      event?.preventDefault?.();
+      if (this.#isAudioRecording || this.#isAudioStopInFlight) return;
+
+      try {
+        this.#setAudioSendStatus({ state: 'idle', text: '' });
+        await this.#audioRecorder.startRecording();
+        this.#isAudioRecording = true;
+        btnAudio.classList.add('chat-modal__audio-btn--recording');
+        btnAudio.textContent = '●';
+        console.log('[AudioChatRealtime] press-to-talk ativo');
+      } catch (error) {
+        this.#setAudioSendStatus({ state: 'failed', text: 'falha ao iniciar gravação' });
+        console.warn('[AudioChatRealtime] Falha ao iniciar gravação:', error);
+      }
+    };
+
+    const stopAndSend = async (event) => {
+      event?.preventDefault?.();
+      if (!this.#isAudioRecording || this.#isAudioStopInFlight) return;
+
+      this.#isAudioStopInFlight = true;
+      this.#isAudioRecording = false;
+      btnAudio.classList.remove('chat-modal__audio-btn--recording');
+      btnAudio.textContent = '🎙';
+
+      try {
+        const result = await this.#audioRecorder.stopRecording();
+        const signature = result?.signature
+          || this.#audioRecorder.buildRecordingSignature({
+            size: result?.blob?.size || 0,
+            durationMs: result?.durationMs || 0,
+            recordedAt: result?.recordedAt || Date.now(),
+          });
+
+        if (this.#isDuplicateAudioSignature(signature)) {
+          console.log(`[AudioChatRealtime] envio ignorado por dedupe local signature=${signature}`);
+          this.#setAudioSendStatus({ state: 'sent', text: 'enviado' });
+          return;
+        }
+
+        const wasSent = await this.#sendAudioMessage({
+          ...result,
+          signature,
+        });
+
+        if (!wasSent) {
+          console.warn('[AudioChatRealtime] áudio não enviado (anti-spam ou validação)');
+        }
+      } catch (error) {
+        this.#setAudioSendStatus({ state: 'failed', text: 'falha ao enviar áudio' });
+        console.warn('[AudioChatRealtime] Falha ao finalizar envio de áudio:', error);
+      } finally {
+        this.#isAudioStopInFlight = false;
+      }
+    };
+
+    const cancel = (event) => {
+      event?.preventDefault?.();
+      if (!this.#isAudioRecording) return;
+
+      this.#isAudioRecording = false;
+      this.#isAudioStopInFlight = false;
+      btnAudio.classList.remove('chat-modal__audio-btn--recording');
+      btnAudio.textContent = '🎙';
+      this.#audioRecorder.cancelRecording();
+      this.#setAudioSendStatus({ state: 'idle', text: '' });
+    };
+
+    if (typeof window.PointerEvent === 'function') {
+      btnAudio.addEventListener('pointerdown', async (event) => {
+        if (typeof event.pointerId === 'number') {
+          btnAudio.setPointerCapture(event.pointerId);
+        }
+        await start(event);
+      });
+      btnAudio.addEventListener('pointerup', stopAndSend);
+      btnAudio.addEventListener('pointercancel', cancel);
+      btnAudio.addEventListener('lostpointercapture', cancel);
+    } else {
+      btnAudio.addEventListener('touchstart', (event) => {
+        void start(event);
+      }, { passive: false });
+      btnAudio.addEventListener('touchend', (event) => {
+        void stopAndSend(event);
+      }, { passive: false });
+      btnAudio.addEventListener('touchcancel', cancel, { passive: false });
+      btnAudio.addEventListener('mousedown', (event) => {
+        void start(event);
+      });
+      btnAudio.addEventListener('mouseup', (event) => {
+        void stopAndSend(event);
+      });
+      btnAudio.addEventListener('mouseleave', cancel);
+    }
+  }
+
+  /** @private */
+  #setAudioSendStatus(status) {
+    if (!this.#audioStatusEl) return;
+
+    if (this.#audioStatusTimer) {
+      window.clearTimeout(this.#audioStatusTimer);
+      this.#audioStatusTimer = null;
+    }
+
+    const state = status?.state || 'idle';
+    const text = status?.text || '';
+
+    this.#audioStatusEl.textContent = text;
+    this.#audioStatusEl.classList.remove(
+      'chat-modal__audio-status--sending',
+      'chat-modal__audio-status--retrying',
+      'chat-modal__audio-status--sent',
+      'chat-modal__audio-status--failed'
+    );
+
+    if (!text) {
+      this.#audioStatusEl.style.display = 'none';
+      return;
+    }
+
+    this.#audioStatusEl.style.display = '';
+    this.#audioStatusEl.classList.add(`chat-modal__audio-status--${state}`);
+
+    if (state === 'sent') {
+      this.#audioStatusTimer = window.setTimeout(() => {
+        this.#setAudioSendStatus({ state: 'idle', text: '' });
+      }, 1500);
+    }
+  }
+
+  /** @private */
+  #isDuplicateAudioSignature(signature) {
+    if (!signature) return false;
+
+    const now = Date.now();
+    for (const [sig, ts] of this.#recentAudioSignatures.entries()) {
+      if ((now - ts) > (this.#audioSignatureWindowMs * 3)) {
+        this.#recentAudioSignatures.delete(sig);
+      }
+    }
+
+    const lastTs = this.#recentAudioSignatures.get(signature) || 0;
+    this.#recentAudioSignatures.set(signature, now);
+
+    return lastTs > 0 && (now - lastTs) < this.#audioSignatureWindowMs;
+  }
+
+  /** @private */
+  #handleIncomingAudioMessage(message, audioEl, statusEl, isMine) {
+    if (!audioEl || !message?.msgId || isMine) {
+      if (statusEl) statusEl.style.display = 'none';
+      return;
+    }
+
+    const msgId = message.msgId;
+    const audioService = MatchService.getInstance();
+
+    const ackIfNeeded = async () => {
+      if (this.#audioAckedMsgIds.has(msgId)) return;
+      this.#audioAckedMsgIds.add(msgId);
+      try {
+        await audioService.markAudioPlaybackAck(this.#matchId, msgId, this.#myUid);
+        await audioService.tryCleanupAudioAfterPlayback(this.#matchId, message, this.#myUid);
+      } catch (error) {
+        console.error(`[AudioChatRealtime] erro ao registrar ack msgId=${msgId}:`, error);
+      }
+    };
+
+    audioEl.addEventListener('ended', () => {
+      this.#setAutoStatus(statusEl, 'Reproduzido', false);
+      void ackIfNeeded();
+    }, { once: true });
+
+    audioEl.addEventListener('play', () => {
+      if (!this.#audioAckedMsgIds.has(msgId)) {
+        this.#setAutoStatus(statusEl, '🔊 reproduzindo automaticamente', false);
+      }
+    });
+
+    if (this.#audioAutoHandledMsgIds.has(msgId)) {
+      return;
+    }
+    this.#audioAutoHandledMsgIds.add(msgId);
+
+    if (this.#isHistoricalMessage(message)) {
+      this.#setAutoStatus(statusEl, '', false);
+      return;
+    }
+
+    void this.#tryAutoPlayMessage(message, audioEl, statusEl);
+  }
+
+  /** @private */
+  async #tryAutoPlayMessage(message, audioEl, statusEl) {
+    if (!audioEl || !message?.msgId) return;
+
+    try {
+      await audioEl.play();
+      this.#blockedAutoplayQueue.delete(message.msgId);
+      this.#setAutoStatus(statusEl, '🔊 reproduzindo automaticamente', false);
+      console.log(`[AudioChatRealtime] autoplay ok msgId=${message.msgId}`);
+    } catch (error) {
+      const blocked = error?.name === 'NotAllowedError';
+      if (!blocked) {
+        this.#setAutoStatus(statusEl, 'Falha ao reproduzir áudio', true);
+        console.warn(`[AudioChatRealtime] autoplay falhou msgId=${message.msgId}:`, error);
+        return;
+      }
+
+      this.#blockedAutoplayQueue.set(message.msgId, { message, audioEl, statusEl });
+      this.#setAutoStatus(statusEl, 'Toque para ouvir', true);
+      this.#ensureAutoplayRetryListener();
+
+      statusEl?.addEventListener('click', () => {
+        void this.#retryBlockedAutoplay();
+      }, { once: true });
+
+      audioEl.addEventListener('click', () => {
+        void this.#retryBlockedAutoplay();
+      }, { once: true });
+
+      console.log(`[AudioChatRealtime] autoplay bloqueado msgId=${message.msgId} (aguardando gesto do usuário)`);
+    }
+  }
+
+  /** @private */
+  #ensureAutoplayRetryListener() {
+    if (this.#retryAutoplayHandler) return;
+
+    this.#retryAutoplayHandler = () => {
+      void this.#retryBlockedAutoplay();
+    };
+
+    document.addEventListener('pointerdown', this.#retryAutoplayHandler, true);
+    document.addEventListener('keydown', this.#retryAutoplayHandler, true);
+    document.addEventListener('touchstart', this.#retryAutoplayHandler, true);
+  }
+
+  /** @private */
+  #teardownAutoplayRetryListener() {
+    if (!this.#retryAutoplayHandler) return;
+    document.removeEventListener('pointerdown', this.#retryAutoplayHandler, true);
+    document.removeEventListener('keydown', this.#retryAutoplayHandler, true);
+    document.removeEventListener('touchstart', this.#retryAutoplayHandler, true);
+    this.#retryAutoplayHandler = null;
+  }
+
+  /** @private */
+  async #retryBlockedAutoplay() {
+    if (this.#blockedAutoplayQueue.size === 0) {
+      this.#teardownAutoplayRetryListener();
+      return;
+    }
+
+    const pending = Array.from(this.#blockedAutoplayQueue.entries());
+    for (const [msgId, payload] of pending) {
+      await this.#tryAutoPlayMessage(payload.message, payload.audioEl, payload.statusEl);
+      if (!this.#blockedAutoplayQueue.has(msgId)) {
+        console.log(`[AudioChatRealtime] autoplay retomado msgId=${msgId}`);
+      }
+    }
+
+    if (this.#blockedAutoplayQueue.size === 0) {
+      this.#teardownAutoplayRetryListener();
+    }
+  }
+
+  /** @private */
+  #setAutoStatus(statusEl, text, blocked) {
+    if (!statusEl) return;
+
+    if (!text) {
+      statusEl.textContent = '';
+      statusEl.style.display = 'none';
+      statusEl.classList.remove('chat-message__auto-status--blocked');
+      return;
+    }
+
+    statusEl.style.display = '';
+    statusEl.textContent = text;
+    statusEl.classList.toggle('chat-message__auto-status--blocked', Boolean(blocked));
+  }
+
+  /** @private */
+  #isHistoricalMessage(message) {
+    const ts = Number(message?.ts || message?.sentAt || 0);
+    if (!ts) return false;
+    return ts < (this.#listeningStartedAt - 1500);
+  }
+
+  /** @private */
+  #formatDuration(durationMs) {
+    const totalSeconds = Math.max(0, Math.round((Number(durationMs) || 0) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   }
 
   /** @private */

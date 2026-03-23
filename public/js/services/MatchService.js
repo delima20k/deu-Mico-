@@ -26,6 +26,36 @@ export class MatchService {
   /** @type {Map<string, Function>} Unsubscribers de listeners ativos (matchId -> unsubscribe) */
   #chatListeners = new Map();
 
+  /** @type {Set<string>} Guard de limpeza de áudio em andamento (matchId:msgId) */
+  #audioCleanupInFlight = new Set();
+
+  /** @type {Map<string, Object>} Fila local de retry de áudio (taskId -> task) */
+  #audioRetryQueue = new Map();
+
+  /** @type {Map<string, number>} Timers ativos de retry (taskId -> timeoutId) */
+  #audioRetryTimers = new Map();
+
+  /** @type {Set<string>} Assinaturas de áudio em envio para evitar reenvio duplicado */
+  #audioInFlightSignatures = new Set();
+
+  /** @type {Map<string, number>} Assinaturas enviadas recentemente (signatureKey -> ts) */
+  #audioRecentlySentSignatures = new Map();
+
+  /** @type {number[]} Backoff curto para retry de upload */
+  #audioRetryBackoffMs = [1000, 2000, 4000];
+
+  /** @type {number} Janela de deduplicação de reenvio acidental */
+  #audioDedupeWindowMs = 5000;
+
+  /** @type {boolean} Controle para registrar listeners de rede uma única vez */
+  #audioNetworkListenersBound = false;
+
+  /** @type {Function|null} */
+  #handleAudioNetworkOnline = null;
+
+  /** @type {Function|null} */
+  #handleAudioNetworkOffline = null;
+
   /** @type {Map<string, Object[]>} Cache local de mensagens por matchId */
   #chatCache = new Map();
 
@@ -66,6 +96,7 @@ export class MatchService {
   constructor(matchRepository, lobbyRepository) {
     this.#matchRepository = matchRepository;
     this.#lobbyRepository = lobbyRepository;
+    this.#bindAudioNetworkListeners();
   }
 
   // -------------------------------------------------------
@@ -167,6 +198,7 @@ export class MatchService {
       console.log(`[Chat] sending uid=${uid.slice(0, 8)}... matchId=${matchId}`);
 
       await this.#matchRepository.pushChatMessage(matchId, {
+        type: 'text',
         uid,
         name,
         avatarUrl: currentUser.photoURL || '',
@@ -179,6 +211,384 @@ export class MatchService {
       console.error(`[Chat] Erro ao enviar mensagem:`, error);
       return false;
     }
+  }
+
+  /**
+   * Envia mensagem de áudio no chat da partida.
+   * Faz upload no Firebase Storage e persiste URL no RTDB.
+   * @param {string} matchId
+   * @param {{blob: Blob, mimeType?: string, durationMs?: number}} audioData
+   * @returns {Promise<boolean>} true se enviada
+   */
+  async sendAudioMessage(matchId, audioData, options = {}) {
+    try {
+      const onStatus = typeof options?.onStatus === 'function' ? options.onStatus : () => {};
+
+      const authService = AuthService.getInstance();
+      const currentUser = await authService.getCurrentUser();
+
+      if (!currentUser?.uid) {
+        console.error('[AudioChat] Usuário não autenticado');
+        return false;
+      }
+
+      const uid = currentUser.uid;
+      const now = Date.now();
+      const lastTime = this.#lastMessageTime.get(uid) || 0;
+
+      if (now - lastTime < this.#minMessageInterval) {
+        console.warn(`[AudioChatRealtime] anti-spam uid=${uid.slice(0, 8)}...`);
+        onStatus({ state: 'failed', text: 'Aguarde um instante para novo áudio' });
+        return false;
+      }
+
+      const blob = audioData?.blob;
+      if (!blob || !(blob instanceof Blob)) {
+        console.warn('[AudioChatRealtime] blob inválido para envio');
+        onStatus({ state: 'failed', text: 'Áudio inválido' });
+        return false;
+      }
+
+      if (blob.size <= 0) {
+        console.warn('[AudioChatRealtime] blob vazio');
+        onStatus({ state: 'failed', text: 'Áudio vazio' });
+        return false;
+      }
+
+      const mimeType = audioData?.mimeType || blob.type || 'audio/webm';
+      const durationMs = Math.max(0, Number(audioData?.durationMs || 0));
+      const signature = audioData?.signature
+        || this.#buildAudioSignature(blob.size, durationMs, audioData?.recordedAt || now);
+      const name = currentUser.displayName
+        || currentUser.email?.split('@')[0]
+        || 'Jogador';
+
+      const signatureKey = `${uid}:${signature}`;
+      this.#cleanupStaleAudioSignatures(now);
+
+      if (this.#audioInFlightSignatures.has(signatureKey)) {
+        console.log(`[AudioChatRealtime] envio ignorado (in-flight) signature=${signatureKey}`);
+        return true;
+      }
+
+      const recentlySentAt = this.#audioRecentlySentSignatures.get(signatureKey) || 0;
+      if (recentlySentAt && (now - recentlySentAt) < this.#audioDedupeWindowMs) {
+        console.log(`[AudioChatRealtime] envio ignorado (duplicado recente) signature=${signatureKey}`);
+        return true;
+      }
+
+      this.#lastMessageTime.set(uid, now);
+
+      const msgId = this.#createClientAudioMessageId(uid, now);
+      const taskId = `${matchId}:${msgId}`;
+      if (this.#audioRetryQueue.has(taskId)) {
+        console.log(`[AudioChatRealtime] envio já enfileirado taskId=${taskId}`);
+        return true;
+      }
+
+      const task = {
+        taskId,
+        msgId,
+        matchId,
+        uid,
+        name,
+        avatarUrl: currentUser.photoURL || '',
+        blob,
+        mimeType,
+        durationMs,
+        createdAt: now,
+        signatureKey,
+        attempt: 0,
+        maxAttempts: this.#audioRetryBackoffMs.length,
+        status: 'queued',
+        onStatus,
+      };
+
+      this.#audioRetryQueue.set(taskId, task);
+      this.#audioInFlightSignatures.add(signatureKey);
+      onStatus({ state: 'sending', text: 'enviando áudio...' });
+
+      console.log(`[AudioChatRealtime] enqueue retry taskId=${taskId} size=${blob.size}`);
+
+      const sent = await this.#processAudioSendTask(taskId);
+      return sent || task.status === 'retry_waiting';
+    } catch (error) {
+      console.error('[AudioChatRealtime] erro ao enviar áudio:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Marca confirmação de reprodução de áudio por usuário.
+   * @param {string} matchId
+   * @param {string} msgId
+   * @param {string} uid
+   * @returns {Promise<void>}
+   */
+  async markAudioPlaybackAck(matchId, msgId, uid) {
+    if (!matchId || !msgId || !uid) return;
+    await this.#matchRepository.markChatAudioPlayback(matchId, msgId, uid);
+    console.log(`[AudioChatRealtime] ack playback matchId=${matchId} msgId=${msgId} uid=${uid.slice(0, 8)}...`);
+  }
+
+  /**
+   * Observa acks de reprodução de uma mensagem de áudio.
+   * @param {string} matchId
+   * @param {string} msgId
+   * @param {(acks: Object) => void} onAcks
+   * @returns {Function}
+   */
+  observeAudioPlaybackAck(matchId, msgId, onAcks) {
+    return this.#matchRepository.observeChatAudioPlayback(matchId, msgId, onAcks);
+  }
+
+  /**
+   * Verifica condição de limpeza do áudio e executa exclusão idempotente no Storage.
+   * Condição: todos os jogadores relevantes (todos exceto autor) confirmaram playback.
+   * @param {string} matchId
+   * @param {{msgId?: string, uid?: string, storagePath?: string, cleanedAt?: number}} message
+   * @param {string} requesterUid
+   * @returns {Promise<void>}
+   */
+  async tryCleanupAudioAfterPlayback(matchId, message, requesterUid) {
+    const msgId = message?.msgId;
+    const authorUid = message?.uid;
+    const storagePath = message?.storagePath;
+
+    if (!matchId || !msgId || !authorUid) return;
+
+    if (message?.cleanedAt) {
+      console.log(`[AudioChatRealtime] cleanup skipped matchId=${matchId} msgId=${msgId} reason=already-cleaned`);
+      return;
+    }
+
+    if (!storagePath) {
+      console.log(`[AudioChatRealtime] cleanup skipped matchId=${matchId} msgId=${msgId} reason=no-storage-path`);
+      return;
+    }
+
+    const key = `${matchId}:${msgId}`;
+    if (this.#audioCleanupInFlight.has(key)) {
+      console.log(`[AudioChatRealtime] cleanup skipped matchId=${matchId} msgId=${msgId} reason=in-flight`);
+      return;
+    }
+    this.#audioCleanupInFlight.add(key);
+
+    try {
+      const [acks, relevantUids] = await Promise.all([
+        this.#matchRepository.getChatAudioPlayback(matchId, msgId),
+        this.#matchRepository.getRelevantPlaybackUids(matchId, authorUid),
+      ]);
+
+      const allAcked = relevantUids.length === 0
+        || relevantUids.every((uid) => Boolean(acks?.[uid]?.playedAt));
+
+      if (!allAcked) {
+        console.log(`[AudioChatRealtime] cleanup skipped matchId=${matchId} msgId=${msgId} reason=acks-pending acks=${Object.keys(acks || {}).length}/${relevantUids.length}`);
+        return;
+      }
+
+      const claimUid = requesterUid || 'unknown';
+      const claimed = await this.#matchRepository.tryClaimChatAudioCleanup(matchId, msgId, claimUid);
+      if (!claimed) {
+        console.log(`[AudioChatRealtime] cleanup skipped matchId=${matchId} msgId=${msgId} reason=claim-lost`);
+        return;
+      }
+
+      try {
+        await this.#matchRepository.deleteChatAudioFile(storagePath);
+      } catch (storageError) {
+        const code = storageError?.code || '';
+        if (code !== 'storage/object-not-found') {
+          throw storageError;
+        }
+        console.log(`[AudioChatRealtime] arquivo já removido matchId=${matchId} msgId=${msgId}`);
+      }
+
+      await this.#matchRepository.markChatAudioCleanupDone(matchId, msgId, claimUid);
+      console.log(`[AudioChatRealtime] cleanup done matchId=${matchId} msgId=${msgId}`);
+    } catch (error) {
+      console.error(`[AudioChatRealtime] erro no cleanup matchId=${matchId} msgId=${msgId}:`, error);
+      try {
+        await this.#matchRepository.releaseChatAudioCleanupClaim(matchId, msgId);
+      } catch (releaseError) {
+        console.warn('[AudioChatRealtime] falha ao liberar claim de cleanup:', releaseError);
+      }
+    } finally {
+      this.#audioCleanupInFlight.delete(key);
+    }
+  }
+
+  /**
+   * Executa tentativa de envio de áudio com deduplicação de mensagem no RTDB.
+   * @param {string} taskId
+   * @returns {Promise<boolean>}
+   */
+  async #processAudioSendTask(taskId) {
+    const task = this.#audioRetryQueue.get(taskId);
+    if (!task) return false;
+
+    task.status = 'uploading';
+    task.onStatus?.({ state: 'sending', text: 'enviando áudio...' });
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        throw new Error('offline');
+      }
+
+      task.attempt += 1;
+      console.log(`[AudioChatRealtime] retry attempt taskId=${task.taskId} attempt=${task.attempt}`);
+
+      const upload = await this.#matchRepository.uploadChatAudio(
+        task.matchId,
+        task.uid,
+        task.blob,
+        task.mimeType
+      );
+
+      await this.#matchRepository.sendChatMessage(task.matchId, task.msgId, {
+        type: 'audio',
+        uid: task.uid,
+        name: task.name,
+        avatarUrl: task.avatarUrl,
+        url: upload.url,
+        durationMs: task.durationMs,
+        mimeType: upload.contentType,
+        storagePath: upload.path,
+        ts: task.createdAt,
+      });
+
+      task.status = 'sent';
+      task.onStatus?.({ state: 'sent', text: 'enviado' });
+      this.#audioRecentlySentSignatures.set(task.signatureKey, Date.now());
+      this.#audioInFlightSignatures.delete(task.signatureKey);
+      this.#audioRetryQueue.delete(task.taskId);
+
+      const timerId = this.#audioRetryTimers.get(task.taskId);
+      if (timerId) {
+        window.clearTimeout(timerId);
+        this.#audioRetryTimers.delete(task.taskId);
+      }
+
+      return true;
+    } catch (error) {
+      const retryable = this.#isRetryableAudioError(error);
+      const hasMoreAttempts = task.attempt < task.maxAttempts;
+
+      if (retryable && hasMoreAttempts) {
+        const delayMs = this.#audioRetryBackoffMs[Math.max(0, task.attempt - 1)] || 4000;
+        task.status = 'retry_waiting';
+        task.onStatus?.({ state: 'retrying', text: 'falha de conexão, tentando novamente...' });
+
+        console.warn(`[AudioChatRealtime] enqueue retry taskId=${task.taskId} nextIn=${delayMs}ms reason=${error?.message || 'network'}`);
+
+        const oldTimerId = this.#audioRetryTimers.get(task.taskId);
+        if (oldTimerId) {
+          window.clearTimeout(oldTimerId);
+        }
+
+        const timerId = window.setTimeout(() => {
+          this.#audioRetryTimers.delete(task.taskId);
+          void this.#processAudioSendTask(task.taskId);
+        }, delayMs);
+
+        this.#audioRetryTimers.set(task.taskId, timerId);
+        return false;
+      }
+
+      task.status = 'failed';
+      task.onStatus?.({ state: 'failed', text: 'falha de conexão ao enviar áudio' });
+      this.#audioInFlightSignatures.delete(task.signatureKey);
+      this.#audioRetryQueue.delete(task.taskId);
+
+      const timerId = this.#audioRetryTimers.get(task.taskId);
+      if (timerId) {
+        window.clearTimeout(timerId);
+        this.#audioRetryTimers.delete(task.taskId);
+      }
+
+      console.error(`[AudioChatRealtime] envio falhou taskId=${task.taskId}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Identificador idempotente para mensagem de áudio (evita duplicar push em retry).
+   * @param {string} uid
+   * @param {number} ts
+   * @returns {string}
+   */
+  #createClientAudioMessageId(uid, ts) {
+    const rand = Math.random().toString(36).slice(2, 8);
+    return `audio_${uid.slice(0, 8)}_${ts}_${rand}`;
+  }
+
+  /**
+   * Assinatura local leve para deduplicar reenvio acidental.
+   * @param {number} size
+   * @param {number} durationMs
+   * @param {number} recordedAt
+   * @returns {string}
+   */
+  #buildAudioSignature(size, durationMs, recordedAt) {
+    const safeSize = Math.max(0, Number(size || 0));
+    const safeDuration = Math.max(0, Math.round(Number(durationMs || 0)));
+    const bucket = Math.floor(Math.max(0, Number(recordedAt || Date.now())) / 2000);
+    return `${safeSize}:${safeDuration}:${bucket}`;
+  }
+
+  /**
+   * @param {Error|any} error
+   * @returns {boolean}
+   */
+  #isRetryableAudioError(error) {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return true;
+    }
+
+    const code = String(error?.code || '');
+    const message = String(error?.message || '').toLowerCase();
+    return code.includes('network')
+      || code.includes('retry-limit-exceeded')
+      || code.includes('unavailable')
+      || message.includes('network')
+      || message.includes('offline')
+      || message.includes('failed to fetch');
+  }
+
+  #cleanupStaleAudioSignatures(now = Date.now()) {
+    for (const [signatureKey, ts] of this.#audioRecentlySentSignatures.entries()) {
+      if ((now - ts) > (this.#audioDedupeWindowMs * 3)) {
+        this.#audioRecentlySentSignatures.delete(signatureKey);
+      }
+    }
+  }
+
+  #bindAudioNetworkListeners() {
+    if (this.#audioNetworkListenersBound || typeof window === 'undefined') return;
+
+    this.#handleAudioNetworkOnline = () => {
+      console.log('[AudioChatRealtime] network online: retomando fila de áudio');
+      for (const [taskId, task] of this.#audioRetryQueue.entries()) {
+        if (task.status !== 'retry_waiting') continue;
+
+        const timerId = this.#audioRetryTimers.get(taskId);
+        if (timerId) {
+          window.clearTimeout(timerId);
+          this.#audioRetryTimers.delete(taskId);
+        }
+
+        void this.#processAudioSendTask(taskId);
+      }
+    };
+
+    this.#handleAudioNetworkOffline = () => {
+      console.warn('[AudioChatRealtime] network offline: aguardando reconexão para retry');
+    };
+
+    window.addEventListener('online', this.#handleAudioNetworkOnline);
+    window.addEventListener('offline', this.#handleAudioNetworkOffline);
+    this.#audioNetworkListenersBound = true;
   }
 
   /**
@@ -797,6 +1207,14 @@ export class MatchService {
       console.log(`[Presence] Cleanup: listener removido para ${matchId}`);
     });
     this.#presenceListeners.clear();
+
+    this.#audioRetryTimers.forEach((timerId) => {
+      window.clearTimeout(timerId);
+    });
+    this.#audioRetryTimers.clear();
+    this.#audioRetryQueue.clear();
+    this.#audioInFlightSignatures.clear();
+    this.#audioRecentlySentSignatures.clear();
 
     this.#lastMessageTime.clear();
     console.log('[MatchService] Cleanup completo');
