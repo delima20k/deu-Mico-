@@ -66,6 +66,8 @@ export class HandModal {
   #chatAudioBtnEl = null;
   #chatAudioBtnIconEl = null;
   #chatStatusEl = null;
+  #chatMessagesEl = null;
+  #chatRenderedMessageIds = new Set();
   #chatCooldownTimer = null;
   #chatCooldownUntil = 0;
   #chatComposerOpen = false;
@@ -130,6 +132,11 @@ export class HandModal {
 
     const composer = Dom.create('div', { classes: 'hand-modal__chat-composer' });
     this.#chatComposerEl = composer;
+
+    this.#chatMessagesEl = Dom.create('div', {
+      classes: 'hand-modal__chat-messages',
+      attrs: { 'aria-live': 'polite' },
+    });
 
     const quickRow = Dom.create('div', { classes: 'hand-modal__chat-phrases' });
     for (const phrase of QUICK_CHAT_PHRASES) {
@@ -219,7 +226,7 @@ export class HandModal {
 
     this.#setupAudioButton(audioBtn);
     inputRow.append(this.#chatInputEl, audioBtn, sendBtn);
-    composer.append(quickRow, emojiRow, inputRow, this.#chatStatusEl);
+    composer.append(this.#chatMessagesEl, quickRow, emojiRow, inputRow, this.#chatStatusEl);
     chat.append(toggleBtn, composer);
 
     modal.append(header, viewport, chat);
@@ -305,6 +312,8 @@ export class HandModal {
     this.#chatAudioBtnEl = null;
     this.#chatAudioBtnIconEl = null;
     this.#chatStatusEl = null;
+    this.#chatMessagesEl = null;
+    this.#chatRenderedMessageIds.clear();
     if (this.#chatCooldownTimer) {
       clearInterval(this.#chatCooldownTimer);
       this.#chatCooldownTimer = null;
@@ -338,14 +347,80 @@ export class HandModal {
 
   /**
    * Renderiza uma mensagem em formato de bolha no chat da modal.
-   * @param {{ msgId?: string, uid?: string, name?: string, text?: string, ts?: number }} message
+   * @param {{ msgId?: string, uid?: string, name?: string, text?: string, type?: string, url?: string, fallbackAudioDataUrl?: string, durationMs?: number, ts?: number }} message
    */
   appendChatMessage(message) {
-    void message;
+    if (!message || !this.#chatMessagesEl) return;
+
+    const msgId = message.msgId || `${message.uid || 'unknown'}:${message.ts || Date.now()}:${message.text || message.type || ''}`;
+    if (this.#chatRenderedMessageIds.has(msgId)) return;
+    this.#chatRenderedMessageIds.add(msgId);
+
+    const isMine = message.uid === this.#chatMyUid;
+    const row = Dom.create('div', {
+      classes: ['hand-modal__chat-message', isMine ? 'hand-modal__chat-message--mine' : 'hand-modal__chat-message--other'],
+    });
+
+    const name = message.name
+      || this.#chatPlayers.find((player) => player?.uid === message.uid)?.name
+      || 'Jogador';
+
+    const author = Dom.create('div', {
+      classes: 'hand-modal__chat-message-author',
+      text: isMine ? 'Voce' : name,
+    });
+
+    const bubble = Dom.create('div', { classes: 'hand-modal__chat-message-bubble' });
+    const audioSrc = message.url || message.fallbackAudioDataUrl || '';
+
+    if (message.type === 'audio' && audioSrc) {
+      const audioEl = Dom.create('audio', {
+        classes: 'hand-modal__chat-message-audio',
+        attrs: { controls: 'true', preload: 'metadata', src: audioSrc },
+      });
+      const metaText = message.fallbackAudioDataUrl
+        ? `Audio ${this.#formatDuration(message.durationMs)} (modo compatibilidade)`
+        : `Audio ${this.#formatDuration(message.durationMs)}`;
+      const meta = Dom.create('span', {
+        classes: 'hand-modal__chat-message-meta',
+        text: metaText,
+      });
+      bubble.append(audioEl, meta);
+
+      if (!isMine) {
+        audioEl.play().catch(() => {});
+      }
+    } else {
+      const text = Dom.create('span', {
+        classes: 'hand-modal__chat-message-text',
+        text: message.text || '',
+      });
+      bubble.append(text);
+    }
+
+    row.append(author, bubble);
+    this.#chatMessagesEl.append(row);
+
+    if (this.#chatMessagesEl.children.length > 60) {
+      this.#chatMessagesEl.removeChild(this.#chatMessagesEl.firstElementChild);
+    }
+
+    this.#chatMessagesEl.scrollTop = this.#chatMessagesEl.scrollHeight;
   }
 
   clearChatMessages() {
+    if (this.#chatMessagesEl) {
+      this.#chatMessagesEl.innerHTML = '';
+    }
+    this.#chatRenderedMessageIds.clear();
     this.#setChatStatus('', false);
+  }
+
+  #formatDuration(durationMs) {
+    const totalSeconds = Math.max(0, Math.round((Number(durationMs) || 0) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   }
 
   // ─────────────────────────────────────────────────────────────────────

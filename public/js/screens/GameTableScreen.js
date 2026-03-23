@@ -1318,7 +1318,10 @@ export class GameTableScreen extends Screen {
 
     this.#chatUnsubscribe = MatchService.getInstance().subscribeChat(
       this.#matchId,
-      (message) => this.#enqueueChatTrail(message),
+      (message) => {
+        this.#handModal?.appendChatMessage(message);
+        this.#enqueueChatTrail(message);
+      },
     );
   }
 
