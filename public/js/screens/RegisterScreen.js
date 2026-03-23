@@ -187,7 +187,7 @@ export class RegisterScreen extends Screen {
         await AuthService.getInstance().sendEmailVerification().catch(() => {});
         // Faz logout imediato para forçar verificação de e-mail antes de entrar
         await AuthService.getInstance().signOut().catch(() => {});
-        showFeedback('Conta criada! Verifique seu e-mail para ativar a conta antes de jogar.', false);
+        showFeedback('Conta criada! Enviamos um link de verificação para o seu e-mail. Verifique também a pasta de Spam/Lixo eletrônico caso não encontre na caixa de entrada.', false);
         setTimeout(() => this.#manager.show('LoginScreen'), 2500);
       } catch (err) {
         showFeedback(this.#friendlyError(err));

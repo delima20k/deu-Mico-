@@ -194,7 +194,7 @@ export class LoginScreen extends Screen {
         await AuthService.getInstance().ensureProfile(user)
           .catch(err => console.warn('[LoginScreen] Erro ao garantir perfil:', err));
         if (!AuthService.getInstance().isEmailVerified()) {
-          showFeedback('Verifique seu e-mail antes de continuar. Clique em “Reenviar” para receber um novo link.');
+          showFeedback('Verifique seu e-mail antes de continuar. Não encontrou? Confira a pasta de Spam/Lixo eletrônico. Clique em "Reenviar" para receber um novo link.');
           btnResendVerify.classList.remove('auth-resend--hidden');
           return;
         }
