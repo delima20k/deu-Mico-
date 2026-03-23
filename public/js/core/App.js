@@ -79,15 +79,6 @@ export class App {
     const root = document.getElementById('app');
     if (!root) throw new Error('[App] Elemento #app não encontrado no DOM.');
 
-    // ── Proteção contra logout não intencional (DESABILITADO PARA DESENVOLVIMENTO) ──
-    // window.addEventListener('beforeunload', (e) => {
-    //   if (!App.#intentionalLogout) {
-    //     e.preventDefault();
-    //     e.returnValue = 'Tem certeza que deseja sair? Você será desconectado!';
-    //     return 'Tem certeza que deseja sair? Você será desconectado!';
-    //   }
-    // });
-
     // 1. Núcleo de navegação
     this.#screenManager = new ScreenManager(root);
 
@@ -168,19 +159,12 @@ export class App {
         const db    = fs.getDatabase();
         const dbMod = fs.getDbModules();
         if (db && dbMod?.goOnline) {
-          console.log('[Firebase] 🔄 App voltou ao foreground — forçando reconexão');
           dbMod.goOnline(db);
-          // Verifica imediatamente o status da conexão
-          const connRef = dbMod.ref(db, '.info/connected');
-          dbMod.onValue(connRef, (snap) => {
-            console.log('[Firebase] Conexão:', snap.val() ? '✅ online' : '❌ offline');
-          }, { onlyOnce: true });
         }
       }
     });
 
     window.addEventListener('online', () => {
-      console.log('[Firebase] 🌐 Network online detectado — forçando reconexão');
       const fs    = FirebaseService.getInstance();
       const db    = fs.getDatabase();
       const dbMod = fs.getDbModules();
@@ -190,7 +174,6 @@ export class App {
     // Recebe mensagem do Service Worker solicitando reconexão Firebase
     navigator.serviceWorker?.addEventListener('message', (event) => {
       if (event.data?.type === 'RECONNECT_FIREBASE') {
-        console.log('[Firebase] 📨 SW solicitou reconexão — chamando goOnline');
         const fs    = FirebaseService.getInstance();
         const db    = fs.getDatabase();
         const dbMod = fs.getDbModules();

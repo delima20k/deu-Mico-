@@ -117,7 +117,6 @@ export class MatchService {
    * @returns {Promise<void>}
    */
   async registerPresence(userId, queueKey, userData) {
-    console.log(`[MatchService] ${userId} entrando em ${queueKey}`);
     const key = `presence_${queueKey}`;
     const users = JSON.parse(localStorage.getItem(key) || '{}');
     users[userId] = { ...userData, joinedAt: Date.now() };
@@ -130,7 +129,6 @@ export class MatchService {
    * @param {string} queueKey
    */
   removePresence(userId, queueKey) {
-    console.log(`[MatchService] ${userId} saindo de ${queueKey}`);
     const key = `presence_${queueKey}`;
     const users = JSON.parse(localStorage.getItem(key) || '{}');
     delete users[userId];
@@ -196,13 +194,12 @@ export class MatchService {
       // 4. Nome: prefere displayName do próprio currentUser, fallback para parte local do email
       const profile = await authService.getProfile(uid).catch(() => null);
       const name = currentUser.displayName
-        || profile?.displayName
+        || profile?.name
         || currentUser.email?.split('@')[0]
         || 'Jogador';
       const avatarUrl = profile?.avatarUrl || currentUser.photoURL || '';
 
       // 5. Envia mensagem usando push() para chave ordenada do Firebase
-      console.log(`[Chat] sending uid=${uid.slice(0, 8)}... matchId=${matchId}`);
 
       await this.#matchRepository.pushChatMessage(matchId, {
         type: 'text',
@@ -280,7 +277,7 @@ export class MatchService {
         || this.#buildAudioSignature(blob.size, durationMs, audioData?.recordedAt || now);
       const profile = await authService.getProfile(uid).catch(() => null);
       const name = currentUser.displayName
-        || profile?.displayName
+        || profile?.name
         || currentUser.email?.split('@')[0]
         || 'Jogador';
       const avatarUrl = profile?.avatarUrl || currentUser.photoURL || '';

@@ -23,8 +23,18 @@ const { initializeApp, getApps, cert } = require('firebase-admin/app');
 const { getDatabase }                  = require('firebase-admin/database');
 
 module.exports = async (req, res) => {
-  // Headers CORS — necessário para PWA/TWA que podem ter origem diferente da URL de deploy
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Origens autorizadas — PWA/TWA usam o domínio de produção como origem
+  const ALLOWED_ORIGINS = [
+    'https://www.deu-mico.com.br',
+    'https://deu-mico.com.br',
+    'https://deu-mico.vercel.app',
+  ];
+  const origin = req.headers['origin'] || '';
+  const corsOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+
+  // Headers CORS — restrito ao domínio de produção
+  res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+  res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 

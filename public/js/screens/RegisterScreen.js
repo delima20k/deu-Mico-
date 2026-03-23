@@ -184,8 +184,9 @@ export class RegisterScreen extends Screen {
           age,
           avatarUrl: user.photoURL || null,
         }).catch(err => console.warn('[RegisterScreen] Erro ao salvar perfil:', err));
-        showFeedback('Conta criada com sucesso!', false);
-        setTimeout(() => this.#onSuccess(user), 1200);
+        await AuthService.getInstance().sendEmailVerification().catch(() => {});
+        showFeedback('Conta criada! Verifique seu e-mail para ativar a conta antes de jogar.', false);
+        setTimeout(() => this.#onSuccess(user), 2500);
       } catch (err) {
         showFeedback(this.#friendlyError(err));
       } finally {

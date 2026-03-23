@@ -114,11 +114,54 @@ export class LoginScreen extends Screen {
     });
     footer.appendChild(linkRegister);
 
-    // ── Montagem ──────────────────────────────────────────
+    // ── Link “Esqueci minha senha” ───────────────────────────────
+    const forgotWrapper = Dom.create('p', { classes: 'auth-forgot' });
+    const forgotLink = Dom.create('span', {
+      classes: 'auth-footer-link',
+      text:    'Esqueci minha senha',
+      attrs:   { role: 'button', tabindex: '0' },
+    });
+    forgotWrapper.appendChild(forgotLink);
+
+    // ── Botão “Reenviar verificação” (oculto por padrão) ─────────────────────
+    const btnResendVerify = Dom.create('button', {
+      classes: ['btn-outline', 'auth-resend--hidden'],
+      text:    'REENVIAR E-MAIL DE VERIFICAÇÃO',
+      attrs:   { type: 'button' },
+    });
+
+    // ── Caixa de redefinição de senha (oculta por padrão) ───────────────────
+    const resetBox = Dom.create('div', {
+      classes: ['auth-reset-box', 'auth-reset-box--hidden'],
+    });
+    const resetEmailInput = Dom.create('input', {
+      classes: 'auth-input',
+      attrs: {
+        type:         'email',
+        placeholder:  'E-mail para redefinição',
+        autocomplete: 'email',
+        'aria-label': 'E-mail para redefinição',
+      },
+    });
+    const btnResetSend = Dom.create('button', {
+      classes: 'btn-primary',
+      text:    'ENVIAR LINK',
+      attrs:   { type: 'button' },
+    });
+    const btnResetCancel = Dom.create('button', {
+      classes: 'btn-outline',
+      text:    'CANCELAR',
+      attrs:   { type: 'button' },
+    });
+    resetBox.append(resetEmailInput, btnResetSend, btnResetCancel);
+
+    // ── Montagem ────────────────────────────────────────────────────
     container.append(
       logo, title, subtitle, feedback,
-      emailInput, passInput,
+      emailInput, passInput, forgotWrapper,
+      btnResendVerify,
       btnEnter, divider, btnGoogle, footer,
+      resetBox,
     );
     page.appendChild(container);
 
@@ -142,6 +185,7 @@ export class LoginScreen extends Screen {
     const offEnter = Dom.on(btnEnter, 'click', async () => {
       const email = emailInput.value.trim();
       const pass  = passInput.value;
+      btnResendVerify.classList.add('auth-resend--hidden');
       if (!this.#validateLogin(email, pass, showFeedback)) return;
       setLoading(true);
       try {
@@ -149,6 +193,11 @@ export class LoginScreen extends Screen {
         // Garante que o perfil existe no RTDB (cria default se necessário)
         await AuthService.getInstance().ensureProfile(user)
           .catch(err => console.warn('[LoginScreen] Erro ao garantir perfil:', err));
+        if (!AuthService.getInstance().isEmailVerified()) {
+          showFeedback('Verifique seu e-mail antes de continuar. Clique em “Reenviar” para receber um novo link.');
+          btnResendVerify.classList.remove('auth-resend--hidden');
+          return;
+        }
         this.#onSuccess(user);
       } catch (err) {
         showFeedback(this.#friendlyError(err));
@@ -185,8 +234,66 @@ export class LoginScreen extends Screen {
     const offKeyEmail = Dom.on(emailInput, 'keydown', (e) => { if (e.key === 'Enter') passInput.focus(); });
     const offKeyPass  = Dom.on(passInput,  'keydown', (e) => { if (e.key === 'Enter') btnEnter.click(); });
 
+    // ── Esqueci minha senha ───────────────────────────────────────────
+    const offForgot = Dom.on(forgotLink, 'click', () => {
+      resetBox.classList.toggle('auth-reset-box--hidden');
+      if (!resetBox.classList.contains('auth-reset-box--hidden')) {
+        resetEmailInput.value = emailInput.value.trim();
+        resetEmailInput.focus();
+      }
+    });
+
+    const offForgotKey = Dom.on(forgotLink, 'keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') forgotLink.click();
+    });
+
+    const offResetCancel = Dom.on(btnResetCancel, 'click', () => {
+      resetBox.classList.add('auth-reset-box--hidden');
+    });
+
+    const offResetSend = Dom.on(btnResetSend, 'click', async () => {
+      const email = resetEmailInput.value.trim();
+      if (!email || !email.includes('@')) {
+        showFeedback('Informe um e-mail válido para redefinir a senha.');
+        return;
+      }
+      btnResetSend.disabled = true;
+      btnResetSend.classList.add('btn--loading');
+      try {
+        await AuthService.getInstance().sendPasswordResetEmail(email);
+        showFeedback('Link de redefinição enviado! Verifique sua caixa de entrada.', false);
+        resetBox.classList.add('auth-reset-box--hidden');
+      } catch (err) {
+        showFeedback(this.#friendlyError(err));
+      } finally {
+        btnResetSend.disabled = false;
+        btnResetSend.classList.remove('btn--loading');
+      }
+    });
+
+    const offKeyReset = Dom.on(resetEmailInput, 'keydown', (e) => {
+      if (e.key === 'Enter') btnResetSend.click();
+    });
+
+    // ── Reenviar verificação de e-mail ───────────────────────────────
+    const offResendVerify = Dom.on(btnResendVerify, 'click', async () => {
+      btnResendVerify.disabled = true;
+      try {
+        await AuthService.getInstance().sendEmailVerification();
+        showFeedback('E-mail de verificação reenviado! Verifique sua caixa de entrada.', false);
+        btnResendVerify.classList.add('auth-resend--hidden');
+      } catch (err) {
+        showFeedback(this.#friendlyError(err));
+      } finally {
+        btnResendVerify.disabled = false;
+      }
+    });
+
     this.#cleanups.push(
-      offEnter, offGoogle, offRegister, offRegisterKey, offKeyEmail, offKeyPass,
+      offEnter, offGoogle, offRegister, offRegisterKey,
+      offKeyEmail, offKeyPass,
+      offForgot, offForgotKey, offResetCancel, offResetSend, offKeyReset,
+      offResendVerify,
     );
 
     return page;

@@ -147,6 +147,39 @@ export class FirebaseService {
     return this.#mapUser(cred.user);
   }
 
+  /**
+   * Envia e-mail de redefinição de senha.
+   * @param {string} email
+   * @returns {Promise<void>}
+   */
+  async sendPasswordResetEmail(email) {
+    this.#assertReady();
+    await this.#mod.sendPasswordResetEmail(this.#auth, email);
+  }
+
+  /**
+   * Envia e-mail de verificação ao usuário atual.
+   * @returns {Promise<void>}
+   */
+  async sendEmailVerification() {
+    this.#assertReady();
+    const user = this.#auth.currentUser;
+    if (!user) {
+      const err = new Error('Nenhum usuário autenticado.');
+      err.code = 'auth/no-current-user';
+      throw err;
+    }
+    await this.#mod.sendEmailVerification(user);
+  }
+
+  /**
+   * Retorna se o e-mail do usuário atual está verificado.
+   * @returns {boolean}
+   */
+  isEmailVerified() {
+    return this.#auth?.currentUser?.emailVerified ?? false;
+  }
+
   // -------------------------------------------------------
   // Auth — Google
   // -------------------------------------------------------
@@ -322,7 +355,6 @@ export class FirebaseService {
     const connRef = dbMod.ref(db, '.info/connected');
     this.#connUnsubscribe = dbMod.onValue(connRef, (snap) => {
       const connected = snap.val();
-      console.log(`[Heartbeat] Firebase ${connected ? '✅ conectado' : '❌ desconectado'}`);
       if (connected) {
         const lastSeenRef = dbMod.ref(db, `matches/${matchId}/presence/${uid}/lastSeen`);
         dbMod.set(lastSeenRef, Date.now()).catch(() => {});
@@ -334,7 +366,6 @@ export class FirebaseService {
       try {
         const heartbeatRef = dbMod.ref(db, `matches/${matchId}/presence/${uid}/heartbeat`);
         await dbMod.set(heartbeatRef, Date.now());
-        console.log('[Heartbeat] ✓ ping enviado');
       } catch (e) {
         console.warn('[Heartbeat] Falha no ping:', e.message);
       }
@@ -356,6 +387,5 @@ export class FirebaseService {
       this.#connUnsubscribe();
       this.#connUnsubscribe = null;
     }
-    console.log('[Heartbeat] parado');
   }
 }

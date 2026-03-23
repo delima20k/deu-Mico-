@@ -152,11 +152,9 @@ export class TournamentService {
 
     const userData = {
       uid: currentUser.uid,
-      name: profile?.displayName || currentUser.displayName || currentUser.email?.split('@')[0] || 'Jogador',
+      name: profile?.name || currentUser.displayName || currentUser.email?.split('@')[0] || 'Jogador',
       avatarUrl: profile?.avatarUrl || currentUser.photoURL || '',
     };
-
-    console.log(`[Tournament] join request uid=${currentUser.uid.slice(0, 8)}... tournamentId=${tournamentId}`);
 
     const result = await this.#repo.joinTournament(tournamentId, userData, {
       countdownDurationMs: TournamentService.COUNTDOWN_MS,

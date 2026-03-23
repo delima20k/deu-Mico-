@@ -321,7 +321,6 @@ export class MatchmakingService {
     const coordId = `coord_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const acquired = await this.#lobbyRepository.acquireStartToken(lobbyType, coordId);
     if (!acquired) {
-      console.log(`[StartToken] rejected — outro coordenador já age em ${lobbyType}`);
       return false;
     }
 
@@ -330,7 +329,6 @@ export class MatchmakingService {
       const recheck = await this.#lobbyRepository.getQueueUsers(lobbyType);
       const recheckIds = Object.keys(recheck);
       if (recheckIds.length < expected) {
-        console.log(`[Matchmaking] Fila insuficiente após re-check: ${recheckIds.length}/${expected}`);
         return false;
       }
 
@@ -339,7 +337,6 @@ export class MatchmakingService {
       for (const uid of slicedIds) {
         const existing = await this.#lobbyRepository.getAssignment(lobbyType, uid);
         if (existing?.createdAt && (Date.now() - existing.createdAt) < 60_000) {
-          console.log(`[Matchmaking] Assign recente já existe para uid=${uid.slice(0, 8)}... — abortando criação duplicada`);
           return false;
         }
       }
@@ -363,29 +360,20 @@ export class MatchmakingService {
     const matchId = this.#genMatchId();
     const batchId = `batch_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
-    console.log(`\n[Matchmaking] 🎮 ===== CRIANDO MATCH REAL =====`);
-    console.log(`[Matchmaking] 📋 Lobby Type: ${lobbyType}`);
-    console.log(`[Matchmaking] 🆔 Match ID: ${matchId}`);
-    console.log(`[Matchmaking] 🔖 Batch ID: ${batchId}`);
-    console.log(`[Matchmaking] 👥 Total de Jogadores: ${playerIds.length}`);
-    console.log(`[Matchmaking] ⏰ Timestamp: ${new Date().toISOString()}`);
-
     try {
       // 1. Busca dados completos de cada jogador
-      console.log(`\n[Matchmaking] 📝 Carregando dados dos ${playerIds.length} jogadores...`);
       const playersData = {};
       
       for (const uid of playerIds) {
         try {
           const profile = await this.#userRepository.getProfile(uid);
           playersData[uid] = {
-            name: profile?.displayName || `Jogador ${uid.slice(0, 8)}`,
-            avatarUrl: profile?.photoURL || null,
+            name: profile?.name || `Jogador ${uid.slice(0, 8)}`,
+            avatarUrl: profile?.avatarUrl || null,
             joinedAt: Date.now(),
           };
-          console.log(`[Matchmaking] ✅ Dados carregados: ${playersData[uid].name}`);
         } catch (error) {
-          console.error(`[Matchmaking] ⚠️ Erro ao carregar ${uid}:`, error);
+          console.error(`[Matchmaking] Erro ao carregar perfil de ${uid.slice(0, 8)}:`, error);
           playersData[uid] = {
             name: `Jogador ${uid.slice(0, 8)}`,
             avatarUrl: null,
@@ -401,18 +389,13 @@ export class MatchmakingService {
         playerIds,
       });
 
-      console.log(`\n[Matchmaking] 💾 Criando estrutura /matches/${matchId}/meta...`);
       await this.#matchRepository.createMatch(match);
-      console.log(`[Matchmaking] ✅ Meta criada com sucesso`);
 
       // 3. Cria estrutura de jogadores
-      console.log(`[Matchmaking] 💾 Criando /matches/${matchId}/meta/players...`);
       await this.#matchRepository.createMatchPlayers(matchId, playersData);
-      console.log(`[Matchmaking] ✅ Jogadores registrados com sucesso`);
 
       // 4. Atribui cada jogador à partida e remove da fila
       const now = Date.now();
-      console.log(`\n[Matchmaking] 🚀 Atribuindo jogadores à partida...`);
       for (const uid of playerIds) {
         try {
           await this.#lobbyRepository.assignMatch(lobbyType, uid, {
@@ -423,24 +406,19 @@ export class MatchmakingService {
             createdAt: now,
             ts: now,
           });
-          console.log(`[Assign] batchId=${batchId} matchId=${matchId} uid=${uid.slice(0, 8)}... lobbyType=${lobbyType}`);
-
           await this.#lobbyRepository.leaveQueue(lobbyType, uid);
-          console.log(`[Matchmaking] ✅ ${uid.slice(0, 8)}... removido da fila`);
         } catch (error) {
-          console.error(`[Matchmaking] ❌ Erro ao atribuir ${uid}:`, error);
+          console.error(`[Matchmaking] Erro ao atribuir ${uid.slice(0, 8)}:`, error);
         }
       }
 
-      console.log(`\n[Matchmaking] 🎉 created matchId=${matchId} com ${playerIds.length} jogadores\n`);
       return matchId;
 
     } catch (error) {
-      console.error(`\n[Matchmaking] ❌ Erro na criação do match:`, error);
+      console.error('[Matchmaking] Erro na criação do match:', error);
       // Tenta marcar match como abandoned para não ficar sobrando
       try {
         await this.#matchRepository.updateMatchStatus(matchId, 'abandoned');
-        console.log(`[Cleanup] matched marcado como abandoned matchId=${matchId}`);
       } catch (_) { /* ignora */ }
       throw error;
     }
@@ -458,8 +436,6 @@ export class MatchmakingService {
     const queueUsers = await this.#lobbyRepository.getQueueUsers(lobbyType);
     const count = Object.keys(queueUsers).length;
 
-    console.log(`[MultiLobby] queue count=${count} lobbyType=${lobbyType}`);
-
     // Cancela timer anterior (novo join redefine a contagem)
     if (this.#multiDeadlineTimer) {
       clearTimeout(this.#multiDeadlineTimer);
@@ -468,7 +444,6 @@ export class MatchmakingService {
     this.#multiDeadlineLobbyType = lobbyType;
 
     if (count < 2) {
-      console.log('[MultiLobby] Aguardando ao menos 2 jogadores...');
       return;
     }
 
@@ -485,8 +460,6 @@ export class MatchmakingService {
     // Armazena deadline no Firebase para sincronização entre clientes
     this.#lobbyRepository.setMultiDeadline(deadlineTs).catch(() => {});
     this.#lobbyRepository.setMultiLastJoinTs(Date.now()).catch(() => {});
-
-    console.log(`[MultiLobby] deadline em ${waitMs / 1000}s — players=${count}`);
 
     if (waitMs === 0) {
       await this.#tryStartMultiMatch(lobbyType);
@@ -505,7 +478,6 @@ export class MatchmakingService {
    */
   async #tryStartMultiMatch(lobbyType) {
     const coordId = `coord_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-    console.log(`[MultiLobby] tentando iniciar match lobbyType=${lobbyType} coord=${coordId}`);
     try {
       const isCoord = await this.tryBecomeCoordinator(lobbyType, coordId);
       if (isCoord) {

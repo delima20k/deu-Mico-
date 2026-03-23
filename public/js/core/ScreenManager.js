@@ -69,6 +69,7 @@ export class ScreenManager {
    */
   async show(name, params = {}) {
     if (this.#transitioning) return;
+    if (this.#entering) return;
 
     const next = this.#screens.get(name);
     if (!next) {

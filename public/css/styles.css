@@ -712,6 +712,60 @@ body {
   opacity: 0.72;
 }
 
+/* ---------- Link "Esqueci minha senha" ---------- */
+.auth-forgot {
+  width: 100%;
+  text-align: right;
+  font-size: 0.85rem;
+  margin-top: -4px;
+}
+
+/* ---------- Caixa de redefinição de senha (expansível) ---------- */
+.auth-reset-box {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.auth-reset-box--hidden { display: none; }
+
+/* ---------- Botão reenviar verificação (oculto por padrão) ---------- */
+.auth-resend--hidden { display: none; }
+
+/* ---------- Botão outline (ação secundária / discreta) ---------- */
+.btn-outline {
+  width: 100%;
+  padding: 12px 24px;
+  border: 2px solid rgba(255, 255, 255, 0.65);
+  border-radius: var(--radius-btn);
+  background: transparent;
+  color: var(--color-white);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  font-family: var(--font-family);
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.btn-outline:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn-outline:disabled,
+.btn-outline.btn--loading {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
 /* ---------- Footer ---------- */
 .footer {
   background-color: transparent;

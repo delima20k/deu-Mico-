@@ -36,9 +36,6 @@ export class RoomsScreen extends Screen {
   /** @type {Map<string, Function>} Unsubscribers de listeners de fila por queueKey */
   #queueUnsubscribers = new Map();
 
-  /** @type {Function|null} DEPRECATED - Polling antigo, será removido */
-  #presencePolling = null;
-
   /** @type {Object[]} Configuração das filas */
   static #QUEUES = [
     { playersCount: 2,    queueKey: 'queue_2p',    lobbyType: '2p'    },
@@ -248,25 +245,5 @@ export class RoomsScreen extends Screen {
     });
 
     this.#queueUnsubscribers.clear();
-  }
-
-  /**
-   * DEPRECATED - Polling antigo, mantido por compatibilidade.
-   * @private
-   */
-  #startPresencePolling() {
-    // Este método está DEPRECADO em favor de #startQueueListeners()
-    console.warn('[RoomsScreen] DEPRECATED: #startPresencePolling() não deve mais ser chamado');
-  }
-
-  /**
-   * DEPRECATED - Para polling antigo.
-   * @private
-   */
-  #stopPresencePolling() {
-    if (this.#presencePolling !== null) {
-      clearInterval(this.#presencePolling);
-      this.#presencePolling = null;
-    }
   }
 }

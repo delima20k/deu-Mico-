@@ -132,9 +132,6 @@ export class MatchRoomScreen extends Screen {
       console.error('[MatchRoomScreen] container element não encontrado — abortando onEnter');
       return;
     }
-    console.log('[MatchRoomUI] container resolved ok');
-
-    console.log(`[Assign] waiting lobbyType=${this.#lobbyType} uid=${this.#userId}`);
 
     // 3. Mostra tela de espera enquanto aguarda o assign do RTDB
     this.#renderWaitingState();
@@ -181,7 +178,6 @@ export class MatchRoomScreen extends Screen {
         if (assignment.playerCount) {
           this.#expectedPlayerCount = assignment.playerCount;
         }
-        console.log(`[Assign] received matchId=${assignment.matchId} lobbyType=${this.#lobbyType} playerCount=${assignment.playerCount ?? '?'}`);
 
         // Consome o assign do RTDB para evitar reutilização em sessões futuras
         await LobbyRepository.getInstance()
@@ -283,7 +279,6 @@ export class MatchRoomScreen extends Screen {
       }
 
       container.append(wrapper);
-      console.log(`[MatchRoomUI] waiting rendered timedOut=${mode === 'timeout'}`);
     } catch (err) {
       console.error('[MatchRoomUI] #renderWaitingState falhou:', err);
       this.#renderError();
@@ -315,7 +310,6 @@ export class MatchRoomScreen extends Screen {
    * @private
    */
   async #initWithMatchId() {
-    console.log(`[MatchRoom] starting listeners matchId=${this.#matchId}`);
 
     const container = this.#containerEl;
     if (!container) return;
@@ -419,8 +413,6 @@ export class MatchRoomScreen extends Screen {
    * Limpa ao sair da tela.
    */
   onExit() {
-    console.log(`[MatchRoomScreen] Saindo: matchId="${this.#matchId}" lobbyType="${this.#lobbyType}"`);
-
     // Esconde banner de espera
     AdService.getInstance().hideBanner(AdConfig.bannerPlacements.waiting);
 
@@ -480,7 +472,6 @@ export class MatchRoomScreen extends Screen {
    * @private
    */
   #onLeaveRoom() {
-    console.log(`[MatchRoomScreen] Sair clicado: matchId="${this.#matchId}" lobbyType="${this.#lobbyType}"`);
     MatchmakingService.getInstance().leaveQueue(this.#lobbyType, this.#userId)
       .catch(err => console.error(`[MatchRoomScreen] Erro ao sair da fila:`, err));
     this.#screenManager.show('RoomsScreen');
@@ -549,8 +540,6 @@ export class MatchRoomScreen extends Screen {
         // Quando atinge o limite, abre GameTableScreen
         if (count >= maxPlayers && maxPlayers > 0 && !this.#hasNavigatedToGameTable) {
           this.#hasNavigatedToGameTable = true;
-
-          console.log(`[GameTable] opening with count=${count} matchId=${this.#matchId}`);
 
           // Anúncio: intersticial entre a espera e a mesa de jogo
           await AdService.getInstance()

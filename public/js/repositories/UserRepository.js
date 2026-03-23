@@ -266,6 +266,31 @@ export class UserRepository {
   onAuthStateChanged(callback) {
     return this.#service.onAuthStateChanged(callback);
   }
+
+  /**
+   * Envia e-mail de redefinição de senha.
+   * @param {string} email
+   * @returns {Promise<void>}
+   */
+  async sendPasswordResetEmail(email) {
+    return this.#service.sendPasswordResetEmail(email);
+  }
+
+  /**
+   * Envia e-mail de verificação ao usuário atual.
+   * @returns {Promise<void>}
+   */
+  async sendEmailVerification() {
+    return this.#service.sendEmailVerification();
+  }
+
+  /**
+   * Retorna se o e-mail do usuário atual foi verificado.
+   * @returns {boolean}
+   */
+  isEmailVerified() {
+    return this.#service.isEmailVerified();
+  }
 }
 
 /**

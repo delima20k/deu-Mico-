@@ -132,4 +132,29 @@ export class AuthService {
   async saveProfile(uid, data) {
     return this.#repo.saveProfile(uid, data);
   }
+
+  /**
+   * Envia e-mail de redefinição de senha.
+   * @param {string} email
+   * @returns {Promise<void>}
+   */
+  async sendPasswordResetEmail(email) {
+    return this.#repo.sendPasswordResetEmail(email);
+  }
+
+  /**
+   * Envia e-mail de verificação ao usuário atual (chamar após signUp).
+   * @returns {Promise<void>}
+   */
+  async sendEmailVerification() {
+    return this.#repo.sendEmailVerification();
+  }
+
+  /**
+   * Retorna se o e-mail do usuário atual foi verificado.
+   * @returns {boolean}
+   */
+  isEmailVerified() {
+    return this.#repo.isEmailVerified();
+  }
 }

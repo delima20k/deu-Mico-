@@ -293,13 +293,6 @@ export class GameTableScreen extends Screen {
     // Libera lock global para permitir adaptação automática portrait/landscape.
     this.#unlockOrientation();
 
-    console.log(`\n[GameTableScreen] 🎮 ===== TELA DA MESA ABERTA =====`);
-    console.log(`[GameTableScreen] 📋 ID da Partida: ${this.#matchId}`);
-    console.log(`[GameTableScreen] 2️⃣ Tipo de Sala: ${this.#roomType}`);
-    console.log(`[GameTableScreen] 👤 Seu UID: ${this.#myUid.slice(0, 16)}...`);
-    console.log(`[GameTableScreen] 👥 Total de Jogadores: ${this.#players.length}`);
-    console.log(`[GameTableScreen] ⏰ Timestamp: ${new Date().toISOString()}\n`);
-
     // Re-escreve a própria presença (aguarda) para garantir que o monitor
     // de presença captura snapshot completo com todos os jogadores
     await this.#writeOwnPresence();
@@ -327,13 +320,6 @@ export class GameTableScreen extends Screen {
     // Container principal
     const mainEl = Dom.create('main', { classes: 'game-table-screen__main' });
 
-    // Debug info (matchId no canto superior direito)
-    const debugEl = Dom.create('div', {
-      classes: 'game-table-screen__debug',
-      text: `Match: ${this.#matchId} | ${this.#roomType}`
-    });
-    mainEl.append(debugEl);
-
     // ── Mesa hexagonal ──
     const tableRoot = Dom.create('div', { classes: 'game-table-root' });
     this.#hexTable  = new HexTable();
@@ -341,11 +327,7 @@ export class GameTableScreen extends Screen {
 
     // Gera layout com TableLayoutService e coloca no slot do hexágono
     try {
-      console.log(`[GameTableScreen] 🔨 Criando layout da mesa...`);
       const tableLayout = this.#createTableLayout();
-
-      console.log(`[GameTableScreen] ✅ Layout criado com sucesso`);
-      console.log(`[GameTableScreen] 🎨 Renderizando componentes visuais...`);
 
       this.#tableLayout = tableLayout;
       this.#gameTableView = new GameTableView(tableLayout, this.#myUid, this.#roomType);
@@ -396,9 +378,6 @@ export class GameTableScreen extends Screen {
       // O som começa junto com a primeira carta voando
       AudioService.getInstance().playForce('table-open');
       await this.#deckPile.renderCentralDeck(this.#deck);
-      console.log(`[CardDeckPile] ✅ Monte renderizado — ${this.#deck.length} cartas distribuídas`);
-      console.log(`[CardDeckPile] 🃏 Camadas visíveis: 6`);
-      console.log(`[CardDeckPile] 📦 Total de cartas no deck: ${this.#deck.length}`);
 
       // Primeiro a entrar na sala é o dealer (embaralha e entrega)
       const dealerResult = DealerSelectionService.getInstance().resolveFirstJoiner(this.#players);
@@ -426,10 +405,6 @@ export class GameTableScreen extends Screen {
         youngestPlayer,
       });
 
-      console.log(`[ShuffleController] ✅ Dealer: ${youngestPlayer.name} (${youngestPlayer.id.slice(0, 8)}...)`);
-      console.log(`[ShuffleController] 🔑 Autorizado neste cliente: ${this.#shuffleController.isAuthorized}`);
-
-      console.log(`[GameTableScreen] ✨ Mesa renderizada com sucesso\n`);
     } catch (error) {
       console.error('[GameTableScreen] ❌ Erro ao criar layout:', error);
       const errorEl = Dom.create('div', {
@@ -553,20 +528,11 @@ export class GameTableScreen extends Screen {
       playersCount = 2;
     }
 
-    console.log(`[GameTableScreen] Criando layout para ${playersCount} jogadores`);
-    console.log('[GameTableScreen] Jogadores:', this.#players.map(p => `${p.name} (${p.uid})`));
-    console.log(`[GameTableScreen] Jogador logado: ${this.#myUid}`);
-
     const tableLayout = layoutService.createLayout(
       this.#players,
       this.#myUid,
       playersCount
     );
-
-    // Log do layout criado
-    tableLayout.seats.forEach((seat, idx) => {
-      console.log(`  Seat ${idx}: ${seat.name} (${seat.positionKey})`);
-    });
 
     return tableLayout;
   }
@@ -582,10 +548,6 @@ export class GameTableScreen extends Screen {
    * @param {import('../core/ScreenManager.js').ScreenManager} screenManager
    */
   static async onRoomReady(playerIds, lobbyData, matchId, screenManager) {
-    console.log(`\n[GameTableScreen.onRoomReady] 🎬 ===== INICIANDO TRANSIÇÃO PARA MESA =====`);
-    console.log(`[GameTableScreen.onRoomReady] 📋 ID da Partida: ${matchId}`);
-    console.log(`[GameTableScreen.onRoomReady] ⏰ Timestamp: ${new Date().toISOString()}`);
-
     try {
       // 1. Determina tipo da sala pela quantidade de jogadores
       const playersCount = playerIds.length;
@@ -593,16 +555,13 @@ export class GameTableScreen extends Screen {
         throw new Error(`Quantidade inválida de jogadores: ${playersCount}`);
       }
       const roomType = `${playersCount}p`;
-      console.log(`[GameTableScreen.onRoomReady] 2️⃣ Tipo de Sala: ${roomType}`);
 
       // 2. Obtém UID do jogador logado
-      console.log(`[GameTableScreen.onRoomReady] 🔐 Obtendo usuário logado...`);
       const currentUser = await AuthService.getInstance().getCurrentUser();
       if (!currentUser) {
         throw new Error('Usuário não está logado');
       }
       const myUid = currentUser.uid;
-      console.log(`[GameTableScreen.onRoomReady] ✅ Usuário identificado: ${myUid.slice(0, 16)}...`);
 
       // 3. Valida que jogador logado está na sala
       if (!playerIds.includes(myUid)) {
@@ -610,7 +569,6 @@ export class GameTableScreen extends Screen {
       }
 
       // 4. Busca dados de cada jogador
-      console.log(`[GameTableScreen.onRoomReady] 👥 Carregando dados de ${playersCount} jogadores...`);
       const userRepository = UserRepository.getInstance();
       const players = [];
 
@@ -621,12 +579,11 @@ export class GameTableScreen extends Screen {
           if (userProfile) {
             players.push({
               uid,
-              name: userProfile.displayName || 'Jogador Desconhecido',
-              avatarUrl: userProfile.photoURL || null,
+              name: userProfile.name || 'Jogador Desconhecido',
+              avatarUrl: userProfile.avatarUrl || null,
               // joinedAt usa o índice no array — preserva a ordem de entrada na fila
               joinedAt: idx,
             });
-            console.log(`[GameTableScreen.onRoomReady] ✅ ${userProfile.displayName || 'Jogador'} carregado`);
           } else {
             // Fallback se não encontrar perfil
             players.push({
@@ -635,7 +592,6 @@ export class GameTableScreen extends Screen {
               avatarUrl: null,
               joinedAt: idx,
             });
-            console.log(`[GameTableScreen.onRoomReady] ⚠️ Perfil não encontrado para ${uid.slice(0, 8)}...`);
           }
         } catch (error) {
           console.error(`[GameTableScreen.onRoomReady] ❌ Erro ao buscar perfil de ${uid}:`, error);
@@ -648,18 +604,13 @@ export class GameTableScreen extends Screen {
         }
       }
 
-      console.log(`[GameTableScreen.onRoomReady] ✅ ${players.length} jogadores carregados com sucesso`);
-      console.log(`[GameTableScreen.onRoomReady] 📋 Lista:`, players.map(p => `• ${p.name}`).join('\n                              '));
-
       // 5. Navega para GameTableScreen com parâmetros
-      console.log(`[GameTableScreen.onRoomReady] 🚀 Navegando para GameTableScreen...`);
       screenManager.show('GameTableScreen', {
         matchId,
         roomType,
         players,
         myUid
       });
-      console.log(`[GameTableScreen.onRoomReady] ✨ Transição concluída\n`);
 
     } catch (error) {
       console.error(`[GameTableScreen.onRoomReady] ❌ Erro na transição:`, error);
@@ -672,10 +623,6 @@ export class GameTableScreen extends Screen {
    * Remove todos os listeners e realiza limpeza de recursos.
    */
   onExit() {
-    console.log(`\n[GameTableScreen] 🚪 ===== SAINDO DA MESA =====`);
-    console.log(`[GameTableScreen] 📋 ID da Partida: ${this.#matchId}`);
-    console.log(`[GameTableScreen] ⏰ Timestamp: ${new Date().toISOString()}`);
-
     // Remove handler de visibilitychange (proteção de segundo plano)
     this.#visibilityHandler?.();
     this.#visibilityHandler = null;
@@ -762,21 +709,15 @@ export class GameTableScreen extends Screen {
 
     // Limpa monitoramento (listener do GameRoomMonitor)
     if (this.#monitoringUnsubscribe) {
-      console.log(`[GameTableScreen] 🛑 Parando listener de monitoramento...`);
       this.#monitoringUnsubscribe();
       this.#monitoringUnsubscribe = null;
-      console.log(`[GameTableScreen] ✅ Listener de monitoramento removido`);
     }
 
     // Executa todas as funções de limpeza registradas
     if (this.#cleanups.length > 0) {
-      console.log(`[GameTableScreen] 🧹 Executando ${this.#cleanups.length} limpeza(s)...`);
-      this.#cleanups.forEach((cleanup, idx) => {
-        try {
-          cleanup();
-          console.log(`[GameTableScreen] ✅ Limpeza ${idx + 1}/${this.#cleanups.length} concluída`);
-        } catch (error) {
-          console.error(`[GameTableScreen] ❌ Erro na limpeza ${idx + 1}:`, error);
+      this.#cleanups.forEach((cleanup) => {
+        try { cleanup(); } catch (error) {
+          console.error('[GameTableScreen] Erro na limpeza:', error);
         }
       });
       this.#cleanups = [];
@@ -787,8 +728,6 @@ export class GameTableScreen extends Screen {
     if (gameRoomMonitor) {
       gameRoomMonitor.stopAllMonitoring();
     }
-
-    console.log(`[GameTableScreen] 👋 Saída concluída\n`);
   }
 
   #lockGameOrientation() {
@@ -939,12 +878,15 @@ export class GameTableScreen extends Screen {
     const msg = Dom.create('p', { classes: 'game-exit-notification__text' });
     const needsForceExit = isWinner || this.#activePlayers < 2;
 
+    // Sanitiza o nome para evitar XSS — nome vem de outro cliente via Firebase
+    const safeName = String(name).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
     if (isWinner) {
-      msg.innerHTML = `<strong>${name}</strong> saiu da partida.<br>Você é o <strong>vencedor</strong>! 🎉`;
+      msg.innerHTML = `<strong>${safeName}</strong> saiu da partida.<br>Você é o <strong>vencedor</strong>! 🎉`;
     } else if (needsForceExit) {
-      msg.innerHTML = `<strong>${name}</strong> saiu da partida.<br>Partida encerrada. Saindo em <strong id="exit-countdown">10</strong>s…`;
+      msg.innerHTML = `<strong>${safeName}</strong> saiu da partida.<br>Partida encerrada. Saindo em <strong id="exit-countdown">10</strong>s…`;
     } else {
-      msg.innerHTML = `<strong>${name}</strong> saiu da partida.`;
+      msg.innerHTML = `<strong>${safeName}</strong> saiu da partida.`;
     }
 
     const btnClose = Dom.create('button', {

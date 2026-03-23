@@ -90,14 +90,8 @@ export class GameRoomMonitor {
 
     // Se já está monitorando este lobby, para o anterior
     if (this.#activeListeners.has(lobbyId)) {
-      console.warn(`[GameRoomMonitor] ⚠️ Já está monitorando lobbyId="${lobbyId}", parando anterior`);
       this.stopMonitoring(lobbyId);
     }
-
-    console.log(`\n[GameRoomMonitor] 🔍 ===== MONITORAMENTO INICIADO =====`);
-    console.log(`[GameRoomMonitor] 📍 Lobby ID: ${lobbyId}`);
-    console.log(`[GameRoomMonitor] ⏰ Timestamp: ${new Date().toISOString()}`);
-    console.log(`[GameRoomMonitor] 👂 Aguardando jogadores...\n`);
 
     // Armazena callbacks
     this.#callbacks.set(lobbyId, {
@@ -126,9 +120,6 @@ export class GameRoomMonitor {
         const playerIds = Object.keys(presenceData);
         const currentCount = playerIds.length;
 
-        console.log(`[GameRoomMonitor] 👥 Nova contagem de jogadores: ${currentCount}`);
-        console.log(`[GameRoomMonitor] 📝 Jogadores: ${playerIds.map(id => id.slice(0, 8)).join(', ')}`);
-
         // Atualiza cache
         this.#playerCountCache.set(lobbyId, currentCount);
 
@@ -145,7 +136,6 @@ export class GameRoomMonitor {
 
       // Armazena função para parar listener
       this.#activeListeners.set(lobbyId, unsubscribe);
-      console.log(`[GameRoomMonitor] ✅ Listener ativado para ${lobbyId}`);
 
       // Retorna função para parar este monitor
       return () => this.stopMonitoring(lobbyId);
@@ -164,7 +154,6 @@ export class GameRoomMonitor {
    */
   stopMonitoring(lobbyId) {
     if (!this.#activeListeners.has(lobbyId)) {
-      console.warn(`[GameRoomMonitor] ⚠️ Nenhum listener ativo para lobbyId="${lobbyId}"`);
       return;
     }
 
@@ -174,25 +163,14 @@ export class GameRoomMonitor {
     this.#activeListeners.delete(lobbyId);
     this.#callbacks.delete(lobbyId);
     this.#playerCountCache.delete(lobbyId);
-
-    console.log(`[GameRoomMonitor] 🛑 Monitoramento parado para lobbyId="${lobbyId}"`);
-    console.log(`[GameRoomMonitor] ℹ️ Listeners ativos restantes: ${this.#activeListeners.size}`);
   }
 
   /**
    * Para todos os monitoramentos ativos.
    */
   stopAllMonitoring() {
-    console.log(`\n[GameRoomMonitor] 🛑 ===== PARANDO TODOS OS MONITORAMENTOS =====`);
-    console.log(`[GameRoomMonitor] 📊 Listeners ativos: ${this.#activeListeners.size}`);
-    
     const allLobbies = Array.from(this.#activeListeners.keys());
-    allLobbies.forEach(lobbyId => {
-      console.log(`[GameRoomMonitor] → Parando: ${lobbyId}`);
-      this.stopMonitoring(lobbyId);
-    });
-    
-    console.log(`[GameRoomMonitor] ✅ Todos os monitoramentos encerrados\n`);
+    allLobbies.forEach(lobbyId => this.stopMonitoring(lobbyId));
   }
 
   // -------------------------------------------------------
@@ -211,7 +189,6 @@ export class GameRoomMonitor {
     this.#lobbyRepository.getLobbyById(lobbyId)
       .then(lobby => {
         const maxPlayers = lobby?.getLobbyType?.()?.getMaxPlayers?.() || 0;
-        console.log(`[GameRoomMonitor] Notificando mudança: ${currentCount}/${maxPlayers} jogadores`);
         callbacks.onPlayerCountChange(currentCount, maxPlayers, playerIds);
       })
       .catch(error => {
@@ -227,34 +204,23 @@ export class GameRoomMonitor {
     try {
       const lobby = await this.#lobbyRepository.getLobbyById(lobbyId);
       if (!lobby) {
-        console.warn(`[GameRoomMonitor] Lobby não encontrado: ${lobbyId}`);
         return;
       }
 
       const maxPlayers = lobby.getLobbyType?.()?.getMaxPlayers?.() || 0;
 
-      console.log(`[GameRoomMonitor] Verificando: ${currentCount}/${maxPlayers} para lobbyId="${lobbyId}"`);
-
       // Se atingiu o limite, cria match real
       if (currentCount >= maxPlayers && maxPlayers > 0) {
-        console.log(`\n[GameRoomMonitor] 🎉 ===== SALA PRONTA! =====`);
-        console.log(`[GameRoomMonitor] 📍 Lobby: ${lobbyId}`);
-        console.log(`[GameRoomMonitor] 👥 Jogadores: ${currentCount}/${maxPlayers}`);
-        console.log(`[GameRoomMonitor] ⏰ Timestamp: ${new Date().toISOString()}`);
-        console.log(`[GameRoomMonitor] 🚀 Iniciando criação de match real...\n`);
-        
         try {
           // Chama MatchmakingService para criar match real
           const lobbyType = lobby.getLobbyType?.()?.getType?.() || '2p';
           const matchId = await this.#matchmakingService.createMatchWhenReady(lobbyType, playerIds);
-          
-          console.log(`[GameRoomMonitor] ✅ Match criado com sucesso: ${matchId}\n`);
-          
+
           // Dispara callback onReady com o match criado
           const callbacks = this.#callbacks.get(lobbyId);
           callbacks?.onReady?.(playerIds, lobby);
         } catch (matchError) {
-          console.error(`[GameRoomMonitor] ❌ Erro ao criar match:`, matchError);
+          console.error(`[GameRoomMonitor] Erro ao criar match:`, matchError);
           const callbacks = this.#callbacks.get(lobbyId);
           callbacks?.onError?.(matchError);
         }

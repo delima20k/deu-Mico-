@@ -10,7 +10,7 @@
  * Para invalidar o cache em produção: incremente CACHE_VERSION.
  */
 
-const CACHE_VERSION = 'v10';
+const CACHE_VERSION = 'v11';
 const CACHE_NAME    = `deu-mico-${CACHE_VERSION}`;
 
 /** Assets pré-cacheados no install — todos devem existir em produção. */
@@ -30,6 +30,7 @@ const STATIC_ASSETS = [
   '/css/deck-shuffle.css',
   '/css/deck-action-panel.css',
   '/css/hand-modal.css',
+  '/css/chat.css',
   '/css/ads.css',
   '/img/carta_logo.png',
   '/img/logoMarca.png',
