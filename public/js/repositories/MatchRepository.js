@@ -698,6 +698,116 @@ export class MatchRepository {
   }
 
   /**
+   * Remove nós auxiliares de chat de uma partida no RTDB.
+   * Paths removidos:
+   * - /matches/{matchId}/chat
+   * - /matches/{matchId}/chatPlayback
+   * - /matches/{matchId}/chatAudioCleanup
+   * @param {string} matchId
+   * @returns {Promise<void>}
+   */
+  async clearMatchChatNodes(matchId) {
+    if (!matchId) return;
+
+    const db = this.#firebaseService?.getDatabase?.();
+    const dbMod = this.#firebaseService?.getDbModules?.();
+    if (!db) throw new Error('[MatchRepository] Database não inicializado');
+
+    const updates = {
+      [`matches/${matchId}/chat`]: null,
+      [`matches/${matchId}/chatPlayback`]: null,
+      [`matches/${matchId}/chatAudioCleanup`]: null,
+    };
+
+    await dbMod.update(dbMod.ref(db), updates);
+  }
+
+  /**
+   * Lista recursivamente arquivos de áudio do chat para a partida.
+   * Path base: chat-audio/{matchId}/
+   * @param {string} matchId
+   * @returns {Promise<string[]>}
+   */
+  async listMatchChatAudioFiles(matchId) {
+    if (!matchId) return [];
+
+    const storage = this.#firebaseService?.getStorage?.();
+    const storageMod = this.#firebaseService?.getStorageModules?.();
+    if (!storage || !storageMod) {
+      throw new Error('[MatchRepository] Storage não inicializado');
+    }
+
+    const rootRef = storageMod.ref(storage, `chat-audio/${matchId}`);
+    const paths = [];
+
+    const walk = async (folderRef) => {
+      const result = await storageMod.listAll(folderRef);
+
+      for (const itemRef of (result.items || [])) {
+        if (itemRef?.fullPath) {
+          paths.push(itemRef.fullPath);
+        }
+      }
+
+      for (const prefixRef of (result.prefixes || [])) {
+        await walk(prefixRef);
+      }
+    };
+
+    try {
+      await walk(rootRef);
+    } catch (error) {
+      const code = error?.code || '';
+      if (code.includes('storage/object-not-found')) {
+        return [];
+      }
+      throw error;
+    }
+
+    return paths;
+  }
+
+  /**
+   * Remove todos os arquivos de áudio do chat da partida no Storage.
+   * Path base: chat-audio/{matchId}/
+   * @param {string} matchId
+   * @returns {Promise<{deleted: number, skipped: number, failed: number}>}
+   */
+  async deleteMatchChatAudioFiles(matchId) {
+    if (!matchId) {
+      return { deleted: 0, skipped: 0, failed: 0 };
+    }
+
+    const storage = this.#firebaseService?.getStorage?.();
+    const storageMod = this.#firebaseService?.getStorageModules?.();
+    if (!storage || !storageMod) {
+      throw new Error('[MatchRepository] Storage não inicializado');
+    }
+
+    const files = await this.listMatchChatAudioFiles(matchId);
+    let deleted = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const fullPath of files) {
+      try {
+        await storageMod.deleteObject(storageMod.ref(storage, fullPath));
+        deleted += 1;
+      } catch (error) {
+        const code = error?.code || '';
+        if (code.includes('storage/object-not-found')) {
+          skipped += 1;
+          continue;
+        }
+        failed += 1;
+        console.warn(`[ChatCleanup] Falha ao deletar arquivo de áudio path="${fullPath}"`, error);
+      }
+    }
+
+    return { deleted, skipped, failed };
+  }
+
+  /**
    * Deleta uma partida inteira do banco.
    * @param {string} matchId
    * @returns {Promise<void>}

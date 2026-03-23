@@ -347,7 +347,7 @@ export class HandModal {
 
   /**
    * Renderiza uma mensagem em formato de bolha no chat da modal.
-   * @param {{ msgId?: string, uid?: string, name?: string, text?: string, type?: string, url?: string, fallbackAudioDataUrl?: string, durationMs?: number, ts?: number }} message
+    * @param {{ msgId?: string, uid?: string, name?: string, text?: string, type?: string, url?: string, fallbackAudioDataUrl?: string, durationMs?: number, ts?: number, avatarUrl?: string }} message
    */
   appendChatMessage(message) {
     if (!message || !this.#chatMessagesEl) return;
@@ -372,11 +372,52 @@ export class HandModal {
 
     const bubble = Dom.create('div', { classes: 'hand-modal__chat-message-bubble' });
     const audioSrc = message.url || message.fallbackAudioDataUrl || '';
+    const avatarUrl = this.#resolveChatAvatarUrl(message);
 
     if (message.type === 'audio' && audioSrc) {
+      bubble.classList.add('hand-modal__chat-message-bubble--audio');
+
+      const audioHeader = Dom.create('div', { classes: 'hand-modal__chat-audio-header' });
+      const avatarEl = this.#buildChatAvatarElement(name, avatarUrl);
+      const titleEl = Dom.create('span', {
+        classes: 'hand-modal__chat-audio-name',
+        text: isMine ? 'Voce' : name,
+      });
+      const indicatorEl = Dom.create('span', {
+        classes: 'hand-modal__chat-audio-indicator',
+        attrs: { 'aria-label': `Audio de ${name}` },
+      });
+      const indicatorIconEl = Dom.create('span', {
+        classes: 'hand-modal__chat-audio-indicator-icon',
+        text: '🔊',
+        attrs: { 'aria-hidden': 'true' },
+      });
+      const indicatorWaveEl = Dom.create('span', { classes: 'hand-modal__chat-audio-indicator-wave' });
+      for (let i = 0; i < 3; i++) {
+        indicatorWaveEl.append(Dom.create('span', { classes: 'hand-modal__chat-audio-indicator-wave-bar' }));
+      }
+      indicatorEl.append(indicatorIconEl, indicatorWaveEl);
+      audioHeader.append(avatarEl, titleEl, indicatorEl);
+
+      const playbackRow = Dom.create('div', { classes: 'hand-modal__chat-audio-playback' });
+      const playPauseBtn = Dom.create('button', {
+        classes: 'hand-modal__chat-audio-play-btn',
+        attrs: {
+          type: 'button',
+          'aria-label': `Reproduzir audio de ${name}`,
+          'aria-pressed': 'false',
+        },
+      });
+      const playPauseIcon = Dom.create('span', {
+        classes: 'hand-modal__chat-audio-play-btn-icon',
+        text: '▶',
+        attrs: { 'aria-hidden': 'true' },
+      });
+      playPauseBtn.append(playPauseIcon);
+
       const audioEl = Dom.create('audio', {
-        classes: 'hand-modal__chat-message-audio',
-        attrs: { controls: 'true', preload: 'metadata', src: audioSrc },
+        classes: ['hand-modal__chat-message-audio', 'hand-modal__chat-message-audio--hidden'],
+        attrs: { preload: 'metadata', src: audioSrc },
       });
       const metaText = message.fallbackAudioDataUrl
         ? `Audio ${this.#formatDuration(message.durationMs)} (modo compatibilidade)`
@@ -385,11 +426,32 @@ export class HandModal {
         classes: 'hand-modal__chat-message-meta',
         text: metaText,
       });
-      bubble.append(audioEl, meta);
 
-      if (!isMine) {
-        audioEl.play().catch(() => {});
-      }
+      const setSpeaking = (speaking) => {
+        const isSpeaking = Boolean(speaking);
+        indicatorEl.classList.toggle('hand-modal__chat-audio-indicator--speaking', isSpeaking);
+        playPauseBtn.setAttribute('aria-pressed', isSpeaking ? 'true' : 'false');
+        playPauseBtn.setAttribute('aria-label', `${isSpeaking ? 'Pausar' : 'Reproduzir'} audio de ${name}`);
+        playPauseIcon.textContent = isSpeaking ? '⏸' : '▶';
+      };
+
+      playPauseBtn.addEventListener('click', () => {
+        if (audioEl.paused) {
+          audioEl.play().catch(() => {
+            setSpeaking(false);
+          });
+          return;
+        }
+        audioEl.pause();
+      });
+
+      audioEl.addEventListener('play', () => setSpeaking(true));
+      audioEl.addEventListener('pause', () => setSpeaking(false));
+      audioEl.addEventListener('ended', () => setSpeaking(false));
+      audioEl.addEventListener('waiting', () => setSpeaking(false));
+
+      playbackRow.append(playPauseBtn, meta);
+      bubble.append(audioHeader, playbackRow, audioEl);
     } else {
       const text = Dom.create('span', {
         classes: 'hand-modal__chat-message-text',
@@ -421,6 +483,53 @@ export class HandModal {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  #resolveChatAvatarUrl(message) {
+    const fromMessage = (message?.avatarUrl || '').trim();
+    if (fromMessage) return fromMessage;
+
+    const fromPlayers = this.#chatPlayers.find((player) => player?.uid === message?.uid)?.avatarUrl || '';
+    return (fromPlayers || '').trim();
+  }
+
+  #getNameInitial(name) {
+    const cleaned = (name || '').trim();
+    return cleaned ? cleaned[0].toUpperCase() : '?';
+  }
+
+  #buildChatAvatarElement(name, avatarUrl) {
+    const safeName = name || 'Jogador';
+    const avatarEl = Dom.create('span', { classes: 'hand-modal__chat-audio-avatar' });
+    const fallbackEl = Dom.create('span', {
+      classes: 'hand-modal__chat-audio-avatar-fallback',
+      text: this.#getNameInitial(safeName),
+      attrs: { 'aria-hidden': 'true' },
+    });
+
+    if (!avatarUrl) {
+      avatarEl.append(fallbackEl);
+      return avatarEl;
+    }
+
+    const imgEl = Dom.create('img', {
+      attrs: {
+        src: avatarUrl,
+        alt: safeName,
+        loading: 'lazy',
+        referrerpolicy: 'no-referrer',
+      },
+    });
+
+    imgEl.addEventListener('error', () => {
+      if (!avatarEl.contains(fallbackEl)) {
+        avatarEl.innerHTML = '';
+        avatarEl.append(fallbackEl);
+      }
+    });
+
+    avatarEl.append(imgEl);
+    return avatarEl;
   }
 
   // ─────────────────────────────────────────────────────────────────────

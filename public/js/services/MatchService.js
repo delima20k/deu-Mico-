@@ -30,6 +30,9 @@ export class MatchService {
   /** @type {Set<string>} Guard de limpeza de áudio em andamento (matchId:msgId) */
   #audioCleanupInFlight = new Set();
 
+  /** @type {Set<string>} Guard de limpeza final de chat em andamento por partida */
+  #matchChatCleanupInFlight = new Set();
+
   /** @type {Map<string, Object>} Fila local de retry de áudio (taskId -> task) */
   #audioRetryQueue = new Map();
 
@@ -1070,6 +1073,47 @@ export class MatchService {
     }
   }
 
+  /**
+   * Limpa todo o chat da partida (RTDB + Storage) ao final do jogo.
+   * Idempotente: múltiplas chamadas não quebram o fluxo.
+   * @param {string} matchId
+   * @returns {Promise<boolean>} true quando conclui sem falhas críticas
+   */
+  async cleanupMatchChatData(matchId) {
+    if (!matchId) {
+      console.warn('[ChatCleanup] cleanup ignorado: matchId ausente');
+      return false;
+    }
+
+    if (this.#matchChatCleanupInFlight.has(matchId)) {
+      console.log(`[ChatCleanup] cleanup já em andamento matchId=${matchId}`);
+      return true;
+    }
+
+    this.#matchChatCleanupInFlight.add(matchId);
+
+    try {
+      console.log(`[ChatCleanup] iniciando cleanup final matchId=${matchId}`);
+
+      this.stopObservingChat(matchId);
+      await this.#matchRepository.clearMatchChatNodes(matchId);
+      console.log(`[ChatCleanup] nós RTDB removidos matchId=${matchId}`);
+
+      const storageResult = await this.#matchRepository.deleteMatchChatAudioFiles(matchId);
+      console.log(
+        `[ChatCleanup] storage concluído matchId=${matchId} deleted=${storageResult.deleted} skipped=${storageResult.skipped} failed=${storageResult.failed}`
+      );
+
+      this.#chatCache.delete(matchId);
+      return storageResult.failed === 0;
+    } catch (error) {
+      console.error(`[ChatCleanup] falha no cleanup final matchId=${matchId}:`, error);
+      return false;
+    } finally {
+      this.#matchChatCleanupInFlight.delete(matchId);
+    }
+  }
+
   // -------------------------------------------------------
   // Presença em Tempo Real (Firebase presence)
   // -------------------------------------------------------
@@ -1378,6 +1422,7 @@ export class MatchService {
     this.#audioRetryQueue.clear();
     this.#audioInFlightSignatures.clear();
     this.#audioRecentlySentSignatures.clear();
+    this.#matchChatCleanupInFlight.clear();
 
     this.#lastMessageTime.clear();
     console.log('[MatchService] Cleanup completo');

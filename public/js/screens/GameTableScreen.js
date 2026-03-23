@@ -181,7 +181,7 @@ export class GameTableScreen extends Screen {
   /** @type {HTMLElement|null} Camada de animação de mensagens na mesa */
   #chatTrailLayerEl = null;
 
-  /** @type {Array<{uid?: string, name?: string, text?: string}>} Fila de mensagens para animação */
+  /** @type {Array<{uid?: string, name?: string, text?: string, type?: string, avatarUrl?: string, url?: string, fallbackAudioDataUrl?: string, durationMs?: number}>} Fila de mensagens para animação */
   #chatTrailQueue = [];
 
   /** @type {boolean} Indica se animação de trilha está em execução */
@@ -1326,7 +1326,7 @@ export class GameTableScreen extends Screen {
   }
 
   #enqueueChatTrail(message) {
-    if (!message?.text) return;
+    if (!this.#isChatTrailRenderable(message)) return;
 
     this.#chatTrailQueue.push({
       ...message,
@@ -1343,7 +1343,7 @@ export class GameTableScreen extends Screen {
 
     while (this.#chatTrailQueue.length > 0) {
       const nextMessage = this.#chatTrailQueue.shift();
-      if (nextMessage?.text) {
+      if (this.#isChatTrailRenderable(nextMessage)) {
         await this.#animateChatTrail(nextMessage);
       }
       await new Promise((resolve) => setTimeout(resolve, gapMs));
@@ -1354,6 +1354,72 @@ export class GameTableScreen extends Screen {
 
   #getChatTrailSpeed() {
     return CHAT_TRAIL_SPEED_PRESETS[CHAT_TRAIL_SPEED_MODE] || CHAT_TRAIL_SPEED_PRESETS.fast;
+  }
+
+  #isChatTrailRenderable(message) {
+    if (!message) return false;
+
+    if (message.type === 'audio') {
+      return Boolean((message.url || message.fallbackAudioDataUrl || '').trim());
+    }
+
+    return Boolean((message.text || '').trim());
+  }
+
+  #getPlayerNameForChatMessage(message) {
+    const fromMessage = (message?.name || '').trim();
+    if (fromMessage) return fromMessage;
+
+    const fromPlayers = this.#players.find((player) => player?.uid === message?.uid)?.name || '';
+    return (fromPlayers || 'Jogador').trim();
+  }
+
+  #getPlayerAvatarForChatMessage(message) {
+    const fromMessage = (message?.avatarUrl || '').trim();
+    if (fromMessage) return fromMessage;
+
+    const fromPlayers = this.#players.find((player) => player?.uid === message?.uid)?.avatarUrl || '';
+    return (fromPlayers || '').trim();
+  }
+
+  #getNameInitial(name) {
+    const cleaned = (name || '').trim();
+    return cleaned ? cleaned[0].toUpperCase() : '?';
+  }
+
+  #buildTrailAvatarElement(name, avatarUrl) {
+    const avatarEl = Dom.create('div', { classes: 'game-table-chat-trail__avatar' });
+    const safeName = name || 'Jogador';
+
+    const fallbackEl = Dom.create('span', {
+      classes: 'game-table-chat-trail__avatar-fallback',
+      text: this.#getNameInitial(safeName),
+      attrs: { 'aria-hidden': 'true' },
+    });
+
+    if (!avatarUrl) {
+      avatarEl.append(fallbackEl);
+      return avatarEl;
+    }
+
+    const avatarImg = Dom.create('img', {
+      attrs: {
+        src: avatarUrl,
+        alt: safeName,
+        loading: 'lazy',
+        referrerpolicy: 'no-referrer',
+      },
+    });
+
+    avatarImg.addEventListener('error', () => {
+      if (!avatarEl.contains(fallbackEl)) {
+        avatarEl.innerHTML = '';
+        avatarEl.append(fallbackEl);
+      }
+    });
+
+    avatarEl.append(avatarImg);
+    return avatarEl;
   }
 
   #animateChatTrail(message) {
@@ -1371,14 +1437,79 @@ export class GameTableScreen extends Screen {
       const endY = -56;
       const endX = -56;
 
+      const isAudio = message.type === 'audio';
       const text = (message.text || '').trim();
-      if (!text) return resolve();
-      const label = `${message.name || 'Jogador'}: ${text}`;
+      const audioSrc = isAudio ? (message.url || message.fallbackAudioDataUrl || '').trim() : '';
+      const playerName = this.#getPlayerNameForChatMessage(message);
+      const playerAvatarUrl = this.#getPlayerAvatarForChatMessage(message);
+
+      if (!text && !audioSrc) return resolve();
+      const label = `${playerName}: ${text}`;
 
       const bubble = Dom.create('div', {
-        classes: ['game-table-chat-trail__msg', message.isMine ? 'game-table-chat-trail__msg--me' : 'game-table-chat-trail__msg--other'],
-        text: label,
+        classes: [
+          'game-table-chat-trail__msg',
+          message.isMine ? 'game-table-chat-trail__msg--me' : 'game-table-chat-trail__msg--other',
+          isAudio ? 'game-table-chat-trail__msg--audio' : 'game-table-chat-trail__msg--text',
+        ],
       });
+
+      let audioEl = null;
+      let fallbackSpeakingTimeout = null;
+
+      if (isAudio && audioSrc) {
+        const avatarEl = this.#buildTrailAvatarElement(playerName, playerAvatarUrl);
+        const contentEl = Dom.create('div', { classes: 'game-table-chat-trail__content' });
+        const nameEl = Dom.create('span', {
+          classes: 'game-table-chat-trail__name',
+          text: playerName,
+        });
+
+        const voiceEl = Dom.create('span', {
+          classes: 'game-table-chat-trail__voice',
+          attrs: { 'aria-label': `Audio de ${playerName}` },
+        });
+        const voiceIconEl = Dom.create('span', {
+          classes: 'game-table-chat-trail__voice-icon',
+          text: '🔊',
+          attrs: { 'aria-hidden': 'true' },
+        });
+        const waveEl = Dom.create('span', { classes: 'game-table-chat-trail__voice-wave' });
+        for (let i = 0; i < 3; i++) {
+          waveEl.append(Dom.create('span', { classes: 'game-table-chat-trail__voice-wave-bar' }));
+        }
+        const voiceTextEl = Dom.create('span', {
+          classes: 'game-table-chat-trail__voice-text',
+          text: 'Audio',
+        });
+
+        voiceEl.append(voiceIconEl, waveEl, voiceTextEl);
+        contentEl.append(nameEl, voiceEl);
+        bubble.append(avatarEl, contentEl);
+
+        audioEl = Dom.create('audio', {
+          classes: 'game-table-chat-trail__audio-el',
+          attrs: { preload: 'auto', src: audioSrc },
+        });
+
+        const setSpeaking = (speaking) => {
+          bubble.classList.toggle('game-table-chat-trail__msg--speaking', Boolean(speaking));
+        };
+
+        audioEl.addEventListener('play', () => setSpeaking(true));
+        audioEl.addEventListener('pause', () => setSpeaking(false));
+        audioEl.addEventListener('ended', () => setSpeaking(false));
+
+        bubble.append(audioEl);
+
+        audioEl.play().catch(() => {
+          const fallbackDuration = Math.max(900, Math.min(Number(message.durationMs) || 1800, 4200));
+          setSpeaking(true);
+          fallbackSpeakingTimeout = setTimeout(() => setSpeaking(false), fallbackDuration);
+        });
+      } else {
+        bubble.textContent = label;
+      }
 
       bubble.style.left = `${startX}px`;
       bubble.style.top = `${startY}px`;
@@ -1423,6 +1554,15 @@ export class GameTableScreen extends Screen {
           return;
         }
 
+        if (fallbackSpeakingTimeout) {
+          clearTimeout(fallbackSpeakingTimeout);
+          fallbackSpeakingTimeout = null;
+        }
+        if (audioEl) {
+          audioEl.pause();
+          audioEl.removeAttribute('src');
+          audioEl.load();
+        }
         bubble.remove();
         resolve();
       };
@@ -1997,7 +2137,7 @@ export class GameTableScreen extends Screen {
     this.#chatUnsubscribe?.();
     this.#chatUnsubscribe = null;
     MatchService.getInstance().stopSubscribingChat(this.#matchId);
-    void MatchService.getInstance().clearChat(this.#matchId);
+    void MatchService.getInstance().cleanupMatchChatData(this.#matchId);
     this.#handModal?.clearChatMessages();
 
     // 1. Monta lista de jogadores com seus pares (usa pairCounts do evento
