@@ -13,6 +13,7 @@ import { Screen } from '../core/Screen.js';
 import { HeaderBar } from '../components/HeaderBar.js';
 import { SideMenu } from '../components/SideMenu.js';
 import { TournamentCard } from '../components/TournamentCard.js';
+import { LobbyCard } from '../components/LobbyCard.js';
 import { TournamentService } from '../services/TournamentService.js';
 import { AuthService } from '../services/AuthService.js';
 import { Dom } from '../utils/Dom.js';
@@ -112,7 +113,11 @@ export class TournamentScreen extends Screen {
 
   /** @type {HTMLElement|null} */
   #rewardRankingHintEl = null;
+  /** @type {LobbyCard|null} Card de espera reutilizando div.lobby-card para exibir inscritos */
+  #enrollmentCard = null;
 
+  /** @type {HTMLElement|null} Wrapper que controla visibilidade do #enrollmentCard */
+  #enrollmentCardWrapperEl = null;
   /**
    * @param {import('../core/ScreenManager.js').ScreenManager} screenManager
    */
@@ -229,6 +234,22 @@ export class TournamentScreen extends Screen {
       text: 'Inicio em 60s',
     });
 
+    // Card de espera da rodada — reutiliza div.lobby-card (mesmo componente OOP de RoomsScreen)
+    // Exibido quando o jogador está inscrito e a rodada está em waiting/countdown.
+    this.#enrollmentCard = new LobbyCard({
+      playersCount: 6,       // atualizado dinamicamente pelo maxParticipants da instância
+      queueKey: 'tournament',
+      presenceCount: 0,
+      label: 'Aguardando jogadores',
+      buttonLabel: 'Desistir',
+      onJoin: () => this.#onLeaveTournament(),
+    });
+    this.#enrollmentCardWrapperEl = Dom.create('div', {
+      classes: 'tournament-screen__enrollment-card',
+    });
+    this.#enrollmentCardWrapperEl.style.display = 'none';
+    this.#enrollmentCardWrapperEl.append(this.#enrollmentCard.create());
+
     const tournamentRewardSlot = Dom.create('div', {
       classes: 'reward-slot tournament-screen__reward-slot',
       attrs: { id: 'rewarded-tournament-slot' },
@@ -257,6 +278,7 @@ export class TournamentScreen extends Screen {
       tournamentCardEl,
       this.#statusBannerEl,
       this.#countdownEl,
+      this.#enrollmentCardWrapperEl,
       tournamentRewardSlot,
       tournamentAdBanner,
     );
@@ -344,6 +366,9 @@ export class TournamentScreen extends Screen {
     this.#rewardRankingBtnEl = null;
     this.#rewardTournamentHintEl = null;
     this.#rewardRankingHintEl = null;
+
+    this.#enrollmentCard = null;
+    this.#enrollmentCardWrapperEl = null;
 
     AdService.getInstance().hideBanner(AdConfig.bannerPlacements.tournament);
     AdService.getInstance().hideBanner(AdConfig.bannerPlacements.ranking);
@@ -492,6 +517,23 @@ export class TournamentScreen extends Screen {
       leaveBtn.textContent = this.#isLeavingTournament
         ? 'DESISTINDO...'
         : 'DESISTIR DO CAMPEONATO';
+    }
+
+    // Enrollment LobbyCard — reutiliza div.lobby-card para exibir inscritos na sala de espera.
+    // Visível apenas quando o jogador está inscrito e a rodada ainda não terminou.
+    if (this.#enrollmentCard && this.#enrollmentCardWrapperEl) {
+      const showCard = isJoined && (status === 'waiting' || status === 'countdown');
+      this.#enrollmentCardWrapperEl.style.display = showCard ? '' : 'none';
+      if (showCard) {
+        this.#enrollmentCard.updateCount(enrolledCount);
+        // Atualiza label e estado do botão conforme o status da rodada
+        const btn = this.#enrollmentCardWrapperEl.querySelector('.lobby-card__button');
+        if (btn) {
+          const inCountdown = status === 'countdown';
+          btn.disabled = inCountdown || this.#isLeavingTournament;
+          btn.textContent = inCountdown ? 'Aguardando início...' : 'Desistir';
+        }
+      }
     }
 
     if (status === 'waiting') {

@@ -2,7 +2,7 @@
  * @layer screens
  * @group game
  * @role Screen
- * @depends Screen, HeaderBar, ChatBox, PlayersList, QueueStatusBar, MatchService, MatchmakingService, AuthService, NavigationService, TableLayoutService, GameRoomType
+ * @depends Screen, HeaderBar, ChatBox, PlayersList, LobbyCard, MatchService, MatchmakingService, AuthService, NavigationService, TableLayoutService, GameRoomType
  * @exports MatchRoomScreen
  *
  * Tela de sala de partida multijogador.
@@ -12,7 +12,7 @@
 import { Screen } from '../core/Screen.js';
 import { ChatBox } from '../components/ChatBox.js';
 import { PlayersList } from '../components/PlayersList.js';
-import { QueueStatusBar } from '../components/QueueStatusBar.js';
+import { LobbyCard } from '../components/LobbyCard.js';
 import { Dom } from '../utils/Dom.js';
 import { MatchService } from '../services/MatchService.js';
 import { MatchmakingService } from '../services/MatchmakingService.js';
@@ -36,8 +36,8 @@ export class MatchRoomScreen extends Screen {
   /** @type {PlayersList} */
   #playersList;
 
-  /** @type {QueueStatusBar} */
-  #queueBar;
+  /** @type {LobbyCard|null} Card de lobby reutilizado tanto na espera pré-assign quanto na sala */
+  #lobbyCard = null;
 
   /** @type {string} Tipo do lobby: '2p', '3p', 'multi', 'tournament' */
   #lobbyType = '';
@@ -191,6 +191,7 @@ export class MatchRoomScreen extends Screen {
 
   /**
    * Renderiza o painel de espera sempre visível.
+   * Reutiliza o componente LobbyCard (div.lobby-card) para manter consistência visual.
    * Mostrado imediatamente ao entrar e mantido durante todo o fluxo de assign.
    * @param {'searching'|'timeout'} [mode='searching']
    * @private
@@ -204,27 +205,25 @@ export class MatchRoomScreen extends Screen {
 
       const wrapper = Dom.create('div', { classes: 'match-room-screen__waiting' });
 
-      // Spinner
+      // Spinner de busca
       const spinner = Dom.create('div', { classes: 'match-room-screen__spinner' });
       wrapper.append(spinner);
 
-      // Título
-      const title = Dom.create('h2', { classes: 'match-room-screen__waiting-title' });
-      title.textContent = mode === 'timeout'
+      // Reutiliza LobbyCard (div.lobby-card) — mesmo componente OOP da tela de seleção,
+      // adaptado para o contexto de espera passando buttonLabel='Cancelar'.
+      const label = mode === 'timeout'
         ? 'Demorou, tente novamente'
-        : 'Aguardando jogadores...';
-      wrapper.append(title);
+        : this.#getLabelForLobbyType(this.#lobbyType);
 
-      // Subtexto
-      const sub = Dom.create('p', { classes: 'match-room-screen__waiting-text' });
-      sub.textContent = `Sala: ${this.#lobbyType} \u2022 Você já entrou na fila.`;
-      wrapper.append(sub);
-
-      // Botão Cancelar — SEMPRE visível
-      const btn = Dom.create('button', { classes: 'match-room-screen__cancel-btn' });
-      btn.textContent = 'Cancelar';
-      btn.addEventListener('click', () => this.#onLeaveRoom());
-      wrapper.append(btn);
+      this.#lobbyCard = new LobbyCard({
+        playersCount: this.#getMaxPlayersForLobbyType(this.#lobbyType),
+        queueKey: `queue_${this.#lobbyType}`,
+        presenceCount: 0,
+        label,
+        buttonLabel: 'Cancelar',
+        onJoin: () => this.#onLeaveRoom(),
+      });
+      wrapper.append(this.#lobbyCard.create());
 
       // ── Banner de anúncio na sala de espera ──────────────
       const adBanner = Dom.create('div', {
@@ -338,13 +337,18 @@ export class MatchRoomScreen extends Screen {
       const rightSection = Dom.create('section', { classes: 'match-room-screen__right' });
 
       const maxPlayers = this.#getMaxPlayersForLobbyType(this.#lobbyType);
-      this.#queueBar = new QueueStatusBar({
+
+      // Reutiliza LobbyCard (div.lobby-card) — mesmo componente OOP da seleção de sala,
+      // agora no contexto de sala formada, com N/maxPlayers e botão "Sair da sala".
+      this.#lobbyCard = new LobbyCard({
+        playersCount: maxPlayers,
         queueKey: `queue_${this.#lobbyType}`,
-        minPlayers: maxPlayers,
-        currentPlayers: 1,
-        onLeave: () => this.#onLeaveRoom(),
+        presenceCount: 1,
+        label: this.#getLabelForLobbyType(this.#lobbyType),
+        buttonLabel: 'Sair da sala',
+        onJoin: () => this.#onLeaveRoom(),
       });
-      rightSection.append(this.#queueBar.create());
+      rightSection.append(this.#lobbyCard.create());
 
       this.#chatBox = new ChatBox({
         matchId: this.#matchId,
@@ -514,8 +518,8 @@ export class MatchRoomScreen extends Screen {
         // Atualiza contagem interna
         this.#currentPlayerCount = count;
 
-        // Atualiza barra de status
-        this.#queueBar?.updateCount(count);
+        // Atualiza card de lobby com contagem de jogadores presentes
+        this.#lobbyCard?.updateCount(count);
 
         // Atualiza lista de jogadores
         players.forEach(player => {
@@ -560,6 +564,21 @@ export class MatchRoomScreen extends Screen {
         }
       }
     );
+  }
+
+  /**
+   * Retorna um label legível para o tipo de lobby.
+   * Usado pelo LobbyCard para o título do card de espera/sala.
+   * @param {string} lobbyType
+   * @returns {string}
+   * @private
+   */
+  #getLabelForLobbyType(lobbyType) {
+    if (lobbyType === 'tournament') return 'Torneio';
+    if (lobbyType === 'multi') return 'Multijogador';
+    const m = lobbyType?.match(/^(\d+)p$/);
+    if (m) return `${m[1]} Jogadores`;
+    return 'Partida';
   }
 
   /**

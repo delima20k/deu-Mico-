@@ -30,19 +30,24 @@ export class LobbyCard {
   /** @type {string|null} Título personalizado (substitui "X Jogadores") */
   #label = null;
 
+  /** @type {string} Texto do botão de ação */
+  #buttonLabel = 'ENTRAR NA FILA';
+
   /**
    * @param {Object} options
    * @param {number} options.playersCount - ex: 2, 3, 4, 5, 6
    * @param {string} options.queueKey - ex: "queue_2p"
    * @param {number} [options.presenceCount=0] - quantos presentes
    * @param {string|null} [options.label=null] - título personalizado
+   * @param {string} [options.buttonLabel='ENTRAR NA FILA'] - texto do botão
    * @param {Function} [options.onJoin] - callback ao clicar
    */
-  constructor({ playersCount, queueKey, presenceCount = 0, label = null, onJoin = null }) {
+  constructor({ playersCount, queueKey, presenceCount = 0, label = null, buttonLabel = 'ENTRAR NA FILA', onJoin = null }) {
     this.#playersCount = playersCount;
     this.#queueKey = queueKey;
     this.#presenceCount = presenceCount;
     this.#label = label;
+    this.#buttonLabel = buttonLabel;
     this.#onJoin = onJoin;
   }
 
@@ -69,10 +74,10 @@ export class LobbyCard {
       text: presenceText,
     });
 
-    // Botão entrar
+    // Botão de ação (texto configurável via buttonLabel)
     const btn = Dom.create('button', {
       classes: 'lobby-card__button',
-      text: 'ENTRAR NA FILA',
+      text: this.#buttonLabel,
       attrs: { type: 'button' },
     });
 
