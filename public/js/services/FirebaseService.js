@@ -169,7 +169,11 @@ export class FirebaseService {
       err.code = 'auth/no-current-user';
       throw err;
     }
-    await this.#mod.sendEmailVerification(user);
+    const actionCodeSettings = {
+      url: 'https://www.deu-mico.com.br',
+      handleCodeInApp: false,
+    };
+    await this.#mod.sendEmailVerification(user, actionCodeSettings);
   }
 
   /**
