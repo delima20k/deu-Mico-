@@ -128,8 +128,17 @@ export class GameTableScreen extends Screen {
   /** @type {Function|null} Cleanup do handler de visibilitychange */
   #visibilityHandler = null;
 
+  /** @type {Function|null} Cleanup dos listeners de orientação da tela */
+  #orientationHandlerCleanup = null;
+
+  /** @type {'portrait'|'landscape'|null} Última orientação aplicada ao container */
+  #currentOrientationMode = null;
+
   /** @type {Set<string>} UIDs de jogadores que enviaram player_left intencional (evita modal duplicado) */
   #receivedPlayerLeftEvents = new Set();
+
+  /** @type {Set<string>} Chaves já notificadas em modal de saída de jogador */
+  #notifiedPlayerLeftKeys = new Set();
 
   /** @type {number} Timestamp do último evento de estado de jogo processado */
   #lastGameEventTs = 0;
@@ -231,8 +240,8 @@ export class GameTableScreen extends Screen {
     this.#myUid   = params.myUid   || this.#getCurrentUserUid();
     this.#players = params.players || await this.#generateMockPlayers();
 
-    // Mesa sempre em horizontal quando possível (PWA/Android)
-    this.#lockGameOrientation();
+    // Libera lock global para permitir adaptação automática portrait/landscape.
+    this.#unlockOrientation();
 
     console.log(`\n[GameTableScreen] 🎮 ===== TELA DA MESA ABERTA =====`);
     console.log(`[GameTableScreen] 📋 ID da Partida: ${this.#matchId}`);
@@ -246,6 +255,9 @@ export class GameTableScreen extends Screen {
     await this.#writeOwnPresence();
     FirebaseService.getInstance().startHeartbeat(this.#matchId, this.#myUid);
     await this.#renderTable();
+
+    // Aplica classe de orientação e mantém sincronizado em tempo real.
+    this.#setupOrientationHandler();
   }
 
   /**
@@ -578,6 +590,12 @@ export class GameTableScreen extends Screen {
     this.#visibilityHandler?.();
     this.#visibilityHandler = null;
     this.#receivedPlayerLeftEvents.clear();
+    this.#notifiedPlayerLeftKeys.clear();
+
+    // Remove listeners de orientação para evitar vazamento ao sair da tela.
+    this.#orientationHandlerCleanup?.();
+    this.#orientationHandlerCleanup = null;
+    this.#currentOrientationMode = null;
 
     // Fora da mesa, o app volta para portrait quando possível
     this.#lockPortraitOrientation();
@@ -674,6 +692,13 @@ export class GameTableScreen extends Screen {
     } catch (_) {}
   }
 
+  #unlockOrientation() {
+    try {
+      if (!screen.orientation?.unlock) return;
+      screen.orientation.unlock();
+    } catch (_) {}
+  }
+
   #lockPortraitOrientation() {
     try {
       if (!screen.orientation?.lock) return;
@@ -745,7 +770,7 @@ export class GameTableScreen extends Screen {
 
             if (isGameOver) {
               // Fim de partida → sempre exibir modal (countdown + auto-exit)
-              this.#showExitNotification(name, isWinner);
+              this.#notifyPlayerLeft(uid, name, isWinner);
             } else {
               // Aguarda 1.5s para o evento player_left chegar via animEvents.
               // Se chegar antes (saída intencional), o toast já foi exibido
@@ -754,7 +779,7 @@ export class GameTableScreen extends Screen {
               const capturedName = name;
               setTimeout(() => {
                 if (!this.#receivedPlayerLeftEvents.has(capturedUid)) {
-                  this.#showExitNotification(capturedName, false);
+                  this.#notifyPlayerLeft(capturedUid, capturedName, false);
                 }
               }, 1500);
             }
@@ -847,6 +872,20 @@ export class GameTableScreen extends Screen {
     if (!needsForceExit) {
       setTimeout(() => overlay.isConnected && overlay.remove(), 8000);
     }
+  }
+
+  /**
+   * Exibe modal de saída de jogador sem repetir para a mesma chave.
+   * @param {string} playerKey - UID (ou fallback) para deduplicação
+   * @param {string} name - Nome exibido no modal
+   * @param {boolean} [isWinner=false] - true quando a saída encerra a partida com vencedor
+   * @private
+   */
+  #notifyPlayerLeft(playerKey, name, isWinner = false) {
+    if (!playerKey) return;
+    if (this.#notifiedPlayerLeftKeys.has(playerKey)) return;
+    this.#notifiedPlayerLeftKeys.add(playerKey);
+    this.#showExitNotification(name, isWinner);
   }
 
   /**
@@ -997,7 +1036,67 @@ export class GameTableScreen extends Screen {
       // Registra UID como saída intencional para o monitor de presença
       // não exibir o modal de saída inesperada redundante.
       if (event.playerUid) this.#receivedPlayerLeftEvents.add(event.playerUid);
-      this.#showPlayerLeftToast(event.playerName || 'Jogador');
+      const playerName = event.playerName || 'Jogador';
+      const playerKey = event.playerUid || `player-left:${playerName.toLowerCase()}`;
+      this.#notifyPlayerLeft(playerKey, playerName, false);
+    }
+  }
+
+  /**
+   * Detecta orientação atual e sincroniza classes no container da GameTable.
+   * Mantém o layout responsivo por classe para portrait/landscape em tempo real.
+   * @private
+   */
+  #setupOrientationHandler() {
+    this.#orientationHandlerCleanup?.();
+    this.#orientationHandlerCleanup = null;
+
+    const mql = window.matchMedia('(orientation: landscape)');
+    const apply = () => this.#applyOrientationClass(mql.matches ? 'landscape' : 'portrait');
+
+    const onResize = () => apply();
+    window.addEventListener('resize', onResize, { passive: true });
+
+    const onMqlChange = () => apply();
+    if (mql.addEventListener) {
+      mql.addEventListener('change', onMqlChange);
+    } else if (mql.addListener) {
+      mql.addListener(onMqlChange);
+    }
+
+    apply();
+
+    this.#orientationHandlerCleanup = () => {
+      window.removeEventListener('resize', onResize);
+      if (mql.removeEventListener) {
+        mql.removeEventListener('change', onMqlChange);
+      } else if (mql.removeListener) {
+        mql.removeListener(onMqlChange);
+      }
+    };
+  }
+
+  /**
+   * Aplica classes utilitárias de orientação no root da tela.
+   * @param {'portrait'|'landscape'} mode
+   * @private
+   */
+  #applyOrientationClass(mode) {
+    const container = this.getElement();
+    if (!container) return;
+
+    container.classList.remove('game-table--portrait', 'game-table--landscape');
+    container.classList.add(mode === 'landscape' ? 'game-table--landscape' : 'game-table--portrait');
+
+    const tableRoot = container.querySelector('.game-table-root');
+    if (tableRoot) {
+      tableRoot.classList.remove('game-table-root--portrait', 'game-table-root--landscape');
+      tableRoot.classList.add(mode === 'landscape' ? 'game-table-root--landscape' : 'game-table-root--portrait');
+    }
+
+    if (this.#currentOrientationMode !== mode) {
+      this.#currentOrientationMode = mode;
+      this.#opponentPickPanel?.reposition();
     }
   }
 

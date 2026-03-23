@@ -37,6 +37,19 @@
   --hexRotate: 90deg;
 }
 
+/* Controle explícito por classe aplicada em GameTableScreen.js. */
+.game-table-screen.game-table--portrait {
+  --hexW: 83dvh;
+  --hexH: 88vw;
+  --hexRotate: 90deg;
+}
+
+.game-table-screen.game-table--landscape {
+  --hexW: 90vw;
+  --hexH: 88dvh;
+  --hexRotate: 0deg;
+}
+
 @media (orientation: landscape) {
   :root {
     /* Landscape — sem rotação */

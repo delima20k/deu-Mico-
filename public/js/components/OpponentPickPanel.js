@@ -83,6 +83,19 @@ export class OpponentPickPanel {
   }
 
   /**
+   * Recalcula posição vertical do painel com base na altura da hand-modal
+   * e na orientação atual da tela.
+   */
+  reposition() {
+    if (!this.#el) return;
+    const handEl = document.querySelector('.hand-modal');
+    const handH = handEl ? handEl.offsetHeight : 0;
+    const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+    const gap = isLandscape ? '1rem' : '5rem';
+    this.#el.style.bottom = `calc(${handH}px + ${gap})`;
+  }
+
+  /**
    * Sincroniza o scroll do carrossel recebendo ratio externo (0–1).
    * Chamado remotamente quando o oponente move as cartas na visão do picker.
    * @param {number} ratio  0 = início, 1 = fim
@@ -177,12 +190,7 @@ export class OpponentPickPanel {
     document.body.append(panel);
 
     // Posiciona o painel acima da hand-modal do jogador local.
-    // Em landscape usa 1rem de gap; em portrait usa 5rem.
-    const handEl   = document.querySelector('.hand-modal');
-    const handH    = handEl ? handEl.offsetHeight : 0;
-    const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-    const gap      = isLandscape ? '1rem' : '5rem';
-    panel.style.bottom = `calc(${handH}px + ${gap})`;
+    this.reposition();
 
     // Drag-to-scroll + referência ao flag moved usada pelo click
     this.#initDrag(viewport, track);
