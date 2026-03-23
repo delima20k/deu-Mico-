@@ -1,0 +1,498 @@
+/**
+ * FASE 1 — Menu Screen: Estilos simples
+ * FASE 2 — SideMenu, ProfileHeader, AvatarUploader com animações
+ */
+
+/* ========================================================
+   HEADER BAR (fixo no topo)
+   ======================================================== */
+
+.header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100vw;
+  max-width: 100vw;
+  margin-left: calc(-50vw + 50%);
+  padding: clamp(12px, 2vw, 16px) 0;
+  padding-left: clamp(12px, 2vw, 16px);
+  padding-right: clamp(12px, 2vw, 16px);
+  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-bar__logo {
+  height: clamp(72px, 13vw, 110px);
+  width: auto;
+  object-fit: contain;
+}
+
+.header-bar__title {
+  margin: 0;
+  font-size: clamp(20px, 5vw, 28px);
+  font-weight: 700;
+  color: #fff;
+  text-align: center;
+  flex: 1;
+  padding: 0 16px;
+}
+
+.header-bar__hamburger {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  opacity: 1;
+  transition: opacity 200ms ease;
+}
+
+.header-bar__hamburger:hover {
+  opacity: 0.8;
+}
+
+.header-bar__hamburger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.header-bar__hamburger-line {
+  width: 24px;
+  height: 3px;
+  background: #fff;
+  border-radius: 2px;
+  transition: all 200ms ease;
+}
+
+/* ========================================================
+   SIDE MENU (deslizante com animação)
+   ======================================================== */
+
+.side-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: min(300px, 80vw);
+  height: 100vh;
+  background: #fff;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  overflow-y: auto;
+  transform: translateX(-100%);
+  transition: transform 300ms ease;
+  padding: clamp(16px, 2vw, 24px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 2vw, 16px);
+}
+
+/* Estado aberto */
+.side-menu.is-open {
+  transform: translateX(0);
+}
+
+/* Respeita redução de movimento */
+@media (prefers-reduced-motion: reduce) {
+  .side-menu {
+    transition: none;
+  }
+}
+
+/* ── Overlay (fecha ao clicar) ── */
+.side-menu__overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  animation: fadeIn 300ms ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .side-menu__overlay {
+    animation: none;
+  }
+}
+
+/* ── Seção de Perfil ── */
+.side-menu__profile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(12px, 2vw, 16px);
+  padding-bottom: clamp(12px, 2vw, 16px);
+}
+
+/* ── Separadores ── */
+.side-menu__separator {
+  height: 1px;
+  background: #eee;
+  margin: clamp(8px, 1vw, 12px) 0;
+}
+
+/* ── Seção de Navegação ── */
+.side-menu__nav {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(8px, 1vw, 12px);
+  flex: 1;
+}
+
+/* ── Itens de Menu ── */
+.side-menu__item {
+  width: 100%;
+  padding: clamp(12px, 2vw, 16px);
+  font-size: clamp(14px, 2vw, 16px);
+  font-weight: 600;
+  color: #333;
+  background: #f5f5f5;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 200ms ease;
+  text-align: left;
+}
+
+.side-menu__item:hover {
+  background: #e8f5e9;
+  transform: translateX(4px);
+}
+
+.side-menu__item:active {
+  transform: translateX(2px);
+  background: #dcedc8;
+}
+
+/* ========================================================
+   PROFILE HEADER (avatar + nome + idade)
+   ======================================================== */
+
+.profile-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(8px, 1vw, 12px);
+  width: 100%;
+}
+
+.profile-header__avatar-container {
+  position: relative;
+  width: clamp(80px, 15vw, 120px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #e8e8e8;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.profile-header__avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-header__avatar-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: clamp(26px, 5vw, 38px);
+  font-weight: 700;
+  color: #6f6f6f;
+  background: #d8d8d8;
+}
+
+.profile-header__name {
+  margin: 0;
+  font-size: clamp(16px, 3vw, 18px);
+  font-weight: 700;
+  color: #333;
+  text-align: center;
+}
+
+.profile-header__age {
+  margin: 0;
+  font-size: clamp(12px, 2vw, 14px);
+  color: #999;
+  text-align: center;
+}
+
+/* ========================================================
+   AVATAR UPLOADER (selecionar imagem)
+   ======================================================== */
+
+.avatar-uploader {
+  width: 100%;
+}
+
+.avatar-uploader__button {
+  width: 100%;
+  padding: clamp(10px, 2vw, 12px) clamp(16px, 2vw, 24px);
+  font-size: clamp(12px, 2vw, 14px);
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 200ms ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.avatar-uploader__button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.avatar-uploader__button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* ========================================================
+   MENU SCREEN (container principal)
+   ======================================================== */
+
+.menu-screen {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+}
+
+.menu-screen__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  max-width: 100vw;
+  margin-left: calc(-50vw + 50%);
+  padding: clamp(24px, 4vw, 40px) 0;
+  padding-left: clamp(24px, 4vw, 40px);
+  padding-right: clamp(24px, 4vw, 40px);
+  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+  gap: clamp(10px, 2vw, 16px);
+}
+
+/* Título DEU MICO */
+.menu-screen__title {
+  margin: 0;
+  font-size: clamp(2.6rem, 8vw, 3.6rem);
+  font-weight: 900;
+  color: #0B6B2A;
+  text-align: center;
+  letter-spacing: 0.08em;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.18);
+}
+
+/* Imagem centralizada */
+.menu-screen__image {
+  height: clamp(200px, 40vw, 320px);
+  width: auto;
+  max-width: 350px;
+  object-fit: contain;
+}
+
+/* Container de botões */
+.menu-screen__buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(12px, 2vw, 16px);
+  width: 100%;
+  max-width: 300px;
+}
+
+/* Título acima das cartas */
+.menu-screen__cards-heading {
+  margin: 0;
+  font-size: clamp(1.1rem, 3.5vw, 1.6rem);
+  font-weight: 800;
+  color: #fff;
+  text-align: center;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+
+/* Container de duas imagens lado a lado */
+.menu-screen__cards-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(8px, 1.5vw, 14px);
+  width: 100%;
+  max-width: 460px;
+  margin: 0;
+}
+
+.menu-screen__cards-images {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(16px, 4vw, 32px);
+  width: 100%;
+}
+
+.menu-screen__card-img {
+  flex: 1;
+  max-width: clamp(160px, 44vw, 220px);
+  height: auto;
+  object-fit: contain;
+  border-radius: 14px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.32);
+  transition: transform 0.2s ease;
+}
+
+.menu-screen__card-img:active {
+  transform: scale(0.97);
+}
+
+/* Styled buttons */
+.menu-screen__button {
+  width: 100%;
+  padding: clamp(12px, 2vw, 16px) clamp(24px, 4vw, 32px);
+  font-size: clamp(16px, 3vw, 20px);
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #c1763d 0%, #a05a28 100%);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 200ms ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.menu-screen__button:hover {
+  background: linear-gradient(135deg, #d4894e 0%, #b56830 100%);
+  transform: translateY(-4px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+}
+
+.menu-screen__button:active {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.menu-screen__button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ========================================================
+   RESPONSIVE
+   ======================================================== */
+
+@media (max-width: 768px) {
+  .header-bar {
+    padding: 12px;
+  }
+
+  .header-bar__title {
+    font-size: 20px;
+    padding: 0 8px;
+  }
+
+  .menu-screen__main {
+    padding: 24px;
+   
+
+    gap: 24px;
+  }
+
+  .menu-screen__image {
+    height: 120px;
+  }
+
+  .menu-screen__buttons {
+    max-width: 280px;
+  }
+
+  .menu-screen__button {
+    padding: 12px 24px;
+    font-size: 16px;
+  }
+}
+/* ========================================================
+   Responsividade por Orientação
+   ======================================================== */
+
+@media (orientation: landscape) {
+  .header-bar {
+    max-height: 12vh;
+    padding: clamp(6px, 1.5vw, 12px);
+  }
+
+  .header-bar__logo {
+    height: clamp(40px, 8vh, 60px);
+  }
+
+  .header-bar__title {
+    font-size: clamp(16px, 3vw, 22px);
+    padding: 0 12px;
+  }
+
+  .side-menu {
+    width: 70vw;
+    max-width: 400px;
+  }
+
+  .menu-screen__image {
+    max-height: 65vh;
+  }
+
+  .menu-screen__buttons {
+    gap: 8px;
+  }
+
+  .menu-screen__button {
+    padding: 10px 20px;
+    font-size: clamp(14px, 2vw, 16px);
+  }
+
+  .lobby-card {
+    width: clamp(200px, 28vw, 280px);
+  }
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .header-bar {
+    max-height: 10vh;
+    padding: 4px 8px;
+  }
+
+  .header-bar__logo {
+    height: 35px;
+  }
+
+  .header-bar__title {
+    font-size: 14px;
+  }
+
+  .menu-screen__image {
+    max-height: 50vh;
+  }
+
+  .menu-screen__button {
+    padding: 8px 16px;
+    font-size: 13px;
+  }
+}
