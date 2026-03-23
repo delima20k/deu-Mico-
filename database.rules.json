@@ -47,17 +47,17 @@
     },
 
     // ── Partidas ───────────────────────────────────────────────────
-    // Apenas usuários autenticados lêem/escrevem dados de partidas
+    // Apenas participantes da partida lêem/escrevem dados
     // presence: cada jogador escreve apenas sua própria entrada
-    // gameState: somente o servidor (Admin SDK via api/next-turn.js) pode gravar
+    // gameState: escrito por participantes (fallback) ou servidor
     "matches": {
       "$matchId": {
-        ".read": "auth != null",
+        ".read": "auth != null && root.child('matches/' + $matchId + '/meta/players/' + auth.uid).exists()",
         "meta": {
-          ".write": "auth != null"
+          ".write": "auth != null && (root.child('matches/' + $matchId + '/meta/players/' + auth.uid).exists() || (!data.exists() && newData.child('players').child(auth.uid).exists()))"
         },
         "state": {
-          ".write": "auth != null"
+          ".write": "auth != null && root.child('matches/' + $matchId + '/meta/players/' + auth.uid).exists()"
         },
         "presence": {
           "$uid": {
@@ -65,19 +65,20 @@
           }
         },
         "chat": {
-          ".write": "auth != null"
+          ".write": "auth != null && root.child('matches/' + $matchId + '/meta/players/' + auth.uid).exists()"
         },
         "chatPlayback": {
-          ".write": "auth != null"
+          ".write": "auth != null && root.child('matches/' + $matchId + '/meta/players/' + auth.uid).exists()"
         },
         "chatAudioCleanup": {
-          ".write": "auth != null"
+          ".write": "auth != null && root.child('matches/' + $matchId + '/meta/players/' + auth.uid).exists()"
         },
         "gameState": {
-          ".write": "auth != null"
+          ".write": "auth != null && root.child('matches/' + $matchId + '/meta/players/' + auth.uid).exists()"
         },
         "animations": {
-          ".write": "auth != null"
+          ".write": "auth != null && root.child('matches/' + $matchId + '/meta/players/' + auth.uid).exists()",
+          ".indexOn": "ts"
         }
       }
     },
