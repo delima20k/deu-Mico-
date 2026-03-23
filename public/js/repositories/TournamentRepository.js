@@ -5,10 +5,12 @@
  * @depends FirebaseService, Tournament
  * @exports TournamentRepository
  *
- * Repository: Acesso aos dados de torneios no Firebase RTDB.
- * Responsável APENAS por operações de CRUD com o banco de dados.
- * Não contém lógica de negócio — somente chamadas ao RTDB.
- * Estrutura: /tournaments/list/{tournamentId}, leaderboard/{tournamentId}/{uid}
+ * Repository: acesso ao RTDB para campeonato por instância/rodada.
+ * Estrutura principal:
+ * - /tournaments/list/{tournamentId}
+ * - /tournaments/instances/{instanceId}
+ * - /tournaments/currentJoinableInstanceId/{tournamentId}
+ * - /tournaments/leaderboard/{tournamentId}/{uid}
  */
 
 import { Tournament } from '../domain/Tournament.js';
@@ -44,6 +46,10 @@ export class TournamentRepository {
     this.#firebaseService = firebaseService;
   }
 
+  static MAX_PARTICIPANTS = 6;
+  static MIN_POINTS_MILLI = 0;
+  static MAX_POINTS_MILLI = 5900;
+
   /**
    * @returns {{db: any, dbMod: any}}
    * @private
@@ -55,6 +61,87 @@ export class TournamentRepository {
       throw new Error('[Tournament] Database nao inicializado');
     }
     return { db, dbMod };
+  }
+
+  /**
+   * @param {number} value
+   * @returns {number}
+   * @private
+   */
+  #clampPointsMilli(value) {
+    const parsed = Number(value || 0);
+    if (!Number.isFinite(parsed)) return TournamentRepository.MIN_POINTS_MILLI;
+    return Math.max(
+      TournamentRepository.MIN_POINTS_MILLI,
+      Math.min(TournamentRepository.MAX_POINTS_MILLI, parsed)
+    );
+  }
+
+  /**
+   * @param {number} value
+   * @returns {number}
+   * @private
+   */
+  #normalizeMaxParticipants(value) {
+    return Math.max(2, Math.min(TournamentRepository.MAX_PARTICIPANTS, Number(value || 6)));
+  }
+
+  /**
+   * @param {string} tournamentId
+   * @returns {string}
+   * @private
+   */
+  #buildInstanceId(tournamentId) {
+    const rand = Math.random().toString(36).slice(2, 8);
+    return `${tournamentId}_${Date.now()}_${rand}`;
+  }
+
+  /**
+   * @param {string} instanceId
+   * @param {number} matchNumber
+   * @returns {string}
+   * @private
+   */
+  #buildMatchId(instanceId, matchNumber) {
+    return `tmatch_${instanceId}_${matchNumber}`;
+  }
+
+  /**
+   * @param {string} instanceId
+   * @param {string} tournamentId
+   * @param {Object} defaults
+   * @returns {Object}
+   * @private
+   */
+  #buildBaseInstance(instanceId, tournamentId, defaults = {}) {
+    const now = Date.now();
+    const maxParticipants = this.#normalizeMaxParticipants(
+      defaults.maxParticipants ?? TournamentRepository.MAX_PARTICIPANTS
+    );
+
+    return {
+      instanceId,
+      tournamentId,
+      status: defaults.status || 'waiting',
+      maxParticipants,
+      enrolledCount: Number(defaults.enrolledCount || 0),
+      enrolledUsers: defaults.enrolledUsers || {},
+      activePlayers: defaults.activePlayers || {},
+      eliminatedPlayers: defaults.eliminatedPlayers || {},
+      currentMatchId: defaults.currentMatchId || null,
+      currentMatchNumber: Number(defaults.currentMatchNumber || 0),
+      phase: defaults.phase || 'waiting',
+      countdownStartAt: defaults.countdownStartAt || null,
+      countdownEndsAt: defaults.countdownEndsAt || null,
+      startedAt: defaults.startedAt || null,
+      finishedAt: defaults.finishedAt || null,
+      championUid: defaults.championUid || null,
+      processedMatchResults: defaults.processedMatchResults || {},
+      lastJoinEvent: defaults.lastJoinEvent || null,
+      lastSystemNotice: defaults.lastSystemNotice || null,
+      createdAt: Number(defaults.createdAt || now),
+      updatedAt: now,
+    };
   }
 
   /**
@@ -188,9 +275,8 @@ export class TournamentRepository {
 
     const result = await dbMod.runTransaction(ref, (current) => {
       if (current) {
-        const normalizedMaxParticipants = Math.max(
-          2,
-          Math.min(6, Number(current.maxParticipants || defaults.maxParticipants || 6))
+        const normalizedMaxParticipants = this.#normalizeMaxParticipants(
+          current.maxParticipants || defaults.maxParticipants || TournamentRepository.MAX_PARTICIPANTS
         );
         return {
           ...current,
@@ -206,7 +292,7 @@ export class TournamentRepository {
         prize: defaults.prize || 'Premiacao especial do campeonato',
         startDate: defaults.startDate || new Date(now).toISOString(),
         status: defaults.status || 'waiting',
-        maxParticipants: defaults.maxParticipants ?? 6,
+        maxParticipants: this.#normalizeMaxParticipants(defaults.maxParticipants),
         enrolledCount: 0,
         enrolledUsers: {},
         countdownStartAt: null,
@@ -220,6 +306,150 @@ export class TournamentRepository {
     const tournament = result.snapshot.val() || null;
     await dbMod.set(dbMod.ref(db, 'tournaments/currentTournamentId'), tournamentId);
     return tournament;
+  }
+
+  /**
+   * Retorna todas as instâncias de um torneio.
+   * @param {string} tournamentId
+   * @returns {Promise<Array<Object>>}
+   */
+  async getInstancesByTournament(tournamentId) {
+    const { db, dbMod } = this.#getDbContext();
+    const ref = dbMod.ref(db, 'tournaments/instances');
+    const snap = await dbMod.get(ref);
+    if (!snap.exists()) return [];
+
+    return Object.entries(snap.val() || {})
+      .map(([id, value]) => ({ instanceId: id, ...value }))
+      .filter((row) => row.tournamentId === tournamentId)
+      .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+  }
+
+  /**
+   * @param {string} instanceId
+   * @returns {Promise<Object|null>}
+   */
+  async getInstanceById(instanceId) {
+    const { db, dbMod } = this.#getDbContext();
+    const ref = dbMod.ref(db, `tournaments/instances/${instanceId}`);
+    const snap = await dbMod.get(ref);
+    if (!snap.exists()) return null;
+    return {
+      instanceId,
+      ...snap.val(),
+    };
+  }
+
+  /**
+   * Busca a inscrição de um usuário em instância ativa/countdown/waiting.
+   * @param {string} tournamentId
+   * @param {string} uid
+   * @returns {Promise<{instance: Object|null}>}
+   */
+  async findUserEnrollment(tournamentId, uid) {
+    if (!uid) return { instance: null };
+    const instances = await this.getInstancesByTournament(tournamentId);
+    const instance = instances.find((row) => {
+      if (!row?.enrolledUsers?.[uid]) return false;
+      const status = row.status || 'waiting';
+      return status !== 'finished';
+    }) || null;
+
+    return { instance };
+  }
+
+  /**
+   * Observa TODAS as instâncias de um torneio (filtro client-side).
+   * @param {string} tournamentId
+   * @param {(instances: Array<Object>) => void} callback
+   * @returns {Function}
+   */
+  subscribeTournamentInstances(tournamentId, callback) {
+    const { db, dbMod } = this.#getDbContext();
+    const ref = dbMod.ref(db, 'tournaments/instances');
+
+    const unsubscribe = dbMod.onValue(ref, (snap) => {
+      if (!snap.exists()) {
+        callback([]);
+        return;
+      }
+
+      const rows = Object.entries(snap.val() || {})
+        .map(([instanceId, value]) => ({ instanceId, ...value }))
+        .filter((row) => row.tournamentId === tournamentId)
+        .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+
+      callback(rows);
+    }, (error) => {
+      console.error(`[TournamentRound] subscribeTournamentInstances error tournamentId=${tournamentId}`, error);
+    });
+
+    return () => unsubscribe();
+  }
+
+  /**
+   * Listener realtime de uma instância específica.
+   * @param {string} instanceId
+   * @param {(state: Object|null) => void} callback
+   * @returns {Function}
+   */
+  subscribeTournamentInstance(instanceId, callback) {
+    const { db, dbMod } = this.#getDbContext();
+    const ref = dbMod.ref(db, `tournaments/instances/${instanceId}`);
+
+    const unsubscribe = dbMod.onValue(ref, (snap) => {
+      if (!snap.exists()) {
+        callback(null);
+        return;
+      }
+
+      callback({
+        instanceId,
+        ...snap.val(),
+      });
+    }, (error) => {
+      console.error(`[TournamentRound] subscribeTournamentInstance error instanceId=${instanceId}`, error);
+    });
+
+    return () => unsubscribe();
+  }
+
+  /**
+   * Retorna (ou cria) uma instância em espera para novas inscrições.
+   * @param {string} tournamentId
+   * @param {{maxParticipants?: number}} [options]
+   * @returns {Promise<string>}
+   */
+  async ensureJoinableInstance(tournamentId, options = {}) {
+    const { db, dbMod } = this.#getDbContext();
+    const pointerRef = dbMod.ref(db, `tournaments/currentJoinableInstanceId/${tournamentId}`);
+    const pointerSnap = await dbMod.get(pointerRef);
+    const maxParticipants = this.#normalizeMaxParticipants(options.maxParticipants);
+
+    if (pointerSnap.exists()) {
+      const pointedId = pointerSnap.val();
+      const pointed = await this.getInstanceById(pointedId);
+      if (
+        pointed
+        && pointed.status === 'waiting'
+        && Number(pointed.enrolledCount || 0) < Number(pointed.maxParticipants || maxParticipants)
+      ) {
+        return pointedId;
+      }
+    }
+
+    const instanceId = this.#buildInstanceId(tournamentId);
+    const baseInstance = this.#buildBaseInstance(instanceId, tournamentId, {
+      status: 'waiting',
+      maxParticipants,
+      phase: 'waiting',
+    });
+
+    await dbMod.set(dbMod.ref(db, `tournaments/instances/${instanceId}`), baseInstance);
+    await dbMod.set(pointerRef, instanceId);
+
+    console.log(`[TournamentRound] created joinable instanceId=${instanceId} tournamentId=${tournamentId}`);
+    return instanceId;
   }
 
   /**
@@ -272,38 +502,60 @@ export class TournamentRepository {
     const { db, dbMod } = this.#getDbContext();
     const uid = userData?.uid;
     if (!uid) {
-      throw new Error('[Tournament] joinTournament sem uid');
+      throw new Error('[TournamentRound] joinTournament sem uid');
     }
 
-    const countdownDurationMs = options.countdownDurationMs ?? 60_000;
-    const userRef = dbMod.ref(db, `tournaments/list/${tournamentId}/enrolledUsers/${uid}`);
-    const wasJoinedSnap = await dbMod.get(userRef);
-    const alreadyJoined = wasJoinedSnap.exists();
+    const countdownDurationMs = Number(options.countdownDurationMs || 60_000);
+    const maxParticipants = this.#normalizeMaxParticipants(options.maxParticipants);
 
-    const tournamentRef = dbMod.ref(db, `tournaments/list/${tournamentId}`);
-    const result = await dbMod.runTransaction(tournamentRef, (current) => {
-      const now = Date.now();
-      const base = current || {
-        id: tournamentId,
-        tournamentId,
-        name: 'Campeonato Deu Mico',
-        prize: 'Premiacao especial do campeonato',
-        startDate: new Date(now).toISOString(),
-        status: 'waiting',
-        maxParticipants: 6,
-        enrolledCount: 0,
-        enrolledUsers: {},
-        countdownStartAt: null,
-        countdownEndsAt: null,
-        startedAt: null,
-        createdAt: now,
+    await this.ensureTournament(tournamentId, {
+      maxParticipants,
+      status: 'waiting',
+      name: 'Campeonato Deu Mico',
+    });
+
+    const existingEnrollment = await this.findUserEnrollment(tournamentId, uid);
+    if (existingEnrollment.instance) {
+      return {
+        joined: false,
+        alreadyJoined: true,
+        instanceId: existingEnrollment.instance.instanceId,
+        instance: existingEnrollment.instance,
+        tournament: await this.getTournamentById(tournamentId),
       };
+    }
 
-      const enrolledUsers = { ...(base.enrolledUsers || {}) };
-      const maxParticipants = Math.max(2, Math.min(6, Number(base.maxParticipants || 6)));
-      let enrolledCount = Number(base.enrolledCount || 0);
+    let attempts = 0;
+    while (attempts < 6) {
+      attempts += 1;
+      const joinableInstanceId = await this.ensureJoinableInstance(tournamentId, { maxParticipants });
+      const instanceRef = dbMod.ref(db, `tournaments/instances/${joinableInstanceId}`);
 
-      if (!enrolledUsers[uid]) {
+      const txResult = await dbMod.runTransaction(instanceRef, (current) => {
+        const now = Date.now();
+        const base = current || this.#buildBaseInstance(joinableInstanceId, tournamentId, {
+          maxParticipants,
+          status: 'waiting',
+          phase: 'waiting',
+        });
+
+        const status = base.status || 'waiting';
+        const enrolledUsers = { ...(base.enrolledUsers || {}) };
+        let enrolledCount = Number(base.enrolledCount || 0);
+        const normalizedMax = this.#normalizeMaxParticipants(base.maxParticipants || maxParticipants);
+
+        if (enrolledUsers[uid]) {
+          return {
+            ...base,
+            maxParticipants: normalizedMax,
+            updatedAt: now,
+          };
+        }
+
+        if (status !== 'waiting' || enrolledCount >= normalizedMax) {
+          return base;
+        }
+
         enrolledUsers[uid] = {
           uid,
           name: userData?.name || 'Jogador',
@@ -311,49 +563,86 @@ export class TournamentRepository {
           joinedAt: now,
         };
         enrolledCount += 1;
+
+        let nextStatus = status;
+        let countdownStartAt = base.countdownStartAt || null;
+        let countdownEndsAt = base.countdownEndsAt || null;
+        let lastSystemNotice = base.lastSystemNotice || null;
+
+        if (enrolledCount >= normalizedMax && status === 'waiting') {
+          countdownStartAt = countdownStartAt || now;
+          countdownEndsAt = countdownEndsAt || (countdownStartAt + countdownDurationMs);
+          nextStatus = 'countdown';
+          lastSystemNotice = {
+            type: 'countdown_started',
+            ts: now,
+            text: 'Combate comeca em 1 minuto',
+            eventId: `countdown_${joinableInstanceId}_${countdownStartAt}`,
+          };
+          console.log(`[TournamentRound] countdown started instanceId=${joinableInstanceId} endsAt=${countdownEndsAt}`);
+        }
+
+        return {
+          ...base,
+          tournamentId,
+          maxParticipants: normalizedMax,
+          enrolledUsers,
+          enrolledCount,
+          status: nextStatus,
+          phase: nextStatus === 'countdown' ? 'countdown' : (base.phase || 'waiting'),
+          countdownStartAt,
+          countdownEndsAt,
+          lastJoinEvent: {
+            uid,
+            name: userData?.name || 'Jogador',
+            ts: now,
+            enrolledCount,
+            eventId: `join_${uid}_${now}`,
+          },
+          lastSystemNotice,
+          updatedAt: now,
+        };
+      });
+
+      const instance = txResult.snapshot.exists()
+        ? { instanceId: joinableInstanceId, ...txResult.snapshot.val() }
+        : null;
+
+      const joined = !!instance?.enrolledUsers?.[uid];
+      const status = instance?.status || 'waiting';
+      const isFull = Number(instance?.enrolledCount || 0) >= Number(instance?.maxParticipants || maxParticipants);
+
+      if (joined) {
+        await dbMod.set(dbMod.ref(db, 'tournaments/currentTournamentId'), tournamentId);
+
+        if (isFull || status !== 'waiting') {
+          const pointerRef = dbMod.ref(db, `tournaments/currentJoinableInstanceId/${tournamentId}`);
+          const pointerSnap = await dbMod.get(pointerRef);
+          if (pointerSnap.exists() && pointerSnap.val() === joinableInstanceId) {
+            await this.ensureJoinableInstance(tournamentId, { maxParticipants });
+          }
+        }
+
+        return {
+          joined: true,
+          alreadyJoined: false,
+          instanceId: joinableInstanceId,
+          instance,
+          tournament: await this.getTournamentById(tournamentId),
+        };
       }
 
-      let status = base.status || 'waiting';
-      let countdownStartAt = base.countdownStartAt || null;
-      let countdownEndsAt = base.countdownEndsAt || null;
-      let startedAt = base.startedAt || null;
-
-      if (status === 'countdown' && countdownEndsAt && now >= countdownEndsAt) {
-        status = 'active';
-        startedAt = startedAt || now;
+      if (!instance || status !== 'waiting' || isFull) {
+        const pointerRef = dbMod.ref(db, `tournaments/currentJoinableInstanceId/${tournamentId}`);
+        const pointerSnap = await dbMod.get(pointerRef);
+        if (pointerSnap.exists() && pointerSnap.val() === joinableInstanceId) {
+          await dbMod.remove(pointerRef);
+        }
+        continue;
       }
+    }
 
-      if (
-        status !== 'active'
-        && !countdownStartAt
-        && enrolledCount >= maxParticipants
-      ) {
-        countdownStartAt = now;
-        countdownEndsAt = now + countdownDurationMs;
-        status = 'countdown';
-        console.log(`[Tournament] countdown iniciado tournamentId=${tournamentId} endsAt=${countdownEndsAt}`);
-      }
-
-      return {
-        ...base,
-        maxParticipants,
-        enrolledUsers,
-        enrolledCount,
-        status,
-        countdownStartAt,
-        countdownEndsAt,
-        startedAt,
-        updatedAt: now,
-      };
-    });
-
-    await dbMod.set(dbMod.ref(db, 'tournaments/currentTournamentId'), tournamentId);
-
-    return {
-      joined: !alreadyJoined,
-      alreadyJoined,
-      tournament: result.snapshot.exists() ? { id: tournamentId, tournamentId, ...result.snapshot.val() } : null,
-    };
+    throw new Error('[TournamentRound] Falha ao entrar em instancia apos varias tentativas');
   }
 
   /**
@@ -362,30 +651,280 @@ export class TournamentRepository {
    * @returns {Promise<boolean>} true se ficou ativo
    */
   async startTournamentIfCountdownElapsed(tournamentId) {
+    const instances = await this.getInstancesByTournament(tournamentId);
+    let startedAny = false;
+
+    for (const instance of instances) {
+      if (instance.status === 'countdown') {
+        const started = await this.startInstanceIfCountdownElapsed(instance.instanceId);
+        if (started) startedAny = true;
+      }
+    }
+
+    return startedAny;
+  }
+
+  /**
+   * Inicia a instância ao fim do countdown (idempotente).
+   * Também cria a primeira partida de forma idempotente.
+   * @param {string} instanceId
+   * @returns {Promise<{started: boolean, instance: Object|null}>}
+   */
+  async startInstanceIfCountdownElapsed(instanceId) {
     const { db, dbMod } = this.#getDbContext();
-    const ref = dbMod.ref(db, `tournaments/list/${tournamentId}`);
+    const ref = dbMod.ref(db, `tournaments/instances/${instanceId}`);
+
+    let shouldCreateMatch = false;
+    let newMatchId = null;
 
     const result = await dbMod.runTransaction(ref, (current) => {
       if (!current) return current;
 
       const now = Date.now();
       const status = current.status || 'waiting';
-      const endAt = current.countdownEndsAt || 0;
+      const endAt = Number(current.countdownEndsAt || 0);
 
-      if (status === 'active') return current;
-      if (status === 'countdown' && endAt > 0 && now >= endAt) {
+      if (status === 'finished') return current;
+
+      if (status === 'active') {
         return {
           ...current,
-          status: 'active',
-          startedAt: current.startedAt || now,
           updatedAt: now,
         };
       }
 
-      return current;
+      if (status !== 'countdown' || endAt <= 0 || now < endAt) {
+        return current;
+      }
+
+      const enrolledUsers = { ...(current.enrolledUsers || {}) };
+      const activePlayers = Object.keys(current.activePlayers || {}).length > 0
+        ? { ...(current.activePlayers || {}) }
+        : { ...enrolledUsers };
+
+      const matchNumber = Number(current.currentMatchNumber || 0) > 0
+        ? Number(current.currentMatchNumber || 1)
+        : 1;
+      const currentMatchId = current.currentMatchId || this.#buildMatchId(instanceId, matchNumber);
+
+      shouldCreateMatch = true;
+      newMatchId = currentMatchId;
+
+      return {
+        ...current,
+        status: 'active',
+        phase: `round_${matchNumber}`,
+        startedAt: current.startedAt || now,
+        currentMatchId,
+        currentMatchNumber: matchNumber,
+        activePlayers,
+        eliminatedPlayers: { ...(current.eliminatedPlayers || {}) },
+        processedMatchResults: { ...(current.processedMatchResults || {}) },
+        lastSystemNotice: {
+          type: 'active_started',
+          ts: now,
+          text: 'Combate iniciado',
+          eventId: `active_${instanceId}_${now}`,
+        },
+        updatedAt: now,
+      };
     });
 
-    return result.snapshot.val()?.status === 'active';
+    const instance = result.snapshot.exists()
+      ? { instanceId, ...result.snapshot.val() }
+      : null;
+
+    if (shouldCreateMatch && newMatchId && instance) {
+      await this.ensureTournamentMatch(newMatchId, {
+        tournamentId: instance.tournamentId,
+        instanceId,
+        matchNumber: Number(instance.currentMatchNumber || 1),
+        playersMap: instance.activePlayers || {},
+      });
+      console.log(`[TournamentRound] instance started instanceId=${instanceId} matchId=${newMatchId}`);
+    }
+
+    return {
+      started: instance?.status === 'active',
+      instance,
+    };
+  }
+
+  /**
+   * Registra resultado da partida (eliminado com mico) e avança para próxima fase.
+   * Idempotente por matchId.
+   * @param {string} instanceId
+   * @param {{matchId: string, micoUid: string, pairCounts?: Object}} payload
+   * @returns {Promise<Object|null>}
+   */
+  async reportMatchResult(instanceId, payload) {
+    const { db, dbMod } = this.#getDbContext();
+    const matchId = payload?.matchId;
+    const micoUid = payload?.micoUid;
+    if (!matchId || !micoUid) {
+      throw new Error('[TournamentRound] reportMatchResult requer matchId e micoUid');
+    }
+
+    const ref = dbMod.ref(db, `tournaments/instances/${instanceId}`);
+    let nextMatchIdToCreate = null;
+
+    const result = await dbMod.runTransaction(ref, (current) => {
+      if (!current) return current;
+
+      const now = Date.now();
+      const status = current.status || 'waiting';
+      if (status === 'finished') return current;
+
+      const processed = { ...(current.processedMatchResults || {}) };
+      if (processed[matchId]) {
+        return current;
+      }
+
+      if (current.currentMatchId !== matchId) {
+        return current;
+      }
+
+      const activePlayers = { ...(current.activePlayers || current.enrolledUsers || {}) };
+      const eliminatedPlayers = { ...(current.eliminatedPlayers || {}) };
+
+      if (!activePlayers[micoUid]) {
+        processed[matchId] = {
+          ts: now,
+          ignored: true,
+          reason: 'mico_uid_not_active',
+        };
+        return {
+          ...current,
+          processedMatchResults: processed,
+          updatedAt: now,
+        };
+      }
+
+      const loserData = { ...(activePlayers[micoUid] || {}), eliminatedAt: now, eliminatedByMatchId: matchId };
+      delete activePlayers[micoUid];
+      eliminatedPlayers[micoUid] = loserData;
+
+      processed[matchId] = {
+        ts: now,
+        micoUid,
+      };
+
+      const survivors = Object.keys(activePlayers);
+      if (survivors.length <= 1) {
+        return {
+          ...current,
+          activePlayers,
+          eliminatedPlayers,
+          processedMatchResults: processed,
+          status: 'finished',
+          phase: 'finished',
+          championUid: survivors[0] || null,
+          finishedAt: now,
+          currentMatchId: null,
+          lastSystemNotice: {
+            type: 'champion_defined',
+            ts: now,
+            text: 'Campeonato encerrado',
+            eventId: `champion_${instanceId}_${now}`,
+          },
+          updatedAt: now,
+        };
+      }
+
+      const nextMatchNumber = Number(current.currentMatchNumber || 1) + 1;
+      const nextMatchId = this.#buildMatchId(instanceId, nextMatchNumber);
+      nextMatchIdToCreate = nextMatchId;
+
+      return {
+        ...current,
+        activePlayers,
+        eliminatedPlayers,
+        processedMatchResults: processed,
+        status: 'active',
+        phase: `round_${nextMatchNumber}`,
+        currentMatchId: nextMatchId,
+        currentMatchNumber: nextMatchNumber,
+        lastSystemNotice: {
+          type: 'next_match_ready',
+          ts: now,
+          text: `Proxima partida da fase ${nextMatchNumber}`,
+          eventId: `next_match_${instanceId}_${nextMatchNumber}_${now}`,
+        },
+        updatedAt: now,
+      };
+    });
+
+    if (!result.snapshot.exists()) return null;
+
+    const updatedInstance = { instanceId, ...result.snapshot.val() };
+
+    if (nextMatchIdToCreate && updatedInstance.status === 'active') {
+      await this.ensureTournamentMatch(nextMatchIdToCreate, {
+        tournamentId: updatedInstance.tournamentId,
+        instanceId,
+        matchNumber: Number(updatedInstance.currentMatchNumber || 1),
+        playersMap: updatedInstance.activePlayers || {},
+      });
+      console.log(`[TournamentRound] next match created instanceId=${instanceId} matchId=${nextMatchIdToCreate}`);
+    }
+
+    return updatedInstance;
+  }
+
+  /**
+   * Cria a partida do campeonato em /matches/{matchId} (idempotente).
+   * @param {string} matchId
+   * @param {{tournamentId: string, instanceId: string, matchNumber: number, playersMap: Object}} data
+   * @returns {Promise<void>}
+   */
+  async ensureTournamentMatch(matchId, data) {
+    const { db, dbMod } = this.#getDbContext();
+    const metaRef = dbMod.ref(db, `matches/${matchId}/meta`);
+    const metaSnap = await dbMod.get(metaRef);
+    if (metaSnap.exists()) return;
+
+    const now = Date.now();
+    const playersMap = data?.playersMap || {};
+    const playerIds = Object.keys(playersMap);
+
+    if (!playerIds.length) {
+      console.warn(`[TournamentRound] ensureTournamentMatch sem jogadores matchId=${matchId}`);
+      return;
+    }
+
+    const metaPayload = {
+      matchId,
+      lobbyType: 'tournament',
+      maxPlayers: playerIds.length,
+      playerIds,
+      state: 'pending',
+      status: 'pending',
+      joinedCount: 0,
+      createdAt: now,
+      createdTs: now,
+      meta: {
+        tournamentId: data?.tournamentId || null,
+        tournamentInstanceId: data?.instanceId || null,
+        tournamentMatchNumber: Number(data?.matchNumber || 1),
+      },
+    };
+
+    const playersPayload = {};
+    for (const [uid, value] of Object.entries(playersMap)) {
+      playersPayload[uid] = {
+        uid,
+        name: value?.name || 'Jogador',
+        avatarUrl: value?.avatarUrl || '',
+        joinedAt: Number(value?.joinedAt || now),
+      };
+    }
+
+    await dbMod.update(dbMod.ref(db), {
+      [`matches/${matchId}/meta`]: metaPayload,
+      [`matches/${matchId}/meta/players`]: playersPayload,
+      [`matches/${matchId}/state`]: 'pending',
+    });
+  }
   }
 
   // -------------------------------------------------------
@@ -447,7 +986,10 @@ export class TournamentRepository {
       .sort((a, b) => {
         const pA = Number(a.score?.pointsMilli || 0);
         const pB = Number(b.score?.pointsMilli || 0);
-        return pB - pA;
+        if (pB !== pA) return pB - pA;
+        const pairsA = Number(a.score?.pairs || 0);
+        const pairsB = Number(b.score?.pairs || 0);
+        return pairsB - pairsA;
       })
       .slice(0, limit);
   }
@@ -556,7 +1098,7 @@ export class TournamentRepository {
         uid,
         name: payload?.name || base.name || 'Jogador',
         avatarUrl: payload?.avatarUrl ?? base.avatarUrl ?? '',
-        pointsMilli: Number(base.pointsMilli || 0) + milliDelta,
+        pointsMilli: this.#clampPointsMilli(Number(base.pointsMilli || 0) + milliDelta),
         pairs: Number(base.pairs || 0) + 1,
         decisivePairs: Number(base.decisivePairs || 0) + (payload?.isDecisive ? 1 : 0),
         processedEvents,

@@ -30,6 +30,9 @@ export class TournamentScreen extends Screen {
   /** @type {Object|null} */
   #currentTournament = null;
 
+  /** @type {Object|null} */
+  #currentRealtimeState = null;
+
   /** @type {Array} Leaderboard top 50 */
   #leaderboard = [];
 
@@ -62,6 +65,15 @@ export class TournamentScreen extends Screen {
 
   /** @type {number|null} */
   #lastEnrolledCount = null;
+
+  /** @type {string|null} */
+  #lastJoinEventId = null;
+
+  /** @type {string|null} */
+  #lastSystemNoticeId = null;
+
+  /** @type {string|null} */
+  #navigatedMatchId = null;
 
   /** @type {number} */
   #justJoinedAt = 0;
@@ -190,6 +202,9 @@ export class TournamentScreen extends Screen {
     this.#clearEntryNoticeTimer();
     this.#entryNoticeVisibleUntil = 0;
     this.#lastEnrolledCount = null;
+    this.#lastJoinEventId = null;
+    this.#lastSystemNoticeId = null;
+    this.#navigatedMatchId = null;
     this.#justJoinedAt = 0;
   }
 
@@ -202,21 +217,34 @@ export class TournamentScreen extends Screen {
     this.#unsubLeaderboard?.();
 
     this.#unsubTournament = await this.#tournamentService.subscribeCurrentTournament((state) => {
-      const nextEnrolledCount = Number(state?.enrolledCount || 0);
+      this.#currentRealtimeState = state;
+      const selected = state?.selectedInstance || null;
+      const nextEnrolledCount = Number(selected?.enrolledCount || 0);
       const prevEnrolledCount = this.#lastEnrolledCount;
 
-      if (state && prevEnrolledCount !== null && nextEnrolledCount > prevEnrolledCount) {
-        const enteredCount = nextEnrolledCount - prevEnrolledCount;
-        const localJoinWindowActive = (Date.now() - this.#justJoinedAt) < 3000;
-        if (!localJoinWindowActive) {
-          this.#showEntryNotice(enteredCount, nextEnrolledCount);
+      const isJoinedInSelected = !!(this.#myUid && selected?.enrolledUsers?.[this.#myUid]);
+
+      if (selected && isJoinedInSelected) {
+        const joinEventId = selected?.lastJoinEvent?.eventId || null;
+        const joinUid = selected?.lastJoinEvent?.uid || null;
+        if (joinEventId && joinEventId !== this.#lastJoinEventId && joinUid && joinUid !== this.#myUid) {
+          this.#showEntryNotice(selected?.lastJoinEvent?.name || 'Jogador', nextEnrolledCount);
           AudioService.getInstance().playForce('tournament-opponent-entry');
         }
+        this.#lastJoinEventId = joinEventId;
+      } else {
+        this.#lastJoinEventId = selected?.lastJoinEvent?.eventId || this.#lastJoinEventId;
       }
 
-      this.#currentTournament = state;
-      this.#lastEnrolledCount = state ? nextEnrolledCount : null;
+      const noticeEventId = selected?.lastSystemNotice?.eventId || null;
+      if (noticeEventId && noticeEventId !== this.#lastSystemNoticeId) {
+        this.#lastSystemNoticeId = noticeEventId;
+      }
+
+      this.#currentTournament = selected;
+      this.#lastEnrolledCount = selected ? nextEnrolledCount : null;
       this.#renderTournamentState();
+      void this.#maybeNavigateToCurrentMatch();
     });
 
     this.#unsubLeaderboard = await this.#tournamentService.subscribeLeaderboardTop50((rows) => {
@@ -255,15 +283,24 @@ export class TournamentScreen extends Screen {
    * @private
    */
   #renderTournamentState() {
-    if (!this.#currentTournament || !this.#tournamentCard) return;
+    if (!this.#tournamentCard) return;
 
-    const enrolledCount = Number(this.#currentTournament.enrolledCount || 0);
-    const maxParticipants = Number(this.#currentTournament.maxParticipants || 0);
+    const state = this.#currentTournament;
+    if (!state) {
+      this.#statusBannerEl.textContent = 'Aguardando abertura de nova rodada de campeonato...';
+      return;
+    }
+
+    const enrolledCount = Number(state.enrolledCount || 0);
+    const maxParticipants = Number(state.maxParticipants || 0);
     const missing = Math.max(0, maxParticipants - enrolledCount);
-    const status = this.#currentTournament.status || 'waiting';
-    const isJoined = !!(this.#myUid && this.#currentTournament.enrolledUsers?.[this.#myUid]);
+    const status = state.status || 'waiting';
+    const isJoined = !!(this.#myUid && state.enrolledUsers?.[this.#myUid]);
 
-    this.#tournamentCard.update(this.#currentTournament);
+    this.#tournamentCard.update({
+      ...state,
+      name: `Rodada ${String(state.instanceId || '').slice(-6)}`,
+    });
 
     const joinBtn = this.#tournamentCard
       .getElement()
@@ -286,7 +323,7 @@ export class TournamentScreen extends Screen {
       }
 
       this.#statusBannerEl.textContent = missing > 0
-        ? `Faltam ${missing} jogador${missing > 1 ? 'es' : ''} para completar o campeonato.`
+        ? `Rodada aberta (${enrolledCount}/${maxParticipants}). Faltam ${missing} jogador${missing > 1 ? 'es' : ''}.`
         : 'Vagas completas. Countdown sera iniciado automaticamente.';
       this.#countdownEl.classList.add('tournament-screen__countdown--hidden');
       this.#clearCountdownTicker();
@@ -294,14 +331,25 @@ export class TournamentScreen extends Screen {
     }
 
     if (status === 'countdown') {
-      this.#statusBannerEl.textContent = 'Campeonato completo. Inicio automatico em andamento.';
+      this.#statusBannerEl.textContent = '6/6 completo. Combate comeca em 1 minuto.';
       this.#countdownEl.classList.remove('tournament-screen__countdown--hidden');
-      this.#startCountdownTicker(Number(this.#currentTournament.countdownEndsAt || 0));
+      this.#startCountdownTicker(Number(state.countdownEndsAt || 0));
       return;
     }
 
     if (status === 'active') {
-      this.#statusBannerEl.textContent = 'Campeonato iniciado! Boa sorte a todos.';
+      this.#statusBannerEl.textContent = 'Campeonato em andamento. Prepare-se para a partida.';
+      this.#countdownEl.classList.add('tournament-screen__countdown--hidden');
+      this.#clearCountdownTicker();
+      return;
+    }
+
+    if (status === 'finished') {
+      const championUid = state.championUid || null;
+      const championName = championUid
+        ? (state.enrolledUsers?.[championUid]?.name || 'Jogador')
+        : 'Indefinido';
+      this.#statusBannerEl.textContent = `Rodada finalizada. Campeão: ${championName}.`;
       this.#countdownEl.classList.add('tournament-screen__countdown--hidden');
       this.#clearCountdownTicker();
     }
@@ -382,16 +430,12 @@ export class TournamentScreen extends Screen {
   }
 
   /** @private */
-  #showEntryNotice(enteredCount, totalCount) {
+  #showEntryNotice(playerName, totalCount) {
     if (!this.#statusBannerEl) return;
 
-    const safeEntered = Math.max(1, Number(enteredCount || 1));
     const safeTotal = Math.max(0, Number(totalCount || 0));
-    const enteredLabel = safeEntered > 1
-      ? `Entraram mais ${safeEntered} jogadores no campeonato.`
-      : 'Entrou mais um no campeonato.';
 
-    this.#statusBannerEl.textContent = `${enteredLabel} Total agora: ${safeTotal}.`;
+    this.#statusBannerEl.textContent = `${playerName} entrou no campeonato. Total agora: ${safeTotal}.`;
     this.#entryNoticeVisibleUntil = Date.now() + 3200;
 
     this.#clearEntryNoticeTimer();
@@ -422,13 +466,61 @@ export class TournamentScreen extends Screen {
 
     this.#isStartingTournament = true;
     try {
-      const started = await this.#tournamentService.startIfCountdownElapsed();
-      console.log(`[Tournament] startIfCountdownElapsed started=${started}`);
+      const result = await this.#tournamentService.startIfCountdownElapsed();
+      console.log(`[TournamentRound] startIfCountdownElapsed started=${result?.started}`);
     } catch (error) {
-      console.error('[Tournament] Erro ao iniciar torneio automaticamente:', error);
+      console.error('[TournamentRound] Erro ao iniciar torneio automaticamente:', error);
     } finally {
       this.#isStartingTournament = false;
     }
+  }
+
+  /**
+   * @private
+   */
+  async #maybeNavigateToCurrentMatch() {
+    const state = this.#currentTournament;
+    if (!state || !this.#myUid) return;
+
+    const isJoined = !!state.enrolledUsers?.[this.#myUid];
+    if (!isJoined) return;
+
+    if (state.status === 'countdown') {
+      void this.#tryStartTournament();
+      return;
+    }
+
+    if (state.status !== 'active') return;
+    const matchId = state.currentMatchId || null;
+    if (!matchId) return;
+    if (this.#navigatedMatchId === matchId) return;
+
+    const playersMap = state.activePlayers && Object.keys(state.activePlayers).length > 0
+      ? state.activePlayers
+      : state.enrolledUsers;
+
+    const players = Object.entries(playersMap || {})
+      .map(([uid, value]) => ({
+        uid,
+        name: value?.name || 'Jogador',
+        avatarUrl: value?.avatarUrl || '',
+        joinedAt: Number(value?.joinedAt || Date.now()),
+      }))
+      .sort((a, b) => Number(a.joinedAt || 0) - Number(b.joinedAt || 0));
+
+    if (players.length < 2) return;
+
+    this.#navigatedMatchId = matchId;
+    console.log(`[TournamentRound] redirect to match matchId=${matchId} instanceId=${state.instanceId}`);
+
+    await this.#screenManager.show('GameTableScreen', {
+      matchId,
+      roomType: 'tournament',
+      players,
+      myUid: this.#myUid,
+      tournamentId: state.tournamentId,
+      tournamentInstanceId: state.instanceId,
+    });
   }
 
   /**
@@ -442,10 +534,10 @@ export class TournamentScreen extends Screen {
         this.#justJoinedAt = Date.now();
       }
       console.log(
-        `[Tournament] join result joined=${result.joined} alreadyJoined=${result.alreadyJoined}`
+        `[TournamentRound] join result joined=${result.joined} alreadyJoined=${result.alreadyJoined} instanceId=${result.instanceId}`
       );
     } catch (error) {
-      console.error('[Tournament] Falha ao participar do campeonato:', error);
+      console.error('[TournamentRound] Falha ao participar do campeonato:', error);
       this.#statusBannerEl.textContent = 'Nao foi possivel participar agora. Tente novamente.';
     }
   }

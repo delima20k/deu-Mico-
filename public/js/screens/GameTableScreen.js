@@ -167,6 +167,18 @@ export class GameTableScreen extends Screen {
   /** @type {TournamentService} */
   #tournamentService;
 
+  /** @type {string|null} */
+  #tournamentInstanceId = null;
+
+  /** @type {string|null} */
+  #tournamentId = null;
+
+  /** @type {string|null} */
+  #tournamentResultHandledForMatchId = null;
+
+  /** @type {ReturnType<typeof setTimeout>|null} */
+  #tournamentRedirectTimer = null;
+
   // ── Gerenciamento de turnos ────────────────────────────────────────
 
   /** @type {Map<string, import('../domain/Card.js').Card[]>} uid → cartas na mão */
@@ -239,6 +251,14 @@ export class GameTableScreen extends Screen {
     this.#roomType = params.roomType || '2p';
     this.#myUid   = params.myUid   || this.#getCurrentUserUid();
     this.#players = params.players || await this.#generateMockPlayers();
+    this.#tournamentInstanceId = params.tournamentInstanceId || null;
+    this.#tournamentId = params.tournamentId || null;
+    this.#tournamentResultHandledForMatchId = null;
+
+    if (this.#tournamentRedirectTimer !== null) {
+      clearTimeout(this.#tournamentRedirectTimer);
+      this.#tournamentRedirectTimer = null;
+    }
 
     // Libera lock global para permitir adaptação automática portrait/landscape.
     this.#unlockOrientation();
@@ -599,6 +619,11 @@ export class GameTableScreen extends Screen {
 
     // Fora da mesa, o app volta para portrait quando possível
     this.#lockPortraitOrientation();
+
+    if (this.#tournamentRedirectTimer !== null) {
+      clearTimeout(this.#tournamentRedirectTimer);
+      this.#tournamentRedirectTimer = null;
+    }
 
     // Para o heartbeat Firebase (ping periódico)
     FirebaseService.getInstance().stopHeartbeat();
@@ -2262,6 +2287,7 @@ export class GameTableScreen extends Screen {
     const micoPlayer = this.#players.find(p => p.uid === micoUid);
     const micoName   = micoPlayer?.name ?? 'Jogador';
     const micoIsMe   = micoUid === this.#myUid;
+    const isTournamentMatch = this.#roomType === 'tournament' && !!this.#tournamentInstanceId;
     const winner     = nonMicoPlayers[0] ?? null;
     const others     = nonMicoPlayers.slice(1);
 
@@ -2393,14 +2419,32 @@ export class GameTableScreen extends Screen {
     // ── Botão voltar ─────────────────────────────────────────────────────
     const btnBack = Dom.create('button', {
       classes: 'game-over-panel__btn',
-      text:    'Voltar às Salas',
+      text:    isTournamentMatch ? 'Voltar ao Campeonato' : 'Voltar às Salas',
       attrs:   { type: 'button' },
     });
-    btnBack.addEventListener('click', () => this.#onExitGame());
+    btnBack.addEventListener('click', () => {
+      if (isTournamentMatch) {
+        this.#screenManager.show('TournamentScreen', {
+          tournamentInstanceId: this.#tournamentInstanceId,
+          tournamentId: this.#tournamentId,
+        });
+        return;
+      }
+      this.#onExitGame();
+    });
     panel.append(btnBack);
 
     // Auto-redireciona após 15 s caso o jogador não clique (mais tempo para rewarded)
-    const autoExit = setTimeout(() => this.#onExitGame(), 15_000);
+    const autoExit = setTimeout(() => {
+      if (isTournamentMatch) {
+        this.#screenManager.show('TournamentScreen', {
+          tournamentInstanceId: this.#tournamentInstanceId,
+          tournamentId: this.#tournamentId,
+        });
+        return;
+      }
+      this.#onExitGame();
+    }, 15_000);
     btnBack.addEventListener('click', () => clearTimeout(autoExit), { once: true });
 
     overlay.append(panel);
@@ -2416,6 +2460,95 @@ export class GameTableScreen extends Screen {
           .catch(() => {});
       }
     }, 2000);
+
+    if (isTournamentMatch) {
+      void this.#handleTournamentAfterGameOver(state, panel, btnBack);
+    }
+  }
+
+  /**
+   * Processa avanço da instância de campeonato após game_over.
+   * @param {{ micoUid: string, pairCounts?: Record<string,number> }} state
+   * @param {HTMLElement} panel
+   * @param {HTMLButtonElement} btnBack
+   * @returns {Promise<void>}
+   * @private
+   */
+  async #handleTournamentAfterGameOver(state, panel, btnBack) {
+    if (!this.#tournamentInstanceId) return;
+    if (this.#tournamentResultHandledForMatchId === this.#matchId) return;
+    this.#tournamentResultHandledForMatchId = this.#matchId;
+
+    const statusLabel = Dom.create('p', {
+      classes: 'game-over-card__label',
+      text: 'Processando resultado do campeonato...'
+    });
+    panel.append(statusLabel);
+
+    let updatedInstance = null;
+    try {
+      updatedInstance = await this.#tournamentService.reportMatchResult({
+        instanceId: this.#tournamentInstanceId,
+        matchId: this.#matchId,
+        micoUid: state?.micoUid,
+        pairCounts: state?.pairCounts || {},
+      });
+    } catch (error) {
+      console.error('[TournamentRound] Falha ao reportar resultado da partida:', error);
+      statusLabel.textContent = 'Nao foi possivel processar o resultado do campeonato agora.';
+      return;
+    }
+
+    if (!updatedInstance) {
+      statusLabel.textContent = 'Instancia de campeonato indisponivel.';
+      return;
+    }
+
+    const eliminated = state?.micoUid === this.#myUid;
+    const nextMatchId = updatedInstance.currentMatchId || null;
+
+    if (updatedInstance.status === 'finished') {
+      const championUid = updatedInstance.championUid || null;
+      const championIsMe = championUid && championUid === this.#myUid;
+      statusLabel.textContent = championIsMe
+        ? 'Campeonato finalizado. Voce e o campeao!'
+        : 'Campeonato finalizado. Confira o resultado da rodada.';
+      btnBack.textContent = 'Voltar ao Campeonato';
+      return;
+    }
+
+    if (eliminated) {
+      statusLabel.textContent = 'Voce foi eliminado. Acompanhe a rodada no campeonato.';
+      btnBack.textContent = 'Voltar ao Campeonato';
+      return;
+    }
+
+    const activePlayers = Object.entries(updatedInstance.activePlayers || {})
+      .map(([uid, value]) => ({
+        uid,
+        name: value?.name || 'Jogador',
+        avatarUrl: value?.avatarUrl || '',
+        joinedAt: Number(value?.joinedAt || Date.now()),
+      }))
+      .sort((a, b) => Number(a.joinedAt || 0) - Number(b.joinedAt || 0));
+
+    if (!nextMatchId || activePlayers.length < 2) {
+      statusLabel.textContent = 'Aguardando definicao da proxima partida...';
+      return;
+    }
+
+    statusLabel.textContent = 'Voce sobreviveu. Proxima partida iniciando...';
+
+    this.#tournamentRedirectTimer = setTimeout(() => {
+      this.#screenManager.show('GameTableScreen', {
+        matchId: nextMatchId,
+        roomType: 'tournament',
+        players: activePlayers,
+        myUid: this.#myUid,
+        tournamentId: updatedInstance.tournamentId,
+        tournamentInstanceId: this.#tournamentInstanceId,
+      });
+    }, 2600);
   }
 
   /**

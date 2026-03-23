@@ -34,6 +34,9 @@ export class TournamentService {
   /** @type {string|null} */
   #currentTournamentId = null;
 
+  /** @type {string|null} */
+  #currentInstanceId = null;
+
   static getInstance() {
     if (!TournamentService.#instance) {
       TournamentService.#instance = new TournamentService(
@@ -87,7 +90,41 @@ export class TournamentService {
    */
   async subscribeCurrentTournament(callback) {
     const tournamentId = await this.ensureCurrentTournament();
-    return this.#repo.subscribeTournament(tournamentId, callback);
+    const currentUser = await this.#authService.getCurrentUser().catch(() => null);
+    const myUid = currentUser?.uid || null;
+
+    return this.#repo.subscribeTournamentInstances(tournamentId, (instances) => {
+      const list = Array.isArray(instances) ? instances : [];
+
+      const myInstance = myUid
+        ? list.find((instance) => {
+          const hasMe = !!instance?.enrolledUsers?.[myUid];
+          const status = instance?.status || 'waiting';
+          return hasMe && status !== 'finished';
+        }) || null
+        : null;
+
+      const waitingJoinable = list.find((instance) => {
+        const status = instance?.status || 'waiting';
+        const count = Number(instance?.enrolledCount || 0);
+        const max = Number(instance?.maxParticipants || TournamentService.DEFAULT_MAX_PARTICIPANTS);
+        return status === 'waiting' && count < max;
+      }) || null;
+
+      const selectedInstance = myInstance || waitingJoinable || list[0] || null;
+      if (selectedInstance?.instanceId) {
+        this.#currentInstanceId = selectedInstance.instanceId;
+      }
+
+      callback({
+        tournamentId,
+        myUid,
+        instances: list,
+        myInstance,
+        joinableInstance: waitingJoinable,
+        selectedInstance,
+      });
+    });
   }
 
   /**
@@ -112,9 +149,16 @@ export class TournamentService {
 
     console.log(`[Tournament] join request uid=${currentUser.uid.slice(0, 8)}... tournamentId=${tournamentId}`);
 
-    return this.#repo.joinTournament(tournamentId, userData, {
+    const result = await this.#repo.joinTournament(tournamentId, userData, {
       countdownDurationMs: TournamentService.COUNTDOWN_MS,
+      maxParticipants: TournamentService.DEFAULT_MAX_PARTICIPANTS,
     });
+
+    if (result?.instanceId) {
+      this.#currentInstanceId = result.instanceId;
+    }
+
+    return result;
   }
 
   /**
@@ -123,7 +167,63 @@ export class TournamentService {
    */
   async startIfCountdownElapsed() {
     const tournamentId = await this.ensureCurrentTournament();
-    return this.#repo.startTournamentIfCountdownElapsed(tournamentId);
+
+    let instanceId = this.#currentInstanceId;
+    if (!instanceId) {
+      const currentUser = await this.#authService.getCurrentUser().catch(() => null);
+      const enrolled = await this.#repo.findUserEnrollment(tournamentId, currentUser?.uid || '');
+      instanceId = enrolled.instance?.instanceId || null;
+    }
+
+    if (!instanceId) {
+      const startedAny = await this.#repo.startTournamentIfCountdownElapsed(tournamentId);
+      return {
+        started: startedAny,
+        instance: null,
+      };
+    }
+
+    return this.#repo.startInstanceIfCountdownElapsed(instanceId);
+  }
+
+  /**
+   * @param {string} instanceId
+   * @returns {Promise<Object|null>}
+   */
+  async getInstanceById(instanceId) {
+    if (!instanceId) return null;
+    return this.#repo.getInstanceById(instanceId);
+  }
+
+  /**
+   * @param {string} instanceId
+   * @param {(state: Object|null) => void} callback
+   * @returns {Function}
+   */
+  subscribeTournamentInstance(instanceId, callback) {
+    return this.#repo.subscribeTournamentInstance(instanceId, callback);
+  }
+
+  /**
+   * Processa fim de partida (mico eliminado) e avança rodada.
+   * @param {{instanceId: string, matchId: string, micoUid: string, pairCounts?: Object}} payload
+   * @returns {Promise<Object|null>}
+   */
+  async reportMatchResult(payload) {
+    if (!payload?.instanceId || !payload?.matchId || !payload?.micoUid) {
+      return null;
+    }
+
+    console.log(
+      `[TournamentRound] report result instanceId=${payload.instanceId} ` +
+      `matchId=${payload.matchId} micoUid=${payload.micoUid.slice(0, 8)}...`
+    );
+
+    return this.#repo.reportMatchResult(payload.instanceId, {
+      matchId: payload.matchId,
+      micoUid: payload.micoUid,
+      pairCounts: payload.pairCounts || {},
+    });
   }
 
   /**
@@ -148,7 +248,10 @@ export class TournamentService {
             decisivePairs: Number(row?.decisivePairs || 0),
           };
         })
-        .sort((a, b) => b.pointsMilli - a.pointsMilli)
+        .sort((a, b) => {
+          if (b.pointsMilli !== a.pointsMilli) return b.pointsMilli - a.pointsMilli;
+          return Number(b.pairs || 0) - Number(a.pairs || 0);
+        })
         .slice(0, 50)
         .map((entry, index) => ({ ...entry, rank: index + 1 }));
 
