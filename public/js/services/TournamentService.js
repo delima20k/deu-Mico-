@@ -2,207 +2,196 @@
  * @layer services
  * @group tournament
  * @role Service
- * @depends TournamentRepository, Tournament
+ * @depends TournamentRepository, AuthService
  * @exports TournamentService
  *
- * Service: Orquestra a lógica de campeonatos/torneios.
- * Coordena TournamentRepository e lógica de ranking.
- * Não contém lógica visual — apenas métodos de domínio.
- * Estrutura base — sem implementação ainda.
+ * Regras do campeonato em tempo real.
+ * - Participacao em torneio + countdown idempotente
+ * - Ranking Top 50 em tempo real
+ * - Pontuacao normalizada em miliesimos para evitar erro de float
  */
-
 import { TournamentRepository } from '../repositories/TournamentRepository.js';
+import { AuthService } from './AuthService.js';
 
 export class TournamentService {
   /** @type {TournamentService|null} */
   static #instance = null;
 
-  /** @type {import('../repositories/TournamentRepository.js').TournamentRepository} */
-  #tournamentRepository;
+  static DEFAULT_TOURNAMENT_ID = '2026_march_1';
+  static DEFAULT_MAX_PARTICIPANTS = 8;
+  static COUNTDOWN_MS = 60_000;
 
-  // -------------------------------------------------------
-  // Singleton
-  // -------------------------------------------------------
+  // Normalizacao de pontos: 100 = 0.1 ponto, 300 = 0.3 pontos.
+  static POINTS_COMMON_PAIR_MILLI = 100;
+  static POINTS_DECISIVE_PAIR_MILLI = 300;
 
-  /**
-   * Retorna instância única.
-   * @static
-   * @returns {TournamentService}
-   */
+  /** @type {TournamentRepository} */
+  #repo;
+
+  /** @type {AuthService} */
+  #authService;
+
+  /** @type {string|null} */
+  #currentTournamentId = null;
+
   static getInstance() {
     if (!TournamentService.#instance) {
-      TournamentService.#instance = new TournamentService(TournamentRepository.getInstance());
+      TournamentService.#instance = new TournamentService(
+        TournamentRepository.getInstance(),
+        AuthService.getInstance()
+      );
     }
     return TournamentService.#instance;
   }
 
-  /**
-   * @param {import('../repositories/TournamentRepository.js').TournamentRepository} tournamentRepository
-   */
-  constructor(tournamentRepository) {
-    this.#tournamentRepository = tournamentRepository;
-  }
-
-  // -------------------------------------------------------
-  // Gerenciamento de torneios
-  // -------------------------------------------------------
-
-  /**
-   * Cria um novo torneio.
-   * @param {Tournament} tournament
-   * @returns {Promise<void>}
-   */
-  async createTournament(tournament) {
-    // TODO: Validar Tournament
-    // TODO: Chamar tournamentRepository.createTournament()
+  constructor(repo, authService) {
+    this.#repo = repo;
+    this.#authService = authService;
   }
 
   /**
-   * Obtém um torneio pelo ID.
-   * @param {string} tournamentId
-   * @returns {Promise<Tournament|null>}
+   * Garante que exista um torneio atual no Firebase.
+   * @returns {Promise<string>} tournamentId
    */
-  async getTournament(tournamentId) {
-    // TODO: Chamar tournamentRepository.getTournamentById()
-    return null;
+  async ensureCurrentTournament() {
+    if (this.#currentTournamentId) {
+      return this.#currentTournamentId;
+    }
+
+    const fromDb = await this.#repo.getCurrentTournamentId();
+    const tournamentId = fromDb || TournamentService.DEFAULT_TOURNAMENT_ID;
+
+    await this.#repo.ensureTournament(tournamentId, {
+      name: 'Campeonato de Marco 2026',
+      prize: 'Premiacao especial Deu Mico',
+      maxParticipants: TournamentService.DEFAULT_MAX_PARTICIPANTS,
+      status: 'waiting',
+    });
+
+    this.#currentTournamentId = tournamentId;
+    console.log(`[Tournament] current tournamentId=${tournamentId}`);
+    return tournamentId;
   }
 
   /**
-   * Obtém todos os torneios.
-   * @returns {Promise<Tournament[]>}
+   * @returns {Promise<string>}
    */
-  async getAllTournaments() {
-    // TODO: Chamar tournamentRepository.getAllTournaments()
-    return [];
+  async getCurrentTournamentId() {
+    return this.ensureCurrentTournament();
   }
 
   /**
-   * Ativa um torneio.
-   * @param {string} tournamentId
-   * @returns {Promise<void>}
+   * Observa estado realtime do torneio atual.
+   * @param {(state: Object|null) => void} callback
+   * @returns {Promise<Function>} unsubscribe
    */
-  async activateTournament(tournamentId) {
-    // TODO: Obter torneio
-    // TODO: Validar estado (deve estar em draft)
-    // TODO: Chamr tournamentRepository.updateTournament() com status 'active'
+  async subscribeCurrentTournament(callback) {
+    const tournamentId = await this.ensureCurrentTournament();
+    return this.#repo.subscribeTournament(tournamentId, callback);
   }
 
   /**
-   * Finaliza um torneio.
-   * @param {string} tournamentId
-   * @returns {Promise<void>}
+   * Participa do torneio atual (atomico).
+   * @returns {Promise<{joined: boolean, alreadyJoined: boolean, tournament: Object|null}>}
    */
-  async finishTournament(tournamentId) {
-    // TODO: Obter torneio
-    // TODO: Chamar tournamentRepository.updateTournament() com status 'finished'
+  async joinCurrentTournament() {
+    const tournamentId = await this.ensureCurrentTournament();
+    const currentUser = await this.#authService.getCurrentUser();
+
+    if (!currentUser?.uid) {
+      throw new Error('[Tournament] Usuario nao autenticado para participar');
+    }
+
+    const profile = await this.#authService.getProfile(currentUser.uid).catch(() => null);
+
+    const userData = {
+      uid: currentUser.uid,
+      name: profile?.displayName || currentUser.displayName || currentUser.email?.split('@')[0] || 'Jogador',
+      avatarUrl: profile?.avatarUrl || currentUser.photoURL || '',
+    };
+
+    console.log(`[Tournament] join request uid=${currentUser.uid.slice(0, 8)}... tournamentId=${tournamentId}`);
+
+    return this.#repo.joinTournament(tournamentId, userData, {
+      countdownDurationMs: TournamentService.COUNTDOWN_MS,
+    });
   }
 
   /**
-   * Deleta um torneio.
-   * @param {string} tournamentId
-   * @returns {Promise<void>}
-   */
-  async deleteTournament(tournamentId) {
-    // TODO: Obter torneio
-    // TODO: Validar se pode deletar (deve estar em draft)
-    // TODO: Chamar tournamentRepository.deleteTournament()
-  }
-
-  // -------------------------------------------------------
-  // Pontuação e ranking
-  // -------------------------------------------------------
-
-  /**
-   * Registra pontos de um jogador em um torneio.
-   * @param {string} tournamentId
-   * @param {string} uid
-   * @param {Object} scoreData - {points, wins, losses, ...}
-   * @returns {Promise<void>}
-   */
-  async recordPlayerScore(tournamentId, uid, scoreData) {
-    // TODO: Validar tournamentId e uid
-    // TODO: Validar scoreData
-    // TODO: Chamar tournamentRepository.recordScore()
-  }
-
-  /**
-   * Obtém score de um jogador em um torneio.
-   * @param {string} tournamentId
-   * @param {string} uid
-   * @returns {Promise<Object|null>}
-   */
-  async getPlayerScore(tournamentId, uid) {
-    // TODO: Chamar tournamentRepository.getPlayerScore()
-    return null;
-  }
-
-  /**
-   * Obtém ranking top N de um torneio.
-   * @param {string} tournamentId
-   * @param {number} [limit=50]
-   * @returns {Promise<Array<{uid: string, score: Object}>>}
-   */
-  async getLeaderboardTop(tournamentId, limit = 50) {
-    // TODO: Chamar tournamentRepository.getLeaderboardTop()
-    return [];
-  }
-
-  /**
-   * Obtém posição de um jogador no ranking.
-   * @param {string} tournamentId
-   * @param {string} uid
-   * @returns {Promise<number|null>}
-   */
-  async getPlayerRank(tournamentId, uid) {
-    // TODO: Chamar tournamentRepository.getPlayerRank()
-    return null;
-  }
-
-  /**
-   * Remove um jogador do torneio.
-   * @param {string} tournamentId
-   * @param {string} uid
-   * @returns {Promise<void>}
-   */
-  async removePlayer(tournamentId, uid) {
-    // TODO: Chamar tournamentRepository.removePlayerFromLeaderboard()
-  }
-
-  // -------------------------------------------------------
-  // Inscrição (enrollment)
-  // -------------------------------------------------------
-
-  /**
-   * Inscreve um jogador em um torneio.
-   * @param {string} tournamentId
-   * @param {string} uid
-   * @returns {Promise<void>}
-   */
-  async enrollPlayer(tournamentId, uid) {
-    // TODO: Validar torneio está ativo
-    // TODO: Validar jogador não está inscrito
-    // TODO: Registrar inscricacao no leaderboard (score inicial = 0)
-  }
-
-  /**
-   * Verifica se um jogador está inscrito.
-   * @param {string} tournamentId
-   * @param {string} uid
+   * Tenta iniciar torneio apos countdown (idempotente).
    * @returns {Promise<boolean>}
    */
-  async isPlayerEnrolled(tournamentId, uid) {
-    // TODO: Obter score do jogador
-    // TODO: Retorna true se existe
-    return false;
+  async startIfCountdownElapsed() {
+    const tournamentId = await this.ensureCurrentTournament();
+    return this.#repo.startTournamentIfCountdownElapsed(tournamentId);
   }
 
   /**
-   * Desinscreve um jogador do torneio.
-   * @param {string} tournamentId
-   * @param {string} uid
+   * Observa ranking Top 50 em tempo real.
+   * @param {(rows: Array<Object>) => void} callback
+   * @returns {Promise<Function>} unsubscribe
+   */
+  async subscribeLeaderboardTop50(callback) {
+    const tournamentId = await this.ensureCurrentTournament();
+
+    return this.#repo.subscribeLeaderboard(tournamentId, (leaderboardMap) => {
+      const rows = Object.entries(leaderboardMap || {})
+        .map(([uid, row]) => {
+          const pointsMilli = Number(row?.pointsMilli || 0);
+          return {
+            uid,
+            name: row?.name || 'Jogador',
+            avatarUrl: row?.avatarUrl || '',
+            pointsMilli,
+            points: (pointsMilli / 1000).toFixed(1),
+            pairs: Number(row?.pairs || 0),
+            decisivePairs: Number(row?.decisivePairs || 0),
+          };
+        })
+        .sort((a, b) => b.pointsMilli - a.pointsMilli)
+        .slice(0, 50)
+        .map((entry, index) => ({ ...entry, rank: index + 1 }));
+
+      callback(rows);
+    });
+  }
+
+  /**
+   * Pontua um par formado no ranking do campeonato.
+   * Regra:
+   * - par comum: +0.1 => 100 milli
+   * - par decisivo/final: +0.3 => 300 milli
+   *
+   * @param {{uid: string, name?: string, avatarUrl?: string, matchId: string, cardIds: string[], eventTs?: number, isDecisive?: boolean}} data
    * @returns {Promise<void>}
    */
-  async unenrollPlayer(tournamentId, uid) {
-    // TODO: Chamar removePlayer()
+  async awardPairPoints(data) {
+    if (!data?.uid || !data?.matchId || !Array.isArray(data.cardIds) || data.cardIds.length < 2) {
+      return;
+    }
+
+    const tournamentId = await this.ensureCurrentTournament();
+    const eventTs = data.eventTs || Date.now();
+    const cardSignature = [...data.cardIds].sort().join('_');
+    const eventId = `${data.matchId}_${data.uid}_${cardSignature}_${eventTs}`;
+    const isDecisive = !!data.isDecisive;
+
+    const milliDelta = isDecisive
+      ? TournamentService.POINTS_DECISIVE_PAIR_MILLI
+      : TournamentService.POINTS_COMMON_PAIR_MILLI;
+
+    console.log(
+      `[Ranking] award uid=${data.uid.slice(0, 8)}... deltaMilli=${milliDelta} ` +
+      `decisive=${isDecisive} eventId=${eventId}`
+    );
+
+    await this.#repo.addPairPoints(tournamentId, {
+      uid: data.uid,
+      name: data.name || 'Jogador',
+      avatarUrl: data.avatarUrl || '',
+      milliDelta,
+      eventId,
+      isDecisive,
+    });
   }
 }

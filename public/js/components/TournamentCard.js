@@ -89,7 +89,13 @@ export class TournamentCard {
     if (this.#el) {
       const enrolledEl = this.#el.querySelector('.tournament-card__enrolled');
       if (enrolledEl) {
-        enrolledEl.textContent = `👥 ${tournament.enrolledCount || 0} inscritos`;
+        const enrolledCount = Number(tournament.enrolledCount || 0);
+        const maxParticipants = Number(tournament.maxParticipants || 0);
+        const suffix = maxParticipants > 0
+          ? ` (${enrolledCount}/${maxParticipants})`
+          : '';
+
+        enrolledEl.textContent = `👥 ${enrolledCount} inscritos${suffix}`;
       }
     }
   }

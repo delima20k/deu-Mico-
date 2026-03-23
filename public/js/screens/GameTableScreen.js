@@ -36,6 +36,7 @@ import { AudioService }       from '../services/AudioService.js';
 import { FirebaseService }    from '../services/FirebaseService.js';
 import { AdService }          from '../services/adService.js';
 import { AdConfig }           from '../services/adConfig.js';
+import { TournamentService }  from '../services/TournamentService.js';
 
 const CHAT_TRAIL_SPEED_MODE = 'slow';
 const CHAT_TRAIL_SPEED_PRESETS = {
@@ -154,6 +155,9 @@ export class GameTableScreen extends Screen {
   /** @type {number} Quantidade de jogadores presentes no momento */
   #activePlayers = 0;
 
+  /** @type {TournamentService} */
+  #tournamentService;
+
   // ── Gerenciamento de turnos ────────────────────────────────────────
 
   /** @type {Map<string, import('../domain/Card.js').Card[]>} uid → cartas na mão */
@@ -192,6 +196,7 @@ export class GameTableScreen extends Screen {
   constructor(screenManager) {
     super('GameTableScreen');
     this.#screenManager = screenManager;
+    this.#tournamentService = TournamentService.getInstance();
   }
 
   /**
@@ -1221,6 +1226,10 @@ export class GameTableScreen extends Screen {
       const badge = this.#pairsBadges.get(this.#myUid);
       console.log(`[GameTableScreen] 🃏 Par formado: ${pair.map(c => c.name).join(' + ')}`);
       this.#triggerPairArc(this.#myUid, pair, true);
+      await this.#awardTournamentPairPoints(this.#myUid, pair, {
+        eventTs: Date.now(),
+        isDecisive: this.#isPairDecisiveAfterCurrentState(),
+      });
       void badge; // referenciado indiretamente em #triggerPairArc
 
       // 3. Transmite para todos os clientes via Firebase (estado)
@@ -1577,6 +1586,10 @@ export class GameTableScreen extends Screen {
 
       // Anima o arc do par até o badge
       this.#triggerPairArc(activeUid, [card, pairCard], false);
+      await this.#awardTournamentPairPoints(activeUid, [card, pairCard], {
+        eventTs: Date.now(),
+        isDecisive: this.#isPairDecisiveAfterCurrentState(),
+      });
       this.#showTurnToast(`${activeName} formou um par! 🎉`);
 
       // Broadcast do par para outros clientes reais
@@ -1795,6 +1808,10 @@ export class GameTableScreen extends Screen {
           const badge = this.#pairsBadges.get(this.#myUid);
           void badge; // usado em #triggerPairArc
           this.#triggerPairArc(this.#myUid, [card, matchCard], true);
+          await this.#awardTournamentPairPoints(this.#myUid, [card, matchCard], {
+            eventTs: Date.now(),
+            isDecisive: this.#isPairDecisiveAfterCurrentState(),
+          });
 
           // Broadcast pair_formed (chega DEPOIS que card_stolen já foi processado)
           try {
@@ -1821,6 +1838,53 @@ export class GameTableScreen extends Screen {
         await this.#broadcastNextTurn();
       });
     }, 350);
+  }
+
+  /**
+   * Retorna true quando o par atual deixa apenas 1 carta no jogo (mico).
+   * @returns {boolean}
+   * @private
+   */
+  #isPairDecisiveAfterCurrentState() {
+    const totalCards = [...this.#handMap.values()].reduce((sum, hand) => sum + hand.length, 0);
+    return totalCards <= 1;
+  }
+
+  /**
+   * Atualiza ranking do campeonato quando um par e formado.
+   * Regra de pontos (normalizada):
+   * - par comum = 100 milli = 0.1 ponto
+   * - par decisivo/final = 300 milli = 0.3 ponto
+   * @param {string} uid
+   * @param {import('../domain/Card.js').Card[]} pair
+   * @param {{eventTs?: number, isDecisive?: boolean}} [options]
+   * @returns {Promise<void>}
+   * @private
+   */
+  async #awardTournamentPairPoints(uid, pair, options = {}) {
+    if (this.#roomType !== 'tournament') return;
+    if (!uid || !Array.isArray(pair) || pair.length < 2) return;
+
+    const player = this.#players.find((entry) => entry.uid === uid);
+
+    try {
+      await this.#tournamentService.awardPairPoints({
+        uid,
+        name: player?.name || 'Jogador',
+        avatarUrl: player?.avatarUrl || '',
+        matchId: this.#matchId,
+        cardIds: pair.map((card) => card.id).filter(Boolean),
+        eventTs: options.eventTs || Date.now(),
+        isDecisive: !!options.isDecisive,
+      });
+
+      console.log(
+        `[Ranking] par pontuado uid=${uid.slice(0, 8)}... ` +
+        `decisive=${!!options.isDecisive} matchId=${this.#matchId}`
+      );
+    } catch (error) {
+      console.error('[Ranking] Falha ao pontuar par no campeonato:', error);
+    }
   }
 
   /**

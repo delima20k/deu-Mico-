@@ -465,6 +465,34 @@
   transform: scale(0.95);
 }
 
+.tournament-screen__status-banner {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #f4fff5;
+  text-align: center;
+  font-weight: 600;
+  font-size: clamp(0.88rem, 2vw, 1rem);
+}
+
+.tournament-screen__countdown {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  text-align: center;
+  font-weight: 700;
+  font-size: clamp(1rem, 2.3vw, 1.15rem);
+  background: rgba(255, 234, 167, 0.92);
+  color: #2d2a12;
+  animation: pulse 1.1s ease-in-out infinite;
+}
+
+.tournament-screen__countdown--hidden {
+  display: none;
+}
+
 /* ---------- TournamentCard ---------- */
 .tournament-card {
   background: var(--color-white);
