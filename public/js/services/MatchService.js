@@ -12,6 +12,7 @@
 import { MatchRepository } from '../repositories/MatchRepository.js';
 import { LobbyRepository } from '../repositories/LobbyRepository.js';
 import { AuthService } from '../services/AuthService.js';
+import { FirebaseService } from '../services/FirebaseService.js';
 
 export class MatchService {
   /** @type {MatchService|null} */
@@ -232,10 +233,22 @@ export class MatchService {
 
       if (!currentUser?.uid) {
         console.error('[AudioChat] Usuário não autenticado');
+        onStatus({ state: 'failed', text: 'Sessão expirada. Faça login novamente.' });
         return false;
       }
 
-      const uid = currentUser.uid;
+      const authContext = await this.#ensureAudioUploadAuthContext(currentUser.uid);
+      if (!authContext.ok || !authContext.uid) {
+        console.error(`[AudioChatRealtime] auth inválida para upload reason=${authContext.reason || 'unknown'}`);
+        onStatus({ state: 'failed', text: 'Sessão inválida para envio de áudio. Entre novamente.' });
+        return false;
+      }
+
+      const uid = authContext.uid;
+      console.log(
+        `[AudioChatRealtime] auth pronta uid=${uid.slice(0, 8)}... provider=${authContext.providerIds.join(',') || 'unknown'} tokenExp=${authContext.tokenExpiration || 'n/a'} tokenHead=${authContext.tokenHead || 'n/a'}`
+      );
+
       const now = Date.now();
       const lastTime = this.#lastMessageTime.get(uid) || 0;
 
@@ -482,6 +495,39 @@ export class MatchService {
       const retryable = this.#isRetryableAudioError(error);
       const hasMoreAttempts = task.attempt < task.maxAttempts;
 
+      if (permissionDenied) {
+        const fallbackSent = await this.#trySendAudioUnauthorizedFallback(task, error);
+        if (fallbackSent) {
+          task.status = 'sent';
+          task.onStatus?.({ state: 'sent', text: 'enviado em modo compatibilidade' });
+          this.#audioRecentlySentSignatures.set(task.signatureKey, Date.now());
+          this.#audioInFlightSignatures.delete(task.signatureKey);
+          this.#audioRetryQueue.delete(task.taskId);
+
+          const timerId = this.#audioRetryTimers.get(task.taskId);
+          if (timerId) {
+            window.clearTimeout(timerId);
+            this.#audioRetryTimers.delete(task.taskId);
+          }
+
+          return true;
+        }
+
+        task.status = 'failed';
+        task.onStatus?.({ state: 'failed', text: 'Servidor recusou áudio (Storage 403). Faça login novamente.' });
+        this.#audioInFlightSignatures.delete(task.signatureKey);
+        this.#audioRetryQueue.delete(task.taskId);
+
+        const denyTimerId = this.#audioRetryTimers.get(task.taskId);
+        if (denyTimerId) {
+          window.clearTimeout(denyTimerId);
+          this.#audioRetryTimers.delete(task.taskId);
+        }
+
+        console.error(`[AudioChatRealtime] upload negado taskId=${task.taskId} code=${error?.code || 'unknown'}`);
+        return false;
+      }
+
       if (retryable && hasMoreAttempts) {
         const delayMs = this.#audioRetryBackoffMs[Math.max(0, task.attempt - 1)] || 4000;
         task.status = 'retry_waiting';
@@ -546,6 +592,97 @@ export class MatchService {
     const safeDuration = Math.max(0, Math.round(Number(durationMs || 0)));
     const bucket = Math.floor(Math.max(0, Number(recordedAt || Date.now())) / 2000);
     return `${safeSize}:${safeDuration}:${bucket}`;
+  }
+
+  async #ensureAudioUploadAuthContext(expectedUid) {
+    const firebaseService = FirebaseService.getInstance();
+    const auth = firebaseService?.getAuth?.();
+    const rawUser = auth?.currentUser || null;
+
+    if (!rawUser?.uid) {
+      return { ok: false, reason: 'missing-auth-user' };
+    }
+
+    if (expectedUid && rawUser.uid !== expectedUid) {
+      console.warn(`[AudioChatRealtime] uid diferente no auth expected=${expectedUid.slice(0, 8)}... actual=${rawUser.uid.slice(0, 8)}...`);
+    }
+
+    try {
+      const tokenResult = await rawUser.getIdTokenResult(true);
+      const providerIds = Array.isArray(rawUser.providerData)
+        ? rawUser.providerData.map((provider) => provider?.providerId).filter(Boolean)
+        : [];
+
+      return {
+        ok: true,
+        uid: rawUser.uid,
+        providerIds,
+        tokenExpiration: tokenResult?.expirationTime || null,
+        tokenHead: (tokenResult?.token || '').slice(0, 12),
+      };
+    } catch (error) {
+      console.error('[AudioChatRealtime] falha ao atualizar token antes do upload:', error);
+      return { ok: false, reason: 'token-refresh-failed' };
+    }
+  }
+
+  async #trySendAudioUnauthorizedFallback(task, originalError) {
+    try {
+      const fallbackAudioDataUrl = await this.#blobToSmallAudioDataUrl(task.blob, task.mimeType);
+      if (!fallbackAudioDataUrl) {
+        console.warn(`[AudioChatRealtime] fallback não enviado taskId=${task.taskId} reason=blob-too-large size=${task.blob?.size || 0}`);
+        return false;
+      }
+
+      await this.#matchRepository.sendChatMessage(task.matchId, task.msgId, {
+        type: 'audio',
+        uid: task.uid,
+        name: task.name,
+        avatarUrl: task.avatarUrl,
+        fallbackAudioDataUrl,
+        durationMs: task.durationMs,
+        mimeType: task.mimeType,
+        storagePath: null,
+        fallbackReason: 'storage-unauthorized',
+        ts: task.createdAt,
+      });
+
+      console.warn(
+        `[AudioChatRealtime] fallback data-url enviado taskId=${task.taskId} code=${originalError?.code || 'unknown'} chars=${fallbackAudioDataUrl.length}`
+      );
+      return true;
+    } catch (fallbackError) {
+      console.error('[AudioChatRealtime] erro no fallback de áudio:', fallbackError);
+      return false;
+    }
+  }
+
+  async #blobToSmallAudioDataUrl(blob, mimeType) {
+    if (!blob || !(blob instanceof Blob)) return null;
+
+    const maxBytes = 160 * 1024;
+    if (blob.size > maxBytes) {
+      return null;
+    }
+
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('Falha ao converter áudio para data URL'));
+      reader.readAsDataURL(blob);
+    });
+
+    const expectedPrefix = `data:${mimeType || 'audio/webm'};base64,`;
+    if (!dataUrl.startsWith('data:audio/') && !dataUrl.startsWith(expectedPrefix)) {
+      return null;
+    }
+
+    const maxChars = 240_000;
+    if (dataUrl.length > maxChars) {
+      return null;
+    }
+
+    return dataUrl;
   }
 
   /**

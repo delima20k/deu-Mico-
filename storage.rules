@@ -9,17 +9,10 @@ service firebase.storage {
       return isAuthenticated() && request.auth.uid == uid;
     }
 
-    // Audio do chat: chat-audio/{matchId}/{uid}/{timestamp}.webm
-    match /chat-audio/{matchId}/{uid}/{fileName} {
-      // Fallback seguro: leitura apenas para usuarios autenticados.
-      // Nao e possivel validar participacao na partida via RTDB dentro de Storage Rules.
-      allow read: if isAuthenticated();
-
-      // Upload/atualizacao apenas para o proprio uid do caminho.
-      allow write: if isPathOwner(uid);
-
-      // Exclusao mantida para o proprio dono do arquivo.
-      allow delete: if isPathOwner(uid);
+    // Modo operacional imediato para audio do chat.
+    // Permite acesso em qualquer subcaminho de /chat-audio apenas para usuarios autenticados.
+    match /chat-audio/{allPaths=**} {
+      allow read, write: if isAuthenticated();
     }
 
     // Nega qualquer outro caminho por padrao.

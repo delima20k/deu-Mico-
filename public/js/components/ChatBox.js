@@ -456,7 +456,9 @@ export class ChatBox {
     const content = document.createElement('div');
     content.className = 'chat-message__content';
 
-    if (msg.type === 'audio' && msg.url) {
+    const audioSrc = msg.url || msg.fallbackAudioDataUrl || '';
+
+    if (msg.type === 'audio' && audioSrc) {
       const audioWrap = document.createElement('div');
       audioWrap.className = 'chat-message__audio';
 
@@ -464,11 +466,13 @@ export class ChatBox {
       audioEl.className = 'chat-message__audio-player';
       audioEl.controls = true;
       audioEl.preload = 'metadata';
-      audioEl.src = msg.url;
+      audioEl.src = audioSrc;
 
       const metaEl = document.createElement('span');
       metaEl.className = 'chat-message__meta';
-      metaEl.textContent = `Audio ${this.#formatDuration(msg.durationMs)}`;
+      metaEl.textContent = msg.fallbackAudioDataUrl
+        ? `Audio ${this.#formatDuration(msg.durationMs)} (modo compatibilidade)`
+        : `Audio ${this.#formatDuration(msg.durationMs)}`;
 
       const autoStatusEl = document.createElement('span');
       autoStatusEl.className = 'chat-message__auto-status';
