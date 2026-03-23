@@ -870,6 +870,9 @@ export class TournamentScreen extends Screen {
     if (!matchId) return;
     if (this.#navigatedMatchId === matchId) return;
 
+    // Não redireciona se o usuário saiu voluntariamente desta partida (via GameExitButton)
+    if (this.#tournamentService.wasMatchLeftByUser(matchId)) return;
+
     const playersMap = state.activePlayers && Object.keys(state.activePlayers).length > 0
       ? state.activePlayers
       : state.enrolledUsers;

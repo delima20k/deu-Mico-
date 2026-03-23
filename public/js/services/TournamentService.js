@@ -37,6 +37,27 @@ export class TournamentService {
   /** @type {string|null} */
   #currentInstanceId = null;
 
+  /** @type {Set<string>} matchIds que o usuário saiu voluntariamente nesta sessão */
+  #userLeftMatchIds = new Set();
+
+  /**
+   * Registra que o usuário saiu voluntariamente de uma partida.
+   * Impede redirecionamento automático de volta à mesma partida.
+   * @param {string} matchId
+   */
+  recordUserLeftMatch(matchId) {
+    if (matchId) this.#userLeftMatchIds.add(matchId);
+  }
+
+  /**
+   * Verifica se o usuário saiu voluntariamente de uma partida.
+   * @param {string} matchId
+   * @returns {boolean}
+   */
+  wasMatchLeftByUser(matchId) {
+    return !!matchId && this.#userLeftMatchIds.has(matchId);
+  }
+
   static getInstance() {
     if (!TournamentService.#instance) {
       TournamentService.#instance = new TournamentService(

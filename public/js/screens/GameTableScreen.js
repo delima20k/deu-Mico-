@@ -374,6 +374,14 @@ export class GameTableScreen extends Screen {
       mainEl.append(tableRoot);
       container.append(mainEl);
 
+      // Assina os canais de estado ANTES da animação de entrada do baralho (~2,6 s).
+      // O Firebase RTDB entrega apenas o valor atual (onValue), não um histórico:
+      // se a animação demorar mais que o tempo até o dealer distribuir as cartas,
+      // outros clientes receberiam apenas o turn_start e perderiam o evento dealing.
+      // A assinatura antecipada garante que o listener está ativo desde o início.
+      this.#subscribeGameState();
+      this.#subscribeAnimEvents();
+
       // Sincroniza contagem visual e distribui cartas com animação
       // O som começa junto com a primeira carta voando
       AudioService.getInstance().playForce('table-open');
@@ -470,11 +478,9 @@ export class GameTableScreen extends Screen {
     // Inicia monitor de presença para detectar quando alguém sai
     this.#startPresenceMonitor();
 
-    // Assina canal de estado de jogo — sincroniza embaralhar+entregar em todos os clientes
-    this.#subscribeGameState();
-
-    // Assina canal de animações push — sincroniza animações entre todos os clientes
-    this.#subscribeAnimEvents();
+    // Assina apenas se o try block lançou antes de alcançar a assinatura antecipada
+    if (!this.#gameStateUnsub) this.#subscribeGameState();
+    if (!this.#animEventsUnsub) this.#subscribeAnimEvents();
 
     // Benefícios rewarded de campeonato (sincronizados por partida/uid)
     this.#subscribeTournamentAdBenefits();
@@ -957,6 +963,11 @@ export class GameTableScreen extends Screen {
         playerUid:     this.#myUid,
         fromClientUid: this.#myUid,
       }).catch(() => {});
+    }
+
+    // Marca saída voluntária para evitar redirecionamento automático em TournamentScreen
+    if (this.#matchId) {
+      this.#tournamentService.recordUserLeftMatch(this.#matchId);
     }
 
     await MatchService.getInstance()

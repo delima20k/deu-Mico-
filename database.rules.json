@@ -74,7 +74,10 @@
           ".write": "auth != null"
         },
         "gameState": {
-          ".write": false
+          ".write": "auth != null"
+        },
+        "animations": {
+          ".write": "auth != null"
         }
       }
     },
