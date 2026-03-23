@@ -63,6 +63,9 @@ export class TournamentScreen extends Screen {
   /** @type {boolean} */
   #isStartingTournament = false;
 
+  /** @type {boolean} */
+  #isJoiningTournament = false;
+
   /** @type {number|null} */
   #lastEnrolledCount = null;
 
@@ -71,6 +74,9 @@ export class TournamentScreen extends Screen {
 
   /** @type {string|null} */
   #lastSystemNoticeId = null;
+
+  /** @type {string|null} */
+  #lastObservedInstanceId = null;
 
   /** @type {string|null} */
   #navigatedMatchId = null;
@@ -204,6 +210,7 @@ export class TournamentScreen extends Screen {
     this.#lastEnrolledCount = null;
     this.#lastJoinEventId = null;
     this.#lastSystemNoticeId = null;
+    this.#lastObservedInstanceId = null;
     this.#navigatedMatchId = null;
     this.#justJoinedAt = 0;
   }
@@ -217,28 +224,52 @@ export class TournamentScreen extends Screen {
     this.#unsubLeaderboard?.();
 
     this.#unsubTournament = await this.#tournamentService.subscribeCurrentTournament((state) => {
+      this.#myUid = state?.myUid || null;
       this.#currentRealtimeState = state;
-      const selected = state?.selectedInstance || null;
+      const selected = this.#resolveObservedInstance(state);
       const nextEnrolledCount = Number(selected?.enrolledCount || 0);
       const prevEnrolledCount = this.#lastEnrolledCount;
 
       const isJoinedInSelected = !!(this.#myUid && selected?.enrolledUsers?.[this.#myUid]);
+      const selectedInstanceId = selected?.instanceId || null;
+
+      if (selectedInstanceId && selectedInstanceId !== this.#lastObservedInstanceId) {
+        this.#lastObservedInstanceId = selectedInstanceId;
+        this.#lastJoinEventId = selected?.lastJoinEvent?.eventId
+          ? `${selectedInstanceId}:${selected.lastJoinEvent.eventId}`
+          : null;
+        this.#lastSystemNoticeId = selected?.lastSystemNotice?.eventId
+          ? `${selectedInstanceId}:${selected.lastSystemNotice.eventId}`
+          : null;
+      }
 
       if (selected && isJoinedInSelected) {
         const joinEventId = selected?.lastJoinEvent?.eventId || null;
         const joinUid = selected?.lastJoinEvent?.uid || null;
-        if (joinEventId && joinEventId !== this.#lastJoinEventId && joinUid && joinUid !== this.#myUid) {
+        const joinEventKey = joinEventId ? `${selectedInstanceId}:${joinEventId}` : null;
+
+        if (joinEventKey && joinEventKey !== this.#lastJoinEventId && joinUid && joinUid !== this.#myUid) {
           this.#showEntryNotice(selected?.lastJoinEvent?.name || 'Jogador', nextEnrolledCount);
           AudioService.getInstance().playForce('tournament-opponent-entry');
         }
-        this.#lastJoinEventId = joinEventId;
+        if (joinEventKey) {
+          this.#lastJoinEventId = joinEventKey;
+        }
       } else {
-        this.#lastJoinEventId = selected?.lastJoinEvent?.eventId || this.#lastJoinEventId;
+        this.#lastJoinEventId = selected?.lastJoinEvent?.eventId
+          ? `${selectedInstanceId}:${selected.lastJoinEvent.eventId}`
+          : this.#lastJoinEventId;
       }
 
       const noticeEventId = selected?.lastSystemNotice?.eventId || null;
-      if (noticeEventId && noticeEventId !== this.#lastSystemNoticeId) {
-        this.#lastSystemNoticeId = noticeEventId;
+      const noticeEventKey = noticeEventId ? `${selectedInstanceId}:${noticeEventId}` : null;
+
+      if (noticeEventKey && noticeEventKey !== this.#lastSystemNoticeId) {
+        this.#lastSystemNoticeId = noticeEventKey;
+
+        if (isJoinedInSelected && selected?.lastSystemNotice?.type === 'countdown_started') {
+          this.#showSystemNotice('6/6 completo. Combate comeca em 1 minuto.');
+        }
       }
 
       this.#currentTournament = selected;
@@ -307,8 +338,10 @@ export class TournamentScreen extends Screen {
       ?.querySelector('.tournament-card__join-btn');
 
     if (joinBtn) {
-      joinBtn.disabled = isJoined || status === 'active';
-      joinBtn.textContent = isJoined
+      joinBtn.disabled = this.#isJoiningTournament || isJoined || status === 'active';
+      joinBtn.textContent = this.#isJoiningTournament
+        ? 'INSCREVENDO...'
+        : isJoined
         ? 'INSCRITO'
         : status === 'active'
           ? 'EM ANDAMENTO'
@@ -435,7 +468,7 @@ export class TournamentScreen extends Screen {
 
     const safeTotal = Math.max(0, Number(totalCount || 0));
 
-    this.#statusBannerEl.textContent = `${playerName} entrou no campeonato. Total agora: ${safeTotal}.`;
+    this.#statusBannerEl.textContent = `Entrou mais um oponente: ${playerName}. Total agora: ${safeTotal}.`;
     this.#entryNoticeVisibleUntil = Date.now() + 3200;
 
     this.#clearEntryNoticeTimer();
@@ -443,6 +476,45 @@ export class TournamentScreen extends Screen {
       this.#entryNoticeVisibleUntil = 0;
       this.#renderTournamentState();
     }, 3200);
+  }
+
+  /** @private */
+  #showSystemNotice(text, durationMs = 3000) {
+    if (!this.#statusBannerEl || !text) return;
+
+    this.#statusBannerEl.textContent = String(text);
+    this.#entryNoticeVisibleUntil = Date.now() + Math.max(1200, Number(durationMs || 0));
+
+    this.#clearEntryNoticeTimer();
+    this.#entryNoticeTimer = setTimeout(() => {
+      this.#entryNoticeVisibleUntil = 0;
+      this.#renderTournamentState();
+    }, Math.max(1200, Number(durationMs || 0)));
+  }
+
+  /**
+   * Resolve a instância que deve ser observada na tela.
+   * Prioriza sempre a instância em que o usuário atual está inscrito.
+   * @param {Object|null} state
+   * @returns {Object|null}
+   * @private
+   */
+  #resolveObservedInstance(state) {
+    const instances = Array.isArray(state?.instances) ? state.instances : [];
+
+    if (this.#myUid) {
+      const myInstance = instances.find((instance) => {
+        const hasMe = !!instance?.enrolledUsers?.[this.#myUid];
+        const status = instance?.status || 'waiting';
+        return hasMe && status !== 'finished';
+      }) || null;
+
+      if (myInstance) {
+        return myInstance;
+      }
+    }
+
+    return state?.selectedInstance || state?.joinableInstance || instances[0] || null;
   }
 
   /**
@@ -528,17 +600,42 @@ export class TournamentScreen extends Screen {
    * @private
    */
   async #onJoinTournament() {
+    if (this.#isJoiningTournament) {
+      return;
+    }
+
+    const currentUser = await AuthService.getInstance().getCurrentUser().catch(() => null);
+    if (!currentUser?.uid) {
+      this.#statusBannerEl.textContent = 'Voce precisa estar logado para participar do campeonato.';
+      return;
+    }
+
+    this.#myUid = currentUser.uid;
+    this.#isJoiningTournament = true;
+    this.#renderTournamentState();
+
     try {
       const result = await this.#tournamentService.joinCurrentTournament();
       if (result?.joined) {
         this.#justJoinedAt = Date.now();
+        this.#statusBannerEl.textContent = 'Inscricao confirmada. Aguarde os demais participantes.';
+      } else if (result?.alreadyJoined) {
+        this.#statusBannerEl.textContent = 'Voce ja esta inscrito nesta rodada.';
       }
       console.log(
         `[TournamentRound] join result joined=${result.joined} alreadyJoined=${result.alreadyJoined} instanceId=${result.instanceId}`
       );
     } catch (error) {
       console.error('[TournamentRound] Falha ao participar do campeonato:', error);
-      this.#statusBannerEl.textContent = 'Nao foi possivel participar agora. Tente novamente.';
+      const message = String(error?.message || '');
+      this.#statusBannerEl.textContent = message.includes('nao autenticado')
+        ? 'Sessao expirada. Faca login novamente para participar.'
+        : message.includes('Inscricao em andamento')
+          ? 'Sua inscricao ja esta sendo processada. Aguarde alguns segundos.'
+          : 'Nao foi possivel participar agora. Tente novamente.';
+    } finally {
+      this.#isJoiningTournament = false;
+      this.#renderTournamentState();
     }
   }
 }

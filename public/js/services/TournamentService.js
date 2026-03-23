@@ -91,9 +91,13 @@ export class TournamentService {
   async subscribeCurrentTournament(callback) {
     const tournamentId = await this.ensureCurrentTournament();
     const currentUser = await this.#authService.getCurrentUser().catch(() => null);
-    const myUid = currentUser?.uid || null;
+    let myUid = currentUser?.uid || null;
 
-    return this.#repo.subscribeTournamentInstances(tournamentId, (instances) => {
+    const unsubAuth = this.#authService.onAuthStateChanged((user) => {
+      myUid = user?.uid || null;
+    });
+
+    const unsubInstances = this.#repo.subscribeTournamentInstances(tournamentId, (instances) => {
       const list = Array.isArray(instances) ? instances : [];
 
       const myInstance = myUid
@@ -125,6 +129,11 @@ export class TournamentService {
         selectedInstance,
       });
     });
+
+    return () => {
+      unsubInstances?.();
+      unsubAuth?.();
+    };
   }
 
   /**
