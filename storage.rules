@@ -1,0 +1,30 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isPathOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // Audio do chat: chat-audio/{matchId}/{uid}/{timestamp}.webm
+    match /chat-audio/{matchId}/{uid}/{fileName} {
+      // Fallback seguro: leitura apenas para usuarios autenticados.
+      // Nao e possivel validar participacao na partida via RTDB dentro de Storage Rules.
+      allow read: if isAuthenticated();
+
+      // Upload/atualizacao apenas para o proprio uid do caminho.
+      allow write: if isPathOwner(uid);
+
+      // Exclusao mantida para o proprio dono do arquivo.
+      allow delete: if isPathOwner(uid);
+    }
+
+    // Nega qualquer outro caminho por padrao.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

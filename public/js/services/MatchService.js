@@ -478,6 +478,7 @@ export class MatchService {
 
       return true;
     } catch (error) {
+      const permissionDenied = this.#isAudioPermissionDeniedError(error);
       const retryable = this.#isRetryableAudioError(error);
       const hasMoreAttempts = task.attempt < task.maxAttempts;
 
@@ -503,7 +504,11 @@ export class MatchService {
       }
 
       task.status = 'failed';
-      task.onStatus?.({ state: 'failed', text: 'falha de conexão ao enviar áudio' });
+      if (permissionDenied) {
+        task.onStatus?.({ state: 'failed', text: 'Permissão de áudio não configurada no servidor' });
+      } else {
+        task.onStatus?.({ state: 'failed', text: 'falha de conexão ao enviar áudio' });
+      }
       this.#audioInFlightSignatures.delete(task.signatureKey);
       this.#audioRetryQueue.delete(task.taskId);
 
@@ -554,12 +559,27 @@ export class MatchService {
 
     const code = String(error?.code || '');
     const message = String(error?.message || '').toLowerCase();
+
+    if (this.#isAudioPermissionDeniedError(error)) {
+      return false;
+    }
+
     return code.includes('network')
       || code.includes('retry-limit-exceeded')
       || code.includes('unavailable')
       || message.includes('network')
       || message.includes('offline')
       || message.includes('failed to fetch');
+  }
+
+  #isAudioPermissionDeniedError(error) {
+    const code = String(error?.code || '').toLowerCase();
+    const message = String(error?.message || '').toLowerCase();
+    return code.includes('storage/unauthorized')
+      || code.includes('storage/permission-denied')
+      || message.includes('storage/unauthorized')
+      || message.includes('permission denied')
+      || message.includes('forbidden');
   }
 
   #cleanupStaleAudioSignatures(now = Date.now()) {

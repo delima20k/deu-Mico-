@@ -13,6 +13,7 @@
 
 import { Match } from '../domain/Match.js';
 import { FirebaseService } from '../services/FirebaseService.js';
+import { FirebaseConfig } from '../services/firebaseConfig.js';
 
 export class MatchRepository {
   /** @type {MatchRepository|null} */
@@ -397,8 +398,15 @@ export class MatchRepository {
 
     const storage = this.#firebaseService?.getStorage?.();
     const storageMod = this.#firebaseService?.getStorageModules?.();
+    const app = this.#firebaseService?.getApp?.();
     if (!storage || !storageMod) {
       throw new Error('[MatchRepository] Storage não inicializado');
+    }
+
+    const expectedBucket = FirebaseConfig.get()?.storageBucket || '';
+    const activeBucket = app?.options?.storageBucket || '';
+    if (expectedBucket && activeBucket && expectedBucket !== activeBucket) {
+      console.warn(`[AudioChatRealtime] bucket divergente config="${expectedBucket}" app="${activeBucket}"`);
     }
 
     const extension = mimeType.includes('ogg') ? 'ogg' : 'webm';

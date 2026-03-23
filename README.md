@@ -180,6 +180,27 @@ Após conectar o domínio:
 2. Adicionar: `deu-mico.vercel.app` e seu domínio personalizado (se houver)
 3. Remover domínios que não estão mais em uso
 
+### Publicar Firebase Storage Rules
+
+As regras de Storage estão versionadas em `storage.rules` e mapeadas no `firebase.json`.
+
+```bash
+# Instalar CLI (uma vez)
+npm i -g firebase-tools
+
+# Login na conta Firebase
+firebase login
+
+# Publicar somente regras de Storage no projeto de producao
+firebase deploy --only storage --project deu-mico-pwa
+```
+
+Opcional para validar localmente antes do deploy:
+
+```bash
+firebase emulators:start --only storage
+```
+
 ---
 
 ## PWA — Instalar no celular
