@@ -3,28 +3,6 @@
    Rooms, Match, Tournament + componentes
    ============================================================ */
 
-.rooms-screen__back-btn {
-  align-self: flex-start;
-  padding: clamp(8px, 2vw, 12px) clamp(12px, 3vw, 16px);
-  background: rgba(31, 163, 74, 0.8);
-  color: white;
-  border: 2px solid rgba(255, 255, 255, 0.6);
-  border-radius: 6px;
-  font-size: clamp(0.9rem, 2vw, 1rem);
-  font-weight: 600;
-  cursor: pointer;
-  margin-bottom: 8px;
-  transition: all var(--transition-fast);
-}
-
-.rooms-screen__back-btn:hover {
-  background: rgba(11, 107, 42, 0.9);
-  border-color: rgba(255, 255, 255, 0.8);
-}
-
-.rooms-screen__back-btn:active {
-  transform: scale(0.95);
-}
 .rooms-screen {
   display: flex;
   flex-direction: column;
@@ -440,29 +418,6 @@
   font-weight: 700;
   margin: 0 0 20px 0;
   text-align: center;
-}
-
-.tournament-screen__back-btn {
-  align-self: flex-start;
-  padding: clamp(8px, 2vw, 12px) clamp(12px, 3vw, 16px);
-  background: rgba(31, 163, 74, 0.8);
-  color: white;
-  border: 2px solid rgba(255, 255, 255, 0.6);
-  border-radius: 6px;
-  font-size: clamp(0.9rem, 2vw, 1rem);
-  font-weight: 600;
-  cursor: pointer;
-  margin-bottom: 8px;
-  transition: all var(--transition-fast);
-}
-
-.tournament-screen__back-btn:hover {
-  background: rgba(11, 107, 42, 0.9);
-  border-color: rgba(255, 255, 255, 0.8);
-}
-
-.tournament-screen__back-btn:active {
-  transform: scale(0.95);
 }
 
 .tournament-screen__status-banner {

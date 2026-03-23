@@ -11,11 +11,14 @@
  */
 import { Screen } from '../core/Screen.js';
 import { HeaderBar } from '../components/HeaderBar.js';
+import { SideMenu } from '../components/SideMenu.js';
 import { LobbyCard } from '../components/LobbyCard.js';
 import { Dom } from '../utils/Dom.js';
 import { MatchmakingService } from '../services/MatchmakingService.js';
 import { AuthService } from '../services/AuthService.js';
 import { LobbyRepository } from '../repositories/LobbyRepository.js';
+import { UserProfile } from '../domain/UserProfile.js';
+import { App } from '../core/App.js';
 
 export class RoomsScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
@@ -23,6 +26,9 @@ export class RoomsScreen extends Screen {
 
   /** @type {HeaderBar} */
   #headerBar;
+
+  /** @type {SideMenu|null} */
+  #sideMenu = null;
 
   /** @type {Map<string, LobbyCard>} */
   #cards = new Map();
@@ -68,15 +74,50 @@ export class RoomsScreen extends Screen {
     const container = this.getElement();
     container.innerHTML = '';
 
+    const authService = AuthService.getInstance();
+    const currentUser = await authService.getCurrentUser().catch(() => null);
+    if (!currentUser?.uid) {
+      this.#screenManager.show('LoginScreen');
+      return;
+    }
+
+    const profile = await authService.getProfile(currentUser.uid).catch(() => null);
+    const menuProfile = profile || new UserProfile({
+      uid: currentUser.uid,
+      email: currentUser.email || '',
+      name: currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : 'Jogador'),
+      avatarUrl: currentUser.photoURL || null,
+    });
+
     // Header
     this.#headerBar = new HeaderBar();
     const headerEl = this.#headerBar.create();
     container.append(headerEl);
 
+    // SideMenu
+    this.#sideMenu = new SideMenu(menuProfile);
+    const sideMenuEl = this.#sideMenu.create();
+    container.append(sideMenuEl);
+
+    this.#headerBar.onToggleMenu(() => this.#sideMenu?.toggle());
+    this.#sideMenu.on('salas', () => {
+      // Já está na tela de salas.
+    });
+    this.#sideMenu.on('ranking', () => {
+      this.#screenManager.show('MenuScreen', { openGeneralRanking: true });
+    });
+    this.#sideMenu.on('campeonato', () => {
+      this.#screenManager.show('TournamentScreen');
+    });
+    this.#sideMenu.on('logout', () => {
+      App.markIntentionalLogout();
+      this.#screenManager.show('LoginScreen');
+    });
+
     // Botão para sair da tela de salas
     const btnBack = Dom.create('button', {
-      classes: 'rooms-screen__back-btn',
-      text: '← Sair',
+      classes: 'app-nav-back-btn rooms-screen__back-btn',
+      text: '← Voltar',
       attrs: { type: 'button' },
     });
     btnBack.addEventListener('click', () => {
@@ -122,6 +163,8 @@ export class RoomsScreen extends Screen {
    * Limpa ao sair da tela.
    */
   onExit() {
+    this.#sideMenu?.close();
+    this.#sideMenu = null;
     this.#stopQueueListeners();
     this.#cards.forEach(card => {
       if (card instanceof LobbyCard) {

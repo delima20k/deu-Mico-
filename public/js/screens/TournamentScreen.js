@@ -11,6 +11,7 @@
  */
 import { Screen } from '../core/Screen.js';
 import { HeaderBar } from '../components/HeaderBar.js';
+import { SideMenu } from '../components/SideMenu.js';
 import { TournamentCard } from '../components/TournamentCard.js';
 import { TournamentService } from '../services/TournamentService.js';
 import { AuthService } from '../services/AuthService.js';
@@ -18,6 +19,8 @@ import { Dom } from '../utils/Dom.js';
 import { AdService } from '../services/adService.js';
 import { AdConfig } from '../services/adConfig.js';
 import { MatchService } from '../services/MatchService.js';
+import { UserProfile } from '../domain/UserProfile.js';
+import { App } from '../core/App.js';
 
 export class TournamentScreen extends Screen {
   /** @type {import('../core/ScreenManager.js').ScreenManager} */
@@ -25,6 +28,9 @@ export class TournamentScreen extends Screen {
 
   /** @type {HeaderBar} */
   #headerBar;
+
+  /** @type {SideMenu|null} */
+  #sideMenu = null;
 
   /** @type {TournamentCard} */
   #tournamentCard;
@@ -131,17 +137,52 @@ export class TournamentScreen extends Screen {
   async onEnter() {
     const container = this.getElement();
     container.innerHTML = '';
-    this.#myUid = (await AuthService.getInstance().getCurrentUser())?.uid || null;
+    const authService = AuthService.getInstance();
+    const currentUser = await authService.getCurrentUser().catch(() => null);
+    this.#myUid = currentUser?.uid || null;
+
+    if (!this.#myUid) {
+      this.#screenManager.show('LoginScreen');
+      return;
+    }
+
+    const profile = await authService.getProfile(this.#myUid).catch(() => null);
+    const menuProfile = profile || new UserProfile({
+      uid: this.#myUid,
+      email: currentUser?.email || '',
+      name: currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Jogador'),
+      avatarUrl: currentUser?.photoURL || null,
+    });
 
     // Header
     this.#headerBar = new HeaderBar();
     const headerEl = this.#headerBar.create();
     container.append(headerEl);
 
+    // SideMenu
+    this.#sideMenu = new SideMenu(menuProfile);
+    const sideMenuEl = this.#sideMenu.create();
+    container.append(sideMenuEl);
+
+    this.#headerBar.onToggleMenu(() => this.#sideMenu?.toggle());
+    this.#sideMenu.on('salas', () => {
+      this.#screenManager.show('RoomsScreen');
+    });
+    this.#sideMenu.on('ranking', () => {
+      this.#screenManager.show('MenuScreen', { openGeneralRanking: true });
+    });
+    this.#sideMenu.on('campeonato', () => {
+      // Já está na tela de campeonato.
+    });
+    this.#sideMenu.on('logout', () => {
+      App.markIntentionalLogout();
+      this.#screenManager.show('LoginScreen');
+    });
+
     // Botão para sair da tela de campeonato
     const btnBack = Dom.create('button', {
-      classes: 'tournament-screen__back-btn',
-      text: '← Sair',
+      classes: 'app-nav-back-btn tournament-screen__back-btn',
+      text: '← Voltar ao menu',
       attrs: { type: 'button' },
     });
     btnBack.addEventListener('click', () => {
@@ -279,6 +320,9 @@ export class TournamentScreen extends Screen {
    * Limpa ao sair da tela.
    */
   onExit() {
+    this.#sideMenu?.close();
+    this.#sideMenu = null;
+
     this.#unsubTournament?.();
     this.#unsubTournament = null;
 

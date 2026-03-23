@@ -406,30 +406,38 @@
   inset: 0;
   z-index: 1400;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(12, 18, 9, 0.62);
-  padding: clamp(12px, 3vw, 24px);
+  align-items: stretch;
+  justify-content: flex-start;
+  background: #ffffff;
+  padding: 0;
 }
 
 .menu-ranking-modal__panel {
-  width: min(980px, 100%);
-  max-height: min(88vh, 860px);
+  --app-header-height: 0px;
+  width: 100%;
+  height: 100dvh;
+  max-height: none;
   background: #ffffff;
   color: #1f2a1f;
-  border-radius: 16px;
-  padding: clamp(14px, 3vw, 22px);
-  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.33);
+  border-radius: 0;
+  padding: max(10px, env(safe-area-inset-top, 0px)) clamp(12px, 3vw, 22px) max(10px, env(safe-area-inset-bottom, 0px));
+  box-shadow: none;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .menu-ranking-modal__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
+  position: sticky;
+  top: 0;
+  background: #ffffff;
+  z-index: 1;
+  padding: 2px 0;
+  margin-top: 2px;
 }
 
 .menu-ranking-modal__title {
@@ -446,20 +454,15 @@
 }
 
 .menu-ranking-modal__close {
-  border: none;
-  border-radius: 10px;
-  background: #e6efe6;
-  color: #124e28;
-  font-weight: 700;
-  padding: 10px 14px;
-  cursor: pointer;
+  margin-bottom: 2px;
 }
 
 .menu-ranking-modal__table-wrap {
   border: 1px solid #d9e7d9;
   border-radius: 12px;
   overflow: auto;
-  max-height: min(68vh, 650px);
+  flex: 1;
+  min-height: 0;
 }
 
 .menu-ranking-modal__table {
@@ -486,14 +489,9 @@
 }
 
 @media (max-width: 640px) {
-  .menu-ranking-modal {
-    padding: 8px;
-  }
-
   .menu-ranking-modal__panel {
-    max-height: 92vh;
-    border-radius: 12px;
-    padding: 10px;
+    padding-left: 10px;
+    padding-right: 10px;
   }
 }
 

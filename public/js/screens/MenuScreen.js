@@ -80,6 +80,7 @@ export class MenuScreen extends Screen {
    * Verifica autenticação e renderiza a tela.
    * @param {Object} [params={}] - parâmetros da navegação
    * @param {Object} [params.user] - usuário passado pelo LoginScreen (com photoURL)
+    * @param {boolean} [params.openGeneralRanking] - abre ranking geral automaticamente
    */
   async onEnter(params = {}) {
     try {
@@ -106,6 +107,10 @@ export class MenuScreen extends Screen {
 
       // 2. Renderiza a tela com o perfil
       this.#render(profile, currentUser);
+
+      if (params.openGeneralRanking) {
+        this.#openGeneralRankingModal();
+      }
 
       // 3. Inicia música de fundo em loop
       AudioService.getInstance().playLoop('menu-bgm');
@@ -306,13 +311,13 @@ export class MenuScreen extends Screen {
       text: 'Partidas normais (fora do campeonato)',
     });
     const closeBtn = Dom.create('button', {
-      classes: 'menu-ranking-modal__close',
-      text: 'Fechar',
+      classes: 'app-nav-back-btn menu-ranking-modal__close',
+      text: '← Voltar',
       attrs: { type: 'button' },
     });
     closeBtn.addEventListener('click', () => this.#closeGeneralRankingModal());
 
-    header.append(title, closeBtn);
+    header.append(closeBtn, title);
 
     const tableWrap = Dom.create('div', { classes: 'menu-ranking-modal__table-wrap' });
     const table = Dom.create('table', { classes: 'menu-ranking-modal__table' });
@@ -330,12 +335,6 @@ export class MenuScreen extends Screen {
 
     panel.append(header, subtitle, tableWrap);
     overlay.append(panel);
-
-    overlay.addEventListener('click', (event) => {
-      if (event.target === overlay) {
-        this.#closeGeneralRankingModal();
-      }
-    });
 
     document.body.append(overlay);
     this.#generalRankingModalEl = overlay;
