@@ -217,7 +217,7 @@
   color: rgba(190, 235, 190, 0.5);
 }
 
-.hand-modal__chat-send {
+.hand-modal__chat-send,
 .hand-modal__chat-send-btn {
   border: 1px solid rgba(132, 228, 132, 0.5);
   background: linear-gradient(135deg, rgba(28, 110, 28, 0.95), rgba(50, 150, 50, 0.95));
