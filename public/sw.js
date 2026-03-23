@@ -122,41 +122,43 @@ self.addEventListener('fetch', (event) => {
 
   // 2. Navegação SPA → Network First, fallback cache, fallback offline.html
   if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request)
-        .then((res) => {
-          // Atualiza cache com resposta fresca
-          if (res.ok) {
-            const clone = res.clone();
-            caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
-          }
-          return res;
-        })
-        .catch(() =>
-          caches.match(event.request)
-            .then((cached) => cached || caches.match('/offline.html'))
-        )
-    );
+    event.respondWith((async () => {
+      try {
+        const res = await fetch(event.request);
+        if (res.ok) {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
+        }
+        return res;
+      } catch (err) {
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        const offline = await caches.match('/offline.html');
+        return offline || new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
+      }
+    })());
     return;
   }
 
   // 3. Assets estáticos → Stale-While-Revalidate
-  event.respondWith(
-    caches.open(CACHE_NAME).then((cache) =>
-      cache.match(event.request).then((cached) => {
-        const networkFetch = fetch(event.request)
-          .then((res) => {
-            if (res && res.status === 200 && res.type === 'basic') {
-              cache.put(event.request, res.clone());
-            }
-            return res;
-          })
-          .catch(() => cached); // offline: usa cache se disponível
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(event.request);
 
-        // Retorna cache imediatamente e atualiza em background
-        return cached || networkFetch;
-      })
-    )
-  );
+    try {
+      const res = await fetch(event.request);
+      if (res && res.status === 200 && res.type === 'basic') {
+        cache.put(event.request, res.clone());
+      }
+      return res;
+    } catch (err) {
+      if (cached) return cached;
+      if (event.request.destination === 'document') {
+        const offline = await caches.match('/offline.html');
+        return offline || new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
+      }
+      return new Response('', { status: 503, statusText: 'Service Unavailable' });
+    }
+  })());
 });
 
