@@ -448,6 +448,57 @@
   display: none;
 }
 
+.tournament-screen__final-standings {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.tournament-screen__final-standings--hidden {
+  display: none;
+}
+
+.tournament-screen__final-standings-title {
+  margin: 0 0 10px;
+  font-size: clamp(1rem, 2.2vw, 1.15rem);
+  font-weight: 700;
+  text-align: center;
+  color: #f9fff9;
+}
+
+.tournament-screen__final-standings-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(255, 255, 255, 0.98);
+  color: var(--color-text-dark);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.tournament-screen__final-standings-table thead {
+  background: #0f7a35;
+  color: white;
+}
+
+.tournament-screen__final-standings-table th,
+.tournament-screen__final-standings-table td {
+  padding: 10px 8px;
+  font-size: clamp(0.85rem, 1.9vw, 0.96rem);
+  text-align: center;
+  border-bottom: 1px solid #e8ece8;
+}
+
+.tournament-screen__final-standings-row--champion {
+  background: linear-gradient(90deg, rgba(255, 216, 107, 0.3), rgba(255, 238, 177, 0.35));
+  font-weight: 700;
+}
+
+.tournament-screen__final-standings-row--runner-up {
+  background: linear-gradient(90deg, rgba(208, 216, 230, 0.35), rgba(233, 239, 247, 0.45));
+}
+
 .tournament-screen__reward-slot {
   margin-top: 10px;
   padding: 10px 10px 6px;

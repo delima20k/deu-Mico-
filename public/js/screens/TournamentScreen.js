@@ -66,6 +66,12 @@ export class TournamentScreen extends Screen {
   /** @type {HTMLElement|null} */
   #leaderboardTbodyEl = null;
 
+  /** @type {HTMLElement|null} */
+  #finalStandingsWrapEl = null;
+
+  /** @type {HTMLElement|null} */
+  #finalStandingsTbodyEl = null;
+
   /** @type {ReturnType<typeof setInterval>|null} */
   #countdownInterval = null;
 
@@ -234,6 +240,9 @@ export class TournamentScreen extends Screen {
       text: 'Inicio em 60s',
     });
 
+    this.#finalStandingsWrapEl = this.#buildFinalStandingsTable();
+    this.#finalStandingsWrapEl.classList.add('tournament-screen__final-standings--hidden');
+
     // Card de espera da rodada — reutiliza div.lobby-card (mesmo componente OOP de RoomsScreen)
     // Exibido quando o jogador está inscrito e a rodada está em waiting/countdown.
     this.#enrollmentCard = new LobbyCard({
@@ -278,6 +287,7 @@ export class TournamentScreen extends Screen {
       tournamentCardEl,
       this.#statusBannerEl,
       this.#countdownEl,
+      this.#finalStandingsWrapEl,
       this.#enrollmentCardWrapperEl,
       tournamentRewardSlot,
       tournamentAdBanner,
@@ -366,6 +376,8 @@ export class TournamentScreen extends Screen {
     this.#rewardRankingBtnEl = null;
     this.#rewardTournamentHintEl = null;
     this.#rewardRankingHintEl = null;
+    this.#finalStandingsWrapEl = null;
+    this.#finalStandingsTbodyEl = null;
 
     this.#enrollmentCard = null;
     this.#enrollmentCardWrapperEl = null;
@@ -469,6 +481,72 @@ export class TournamentScreen extends Screen {
   }
 
   /**
+   * Constrói bloco de classificação final da rodada.
+   * @private
+   * @returns {HTMLElement}
+   */
+  #buildFinalStandingsTable() {
+    const wrap = Dom.create('section', { classes: 'tournament-screen__final-standings' });
+    const title = Dom.create('h3', {
+      classes: 'tournament-screen__final-standings-title',
+      text: 'Classificação final da rodada',
+    });
+
+    const table = Dom.create('table', { classes: 'tournament-screen__final-standings-table' });
+    const thead = Dom.create('thead');
+    const headerRow = Dom.create('tr');
+    ['Posição', 'Jogador', 'Pares', 'Pontos'].forEach((col) => {
+      headerRow.append(Dom.create('th', { text: col }));
+    });
+    thead.append(headerRow);
+
+    const tbody = Dom.create('tbody');
+    this.#finalStandingsTbodyEl = tbody;
+    table.append(thead, tbody);
+
+    wrap.append(title, table);
+    return wrap;
+  }
+
+  /**
+   * Renderiza linhas da classificação final da rodada.
+   * @param {Array<Object>} standings
+   * @private
+   */
+  #renderFinalStandingsRows(standings) {
+    if (!this.#finalStandingsTbodyEl) return;
+    this.#finalStandingsTbodyEl.innerHTML = '';
+
+    const rows = Array.isArray(standings) ? standings : [];
+    if (!rows.length) {
+      const tr = Dom.create('tr');
+      tr.append(Dom.create('td', {
+        text: 'Resultado final ainda indisponível.',
+        attrs: { colspan: '4' },
+      }));
+      this.#finalStandingsTbodyEl.append(tr);
+      return;
+    }
+
+    rows.forEach((entry, index) => {
+      const tr = Dom.create('tr', {
+        classes: index === 0
+          ? 'tournament-screen__final-standings-row--champion'
+          : index === 1
+            ? 'tournament-screen__final-standings-row--runner-up'
+            : '',
+      });
+
+      tr.append(Dom.create('td', { text: `${entry.rank || (index + 1)}º` }));
+      tr.append(Dom.create('td', { text: entry.name || 'Jogador' }));
+      tr.append(Dom.create('td', { text: `${Number(entry.pairs || 0)}` }));
+      tr.append(Dom.create('td', { text: `${entry.points ?? (Number(entry.pointsMilli || 0) / 1000).toFixed(2)}` }));
+
+      this.#finalStandingsTbodyEl.append(tr);
+    });
+  }
+
+  /**
    * Renderiza status do torneio atual.
    * @private
    */
@@ -478,6 +556,7 @@ export class TournamentScreen extends Screen {
     const state = this.#currentTournament;
     if (!state) {
       this.#statusBannerEl.textContent = 'Aguardando abertura de nova rodada de campeonato...';
+      this.#finalStandingsWrapEl?.classList.add('tournament-screen__final-standings--hidden');
       return;
     }
 
@@ -537,6 +616,7 @@ export class TournamentScreen extends Screen {
     }
 
     if (status === 'waiting') {
+      this.#finalStandingsWrapEl?.classList.add('tournament-screen__final-standings--hidden');
       if (Date.now() < this.#entryNoticeVisibleUntil) {
         this.#countdownEl.classList.add('tournament-screen__countdown--hidden');
         this.#clearCountdownTicker();
@@ -552,6 +632,7 @@ export class TournamentScreen extends Screen {
     }
 
     if (status === 'countdown') {
+      this.#finalStandingsWrapEl?.classList.add('tournament-screen__final-standings--hidden');
       this.#statusBannerEl.textContent = '6/6 completo. Combate comeca em 1 minuto.';
       this.#countdownEl.classList.remove('tournament-screen__countdown--hidden');
       this.#startCountdownTicker(Number(state.countdownEndsAt || 0));
@@ -559,6 +640,7 @@ export class TournamentScreen extends Screen {
     }
 
     if (status === 'active') {
+      this.#finalStandingsWrapEl?.classList.add('tournament-screen__final-standings--hidden');
       this.#statusBannerEl.textContent = 'Campeonato em andamento. Prepare-se para a partida.';
       this.#countdownEl.classList.add('tournament-screen__countdown--hidden');
       this.#clearCountdownTicker();
@@ -567,12 +649,17 @@ export class TournamentScreen extends Screen {
 
     if (status === 'finished') {
       const championUid = state.championUid || null;
-      const championName = championUid
-        ? (state.enrolledUsers?.[championUid]?.name || 'Jogador')
-        : 'Indefinido';
+      const championName = state?.finalStandings?.[0]?.name
+        || (championUid ? (state.enrolledUsers?.[championUid]?.name || 'Jogador') : 'Indefinido');
+      const runnerUpName = state?.finalStandings?.[1]?.name || null;
       this.#statusBannerEl.textContent = `Rodada finalizada. Campeão: ${championName}.`;
+      if (runnerUpName) {
+        this.#statusBannerEl.textContent += ` Vice-campeão: ${runnerUpName}.`;
+      }
       this.#countdownEl.classList.add('tournament-screen__countdown--hidden');
       this.#clearCountdownTicker();
+      this.#finalStandingsWrapEl?.classList.remove('tournament-screen__final-standings--hidden');
+      this.#renderFinalStandingsRows(state.finalStandings || []);
     }
 
     this.#refreshRewardButtonsState();
@@ -817,7 +904,7 @@ export class TournamentScreen extends Screen {
       }
     }
 
-    return state?.selectedInstance || state?.joinableInstance || instances[0] || null;
+    return state?.selectedInstance || state?.joinableInstance || null;
   }
 
   /**
@@ -866,6 +953,8 @@ export class TournamentScreen extends Screen {
     }
 
     if (state.status !== 'active') return;
+    const isActivePlayer = !!state?.activePlayers?.[this.#myUid];
+    if (!isActivePlayer) return;
     const matchId = state.currentMatchId || null;
     if (!matchId) return;
     if (this.#navigatedMatchId === matchId) return;

@@ -827,7 +827,12 @@ export class TournamentRepository {
     }
 
     const instance = await this.getInstanceById(instanceId);
-    const isValid = !!(instance?.enrolledUsers?.[uid] && (instance.status || 'waiting') !== 'finished');
+    const status = instance?.status || 'waiting';
+    const hasEnrollment = !!instance?.enrolledUsers?.[uid];
+    const hasActiveSeat = !!instance?.activePlayers?.[uid];
+    const isValid = status === 'active'
+      ? hasActiveSeat
+      : !!(hasEnrollment && status !== 'finished');
 
     if (!isValid) {
       await dbMod.remove(indexRef);
@@ -1077,6 +1082,8 @@ export class TournamentRepository {
 
       const activePlayers = { ...(current.activePlayers || current.enrolledUsers || {}) };
       const eliminatedPlayers = { ...(current.eliminatedPlayers || {}) };
+      const enrolledUsers = { ...(current.enrolledUsers || {}) };
+      const cumulativeStats = { ...(current.cumulativeStats || {}) };
 
       if (!activePlayers[micoUid]) {
         processed[matchId] = {
@@ -1091,6 +1098,38 @@ export class TournamentRepository {
         };
       }
 
+      const matchParticipants = Object.keys(activePlayers);
+      matchParticipants.forEach((uid) => {
+        const pairCount = Math.max(0, Number(payload?.pairCounts?.[uid] || 0));
+        const profile = activePlayers[uid] || enrolledUsers[uid] || eliminatedPlayers[uid] || {};
+
+        const previous = cumulativeStats[uid] || {
+          uid,
+          name: profile?.name || 'Jogador',
+          avatarUrl: profile?.avatarUrl || '',
+          pairs: 0,
+          pointsMilli: 0,
+          matches: 0,
+          micoLosses: 0,
+          createdAt: now,
+        };
+
+        const gainedMilli = (pairCount * 30) - (uid === micoUid ? pairCount * 20 : 0);
+
+        cumulativeStats[uid] = {
+          ...previous,
+          uid,
+          name: profile?.name || previous.name || 'Jogador',
+          avatarUrl: profile?.avatarUrl ?? previous.avatarUrl ?? '',
+          pairs: Number(previous.pairs || 0) + pairCount,
+          pointsMilli: this.#clampPointsMilli(Number(previous.pointsMilli || 0) + gainedMilli),
+          matches: Number(previous.matches || 0) + 1,
+          micoLosses: Number(previous.micoLosses || 0) + (uid === micoUid ? 1 : 0),
+          updatedAt: now,
+          lastMatchId: matchId,
+        };
+      });
+
       const loserData = { ...(activePlayers[micoUid] || {}), eliminatedAt: now, eliminatedByMatchId: matchId };
       delete activePlayers[micoUid];
       eliminatedPlayers[micoUid] = loserData;
@@ -1102,14 +1141,43 @@ export class TournamentRepository {
 
       const survivors = Object.keys(activePlayers);
       if (survivors.length <= 1) {
+        const standings = Object.values(cumulativeStats)
+          .sort((a, b) => {
+            const pA = Number(a?.pointsMilli || 0);
+            const pB = Number(b?.pointsMilli || 0);
+            if (pB !== pA) return pB - pA;
+
+            const pairsA = Number(a?.pairs || 0);
+            const pairsB = Number(b?.pairs || 0);
+            if (pairsB !== pairsA) return pairsB - pairsA;
+
+            const mA = Number(a?.micoLosses || 0);
+            const mB = Number(b?.micoLosses || 0);
+            if (mA !== mB) return mA - mB;
+
+            return String(a?.name || '').localeCompare(String(b?.name || ''));
+          })
+          .map((row, index) => ({
+            ...row,
+            rank: index + 1,
+            points: (Number(row?.pointsMilli || 0) / 1000).toFixed(2),
+          }));
+
+        const championUid = survivors[0] || null;
+        const runnerUp = standings.find((row) => row.uid && row.uid !== championUid) || null;
+
         return {
           ...current,
+          enrolledUsers,
           activePlayers,
           eliminatedPlayers,
+          cumulativeStats,
+          finalStandings: standings,
           processedMatchResults: processed,
           status: 'finished',
           phase: 'finished',
-          championUid: survivors[0] || null,
+          championUid,
+          runnerUpUid: runnerUp?.uid || null,
           finishedAt: now,
           currentMatchId: null,
           lastSystemNotice: {
@@ -1128,8 +1196,10 @@ export class TournamentRepository {
 
       return {
         ...current,
+        enrolledUsers,
         activePlayers,
         eliminatedPlayers,
+        cumulativeStats,
         processedMatchResults: processed,
         status: 'active',
         phase: `round_${nextMatchNumber}`,

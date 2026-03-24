@@ -42,6 +42,9 @@ export class TournamentService {
   /** @type {Set<string>} matchIds que o usuário saiu voluntariamente nesta sessão */
   #userLeftMatchIds = new Set();
 
+  /** @type {boolean} */
+  #ensuringJoinableInstance = false;
+
   /**
    * Registra que o usuário saiu voluntariamente de uma partida.
    * Impede redirecionamento automático de volta à mesma partida.
@@ -138,7 +141,18 @@ export class TournamentService {
         return status === 'waiting' && count < max;
       }) || null;
 
-      const selectedInstance = myInstance || waitingJoinable || list[0] || null;
+      if (!myInstance && !waitingJoinable && !this.#ensuringJoinableInstance) {
+        this.#ensuringJoinableInstance = true;
+        this.#repo.ensureJoinableInstance(tournamentId, {
+          maxParticipants: TournamentService.DEFAULT_MAX_PARTICIPANTS,
+        }).catch((error) => {
+          console.warn('[TournamentRound] Falha ao garantir nova instancia waiting:', error);
+        }).finally(() => {
+          this.#ensuringJoinableInstance = false;
+        });
+      }
+
+      const selectedInstance = myInstance || waitingJoinable || null;
       if (selectedInstance?.instanceId) {
         this.#currentInstanceId = selectedInstance.instanceId;
       }
