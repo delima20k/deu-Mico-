@@ -29,6 +29,7 @@ module.exports = async (req, res) => {
     'https://deu-mico.com.br',
     'https://deu-mico.vercel.app',
     'https://deu-mico-delima20ks-projects.vercel.app',
+    'https://mico-doido.vercel.app',
   ];
   const origin = req.headers['origin'] || '';
   const corsOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];

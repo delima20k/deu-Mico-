@@ -21,9 +21,11 @@ export class TournamentService {
   static DEFAULT_MAX_PARTICIPANTS = 6;
   static COUNTDOWN_MS = 60_000;
 
-  // Normalizacao de pontos: 100 = 0.1 ponto, 300 = 0.3 pontos.
-  static POINTS_COMMON_PAIR_MILLI = 100;
-  static POINTS_DECISIVE_PAIR_MILLI = 300;
+  // Nova escala: +0.03 por par (30 milli).
+  static POINTS_COMMON_PAIR_MILLI = 30;
+  static POINTS_DECISIVE_PAIR_MILLI = 30;
+  // Penalidade do mico no fim da partida: -0.02 por par feito (20 milli/par).
+  static MICO_PENALTY_PER_PAIR_MILLI = 20;
 
   /** @type {TournamentRepository} */
   #repo;
@@ -286,9 +288,10 @@ export class TournamentService {
             name: row?.name || 'Jogador',
             avatarUrl: row?.avatarUrl || '',
             pointsMilli,
-            points: (pointsMilli / 1000).toFixed(1),
+            points: (pointsMilli / 1000).toFixed(2),
             pairs: Number(row?.pairs || 0),
             decisivePairs: Number(row?.decisivePairs || 0),
+            micoLosses: Number(row?.micoLosses || 0),
           };
         })
         .sort((a, b) => {
@@ -304,9 +307,8 @@ export class TournamentService {
 
   /**
    * Pontua um par formado no ranking do campeonato.
-   * Regra:
-   * - par comum: +0.1 => 100 milli
-   * - par decisivo/final: +0.3 => 300 milli
+  * Regra:
+  * - par comum/final: +0.03 => 30 milli
    *
    * @param {{uid: string, name?: string, avatarUrl?: string, matchId: string, cardIds: string[], eventTs?: number, isDecisive?: boolean}} data
    * @returns {Promise<void>}
@@ -342,8 +344,36 @@ export class TournamentService {
   }
 
   /**
+  * Aplica penalidade ao jogador que terminou com o mico:
+  * -0.02 por par feito na partida.
+   * @param {{matchId: string, micoUid: string, pairCounts?: Record<string, number>, playersMap?: Record<string, {name?: string, avatarUrl?: string}>}} data
+   * @returns {Promise<void>}
+   */
+  async applyMicoPenaltyAfterMatch(data) {
+    const micoUid = data?.micoUid;
+    const matchId = data?.matchId;
+    if (!micoUid || !matchId) return;
+
+    const pairCount = Math.max(0, Number(data?.pairCounts?.[micoUid] || 0));
+    if (pairCount <= 0) return;
+
+    const tournamentId = await this.ensureCurrentTournament();
+    const player = data?.playersMap?.[micoUid] || null;
+    const eventId = `mico_penalty_${matchId}_${micoUid}`;
+
+    await this.#repo.applyMicoPairPenalty(tournamentId, {
+      uid: micoUid,
+      name: player?.name || 'Jogador',
+      avatarUrl: player?.avatarUrl || '',
+      pairCount,
+      penaltyPerPairMilli: TournamentService.MICO_PENALTY_PER_PAIR_MILLI,
+      eventId,
+    });
+  }
+
+  /**
    * Registra estatística no ranking geral (partidas fora de campeonato).
-   * @param {{uid: string, name?: string, avatarUrl?: string, matchId: string, pairs?: number, won?: boolean, eventTs?: number}} data
+  * @param {{uid: string, name?: string, avatarUrl?: string, matchId: string, pairs?: number, won?: boolean, lostWithMico?: boolean, eventTs?: number}} data
    * @returns {Promise<void>}
    */
   async recordGeneralMatchResult(data) {
@@ -356,6 +386,7 @@ export class TournamentService {
       matchId: data.matchId,
       pairs: Number(data.pairs || 0),
       won: !!data.won,
+      lostWithMico: !!data.lostWithMico,
       eventTs: Number(data.eventTs || Date.now()),
     });
   }
@@ -369,6 +400,7 @@ export class TournamentService {
     return this.#repo.subscribeGeneralLeaderboard(100, (rows) => {
       callback(rows.map((entry) => ({
         ...entry,
+        totalPoints: (Number(entry.totalPointsMilli || 0) / 1000).toFixed(2),
         avgPairs: entry.matches > 0
           ? (Number(entry.totalPairs || 0) / Number(entry.matches || 1)).toFixed(2)
           : '0.00',

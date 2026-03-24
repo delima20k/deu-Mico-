@@ -385,7 +385,7 @@ export class MenuScreen extends Screen {
       const tr = Dom.create('tr');
       tr.append(Dom.create('td', { text: `${entry.rank || '-'}` }));
       tr.append(Dom.create('td', { text: entry.name || 'Jogador' }));
-      tr.append(Dom.create('td', { text: `${entry.totalPoints || 0}` }));
+      tr.append(Dom.create('td', { text: `${entry.totalPoints || '0.00'}` }));
       tr.append(Dom.create('td', { text: `${entry.wins || 0}` }));
       tr.append(Dom.create('td', { text: `${entry.matches || 0}` }));
       tr.append(Dom.create('td', { text: `${entry.avgPairs || '0.00'}` }));

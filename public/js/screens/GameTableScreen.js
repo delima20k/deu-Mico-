@@ -2499,8 +2499,7 @@ export class GameTableScreen extends Screen {
   /**
    * Atualiza ranking do campeonato quando um par e formado.
    * Regra de pontos (normalizada):
-   * - par comum = 100 milli = 0.1 ponto
-   * - par decisivo/final = 300 milli = 0.3 ponto
+    * - par comum/final = 30 milli = 0.03 ponto
    * @param {string} uid
    * @param {import('../domain/Card.js').Card[]} pair
    * @param {{eventTs?: number, isDecisive?: boolean}} [options]
@@ -2851,6 +2850,7 @@ export class GameTableScreen extends Screen {
     const pairsFromState = Number(state?.pairCounts?.[this.#myUid] || 0);
     const pairsFromBadge = Number(this.#pairsBadges.get(this.#myUid)?.pairCount || 0);
     const pairs = Math.max(0, pairsFromState || pairsFromBadge || 0);
+    const lostWithMico = state?.micoUid === this.#myUid;
     const won = state?.micoUid ? state.micoUid !== this.#myUid : false;
 
     try {
@@ -2861,6 +2861,7 @@ export class GameTableScreen extends Screen {
         matchId: this.#matchId,
         pairs,
         won,
+        lostWithMico,
         eventTs: Date.now(),
       });
       console.log(`[Ranking] geral atualizado uid=${me.uid.slice(0, 8)}... matchId=${this.#matchId}`);
@@ -2887,6 +2888,25 @@ export class GameTableScreen extends Screen {
       text: 'Processando resultado do campeonato...'
     });
     panel.append(statusLabel);
+
+    try {
+      const playersMap = {};
+      for (const p of this.#players) {
+        playersMap[p.uid] = {
+          name: p.name || 'Jogador',
+          avatarUrl: p.avatarUrl || '',
+        };
+      }
+
+      await this.#tournamentService.applyMicoPenaltyAfterMatch({
+        matchId: this.#matchId,
+        micoUid: state?.micoUid,
+        pairCounts: state?.pairCounts || {},
+        playersMap,
+      });
+    } catch (error) {
+      console.warn('[TournamentRound] Falha ao aplicar penalidade do mico:', error);
+    }
 
     let updatedInstance = null;
     try {

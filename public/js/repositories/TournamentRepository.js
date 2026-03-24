@@ -1149,6 +1149,34 @@ export class TournamentRepository {
 
     const updatedInstance = { instanceId, ...result.snapshot.val() };
 
+    if (updatedInstance.status === 'finished') {
+      const enrolledUsers = updatedInstance.enrolledUsers || {};
+      const activePlayers = updatedInstance.activePlayers || {};
+      const eliminatedPlayers = updatedInstance.eliminatedPlayers || {};
+      const uids = new Set([
+        ...Object.keys(enrolledUsers),
+        ...Object.keys(activePlayers),
+        ...Object.keys(eliminatedPlayers),
+      ]);
+
+      if (uids.size > 0) {
+        const updates = {};
+        const tournamentId = updatedInstance.tournamentId || null;
+        if (tournamentId) {
+          for (const uid of uids) {
+            updates[`tournaments/enrollmentIndex/${tournamentId}/${uid}`] = null;
+          }
+          await dbMod.update(dbMod.ref(db), updates);
+        }
+      }
+
+      if (updatedInstance.tournamentId) {
+        await this.ensureJoinableInstance(updatedInstance.tournamentId, {
+          maxParticipants: updatedInstance.maxParticipants,
+        });
+      }
+    }
+
     if (nextMatchIdToCreate && updatedInstance.status === 'active') {
       await this.ensureTournamentMatch(nextMatchIdToCreate, {
         tournamentId: updatedInstance.tournamentId,
@@ -1401,6 +1429,70 @@ export class TournamentRepository {
   }
 
   /**
+  * Aplica penalidade ao jogador que terminou com o mico.
+  * Regra: -0.02 por par formado na partida (20 milli por par).
+   * @param {string} tournamentId
+  * @param {{uid: string, name?: string, avatarUrl?: string, pairCount: number, penaltyPerPairMilli?: number, eventId: string}} payload
+   * @returns {Promise<Object|null>}
+   */
+  async applyMicoPairPenalty(tournamentId, payload) {
+    const { db, dbMod } = this.#getDbContext();
+    const uid = payload?.uid;
+    const eventId = payload?.eventId;
+    const pairCount = Math.max(0, Number(payload?.pairCount || 0));
+    if (!uid || !eventId || pairCount <= 0) {
+      return null;
+    }
+
+    const penaltyPerPairMilli = Math.max(0, Number(payload?.penaltyPerPairMilli || 20));
+    const penaltyMilli = pairCount * penaltyPerPairMilli;
+    const ref = dbMod.ref(db, `tournaments/leaderboard/${tournamentId}/${uid}`);
+
+    const result = await dbMod.runTransaction(ref, (current) => {
+      const now = Date.now();
+      const base = current || {
+        uid,
+        name: payload?.name || 'Jogador',
+        avatarUrl: payload?.avatarUrl || '',
+        pointsMilli: 0,
+        pairs: 0,
+        decisivePairs: 0,
+        micoLosses: 0,
+        processedEvents: {},
+        createdAt: now,
+      };
+
+      const processedEvents = { ...(base.processedEvents || {}) };
+      if (processedEvents[eventId]) {
+        return base;
+      }
+
+      processedEvents[eventId] = now;
+      const eventKeys = Object.keys(processedEvents);
+      if (eventKeys.length > 120) {
+        eventKeys
+          .sort((a, b) => processedEvents[a] - processedEvents[b])
+          .slice(0, eventKeys.length - 80)
+          .forEach((key) => delete processedEvents[key]);
+      }
+
+      return {
+        ...base,
+        uid,
+        name: payload?.name || base.name || 'Jogador',
+        avatarUrl: payload?.avatarUrl ?? base.avatarUrl ?? '',
+        pointsMilli: this.#clampPointsMilli(Number(base.pointsMilli || 0) - penaltyMilli),
+        micoLosses: Number(base.micoLosses || 0) + 1,
+        processedEvents,
+        updatedAt: now,
+        lastEventAt: now,
+      };
+    });
+
+    return result.snapshot.exists() ? result.snapshot.val() : null;
+  }
+
+  /**
    * Registra estatística no ranking geral (somente partidas fora de campeonato).
    * @param {{uid: string, name?: string, avatarUrl?: string, matchId: string, pairs?: number, won?: boolean, eventTs?: number}} payload
    * @returns {Promise<Object|null>}
@@ -1416,7 +1508,8 @@ export class TournamentRepository {
     const ref = dbMod.ref(db, `rankings/general/${uid}`);
     const pairs = Math.max(0, Number(payload?.pairs || 0));
     const won = !!payload?.won;
-    const pointsDelta = pairs + (won ? 3 : 0);
+    const lostWithMico = !!payload?.lostWithMico;
+    const pointsMilliDelta = (pairs * 30) - (lostWithMico ? pairs * 20 : 0);
     const eventId = `match_${matchId}`;
 
     const result = await dbMod.runTransaction(ref, (current) => {
@@ -1425,9 +1518,10 @@ export class TournamentRepository {
         uid,
         name: payload?.name || 'Jogador',
         avatarUrl: payload?.avatarUrl || '',
-        totalPoints: 0,
+        totalPointsMilli: 0,
         totalPairs: 0,
         wins: 0,
+        micoLosses: 0,
         matches: 0,
         processedMatches: {},
         createdAt: now,
@@ -1452,9 +1546,10 @@ export class TournamentRepository {
         uid,
         name: payload?.name || base.name || 'Jogador',
         avatarUrl: payload?.avatarUrl ?? base.avatarUrl ?? '',
-        totalPoints: Number(base.totalPoints || 0) + pointsDelta,
+        totalPointsMilli: Number(base.totalPointsMilli || 0) + pointsMilliDelta,
         totalPairs: Number(base.totalPairs || 0) + pairs,
         wins: Number(base.wins || 0) + (won ? 1 : 0),
+        micoLosses: Number(base.micoLosses || 0) + (lostWithMico ? 1 : 0),
         matches: Number(base.matches || 0) + 1,
         processedMatches,
         updatedAt: now,
@@ -1483,14 +1578,15 @@ export class TournamentRepository {
           uid,
           name: row?.name || 'Jogador',
           avatarUrl: row?.avatarUrl || '',
-          totalPoints: Number(row?.totalPoints || 0),
+          totalPointsMilli: Number(row?.totalPointsMilli || 0),
           totalPairs: Number(row?.totalPairs || 0),
           wins: Number(row?.wins || 0),
+          micoLosses: Number(row?.micoLosses || 0),
           matches: Number(row?.matches || 0),
           updatedAt: Number(row?.updatedAt || 0),
         }))
         .sort((a, b) => {
-          if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+          if (b.totalPointsMilli !== a.totalPointsMilli) return b.totalPointsMilli - a.totalPointsMilli;
           if (b.wins !== a.wins) return b.wins - a.wins;
           if (b.totalPairs !== a.totalPairs) return b.totalPairs - a.totalPairs;
           return b.updatedAt - a.updatedAt;
