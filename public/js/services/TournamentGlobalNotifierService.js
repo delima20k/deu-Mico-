@@ -130,6 +130,12 @@ export class TournamentGlobalNotifierService {
     this.#handleSystemNotice(myInstance);
 
     const status = myInstance.status || 'waiting';
+    const matchId = myInstance?.currentMatchId || null;
+    if (matchId && this.#tournamentService.wasMatchLeftByUser(matchId)) {
+      this.#clearTimer();
+      return;
+    }
+
     if (status === 'countdown') {
       const endsAt = Number(myInstance.countdownEndsAt || 0);
       this.#scheduleRedirect(endsAt);

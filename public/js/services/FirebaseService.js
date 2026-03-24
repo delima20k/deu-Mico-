@@ -170,7 +170,7 @@ export class FirebaseService {
       throw err;
     }
     const actionCodeSettings = {
-      url: 'https://www.deu-mico.com.br',
+      url: window.location.origin,
       handleCodeInApp: false,
     };
     await this.#mod.sendEmailVerification(user, actionCodeSettings);

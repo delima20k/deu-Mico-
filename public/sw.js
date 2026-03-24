@@ -10,7 +10,7 @@
  * Para invalidar o cache em produção: incremente CACHE_VERSION.
  */
 
-const CACHE_VERSION = 'v11';
+const CACHE_VERSION = 'v12';
 const CACHE_NAME    = `deu-mico-${CACHE_VERSION}`;
 
 /** Assets pré-cacheados no install — todos devem existir em produção. */
