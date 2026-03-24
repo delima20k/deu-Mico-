@@ -382,19 +382,17 @@ export class MatchmakingService {
         }
       }
 
-      // 2. Cria Match object e salva metadados (status: 'pending')
+      // 2. Cria Match object e salva metadados + players em write único
+      // para respeitar as regras de segurança do RTDB.
       const match = new Match({
         matchId,
         lobbyType: lobbyTypeObj,
         playerIds,
       });
 
-      await this.#matchRepository.createMatch(match);
+      await this.#matchRepository.createMatch(match, playersData);
 
-      // 3. Cria estrutura de jogadores
-      await this.#matchRepository.createMatchPlayers(matchId, playersData);
-
-      // 4. Atribui cada jogador à partida e remove da fila
+      // 3. Atribui cada jogador à partida e remove da fila
       const now = Date.now();
       for (const uid of playerIds) {
         try {

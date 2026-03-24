@@ -40,7 +40,7 @@
       "$matchId": {
         ".read": "auth != null && root.child('matches/' + $matchId + '/meta/players/' + auth.uid).exists()",
         "meta": {
-          ".write": "auth != null && (root.child('matches/' + $matchId + '/meta/players/' + auth.uid).exists() || (!data.exists() && newData.child('players').child(auth.uid).exists()))"
+          ".write": "auth != null && (root.child('matches/' + $matchId + '/meta/players/' + auth.uid).exists() || (!data.exists() && newData.child('players').hasChildren()))"
         },
         "state": {
           ".write": "auth != null && root.child('matches/' + $matchId + '/meta/players/' + auth.uid).exists()"

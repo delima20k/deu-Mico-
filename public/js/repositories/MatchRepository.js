@@ -73,9 +73,10 @@ export class MatchRepository {
    * Cria uma partida no banco de dados.
    * Path: /matches/{matchId}/meta
    * @param {Match} match - Instância de Match com dados
+    * @param {Object|null} [players] - Map { uid: { name, avatarUrl, joinedAt }, ... }
    * @returns {Promise<void>}
    */
-  async createMatch(match) {
+    async createMatch(match, players = null) {
     const db = this.#firebaseService?.getDatabase?.();
     const dbMod = this.#firebaseService?.getDbModules?.();
     if (!db) throw new Error('[MatchRepository] Database não inicializado');
@@ -86,7 +87,7 @@ export class MatchRepository {
     
     const maxPlayers = match.getLobbyType().getMaxPlayers();
     
-    await dbMod.set(ref, {
+    const payload = {
       matchId,
       lobbyType: match.getLobbyType().getType(),
       maxPlayers,
@@ -97,7 +98,22 @@ export class MatchRepository {
       createdAt: Date.now(),
       createdTs: match.getCreatedTs(),
       meta: match.getMeta(),
-    });
+    };
+
+    if (players && typeof players === 'object') {
+      const playersData = {};
+      Object.entries(players).forEach(([uid, playerData]) => {
+        playersData[uid] = {
+          uid,
+          name: playerData?.name || `Jogador ${String(uid).slice(0, 8)}`,
+          avatarUrl: playerData?.avatarUrl || null,
+          joinedAt: playerData?.joinedAt || Date.now(),
+        };
+      });
+      payload.players = playersData;
+    }
+
+    await dbMod.set(ref, payload);
 
     console.log(`[Match] status=pending matchId=${matchId}`);
   }
