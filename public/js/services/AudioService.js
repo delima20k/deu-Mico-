@@ -121,6 +121,70 @@ export class AudioService {
     audio.play().catch(() => {});
   }
 
+  /**
+   * Retorna a duração total do áudio em milissegundos.
+   * @param {string} key
+   * @param {number} [fallbackMs=0]
+   * @returns {number}
+   */
+  getDurationMs(key, fallbackMs = 0) {
+    const audio = this.#sounds.get(key);
+    if (!audio) return fallbackMs;
+
+    const durationSec = Number(audio.duration || 0);
+    const rate = Number(audio.playbackRate || 1);
+    if (!Number.isFinite(durationSec) || durationSec <= 0) return fallbackMs;
+    if (!Number.isFinite(rate) || rate <= 0) return fallbackMs;
+
+    return Math.ceil((durationSec / rate) * 1000);
+  }
+
+  /**
+   * Retorna o tempo restante do áudio em milissegundos.
+   * @param {string} key
+   * @param {number} [fallbackMs=0]
+   * @returns {number}
+   */
+  getRemainingMs(key, fallbackMs = 0) {
+    const audio = this.#sounds.get(key);
+    if (!audio) return fallbackMs;
+
+    const durationSec = Number(audio.duration || 0);
+    const currentSec = Number(audio.currentTime || 0);
+    const rate = Number(audio.playbackRate || 1);
+    if (!Number.isFinite(durationSec) || durationSec <= 0) return fallbackMs;
+    if (!Number.isFinite(rate) || rate <= 0) return fallbackMs;
+
+    const remainingSec = Math.max(0, durationSec - currentSec);
+    return Math.ceil((remainingSec / rate) * 1000);
+  }
+
+  /**
+   * Reproduz o áudio até o fim sem reiniciar caso já esteja tocando.
+   * Retorna o tempo restante esperado em milissegundos.
+   * @param {string} key
+   * @param {number} [fallbackMs=0]
+   * @returns {number}
+   */
+  playUntilEnd(key, fallbackMs = 0) {
+    if (this.#muted) return 0;
+
+    const audio = this.#sounds.get(key);
+    if (!audio) {
+      console.warn(`[AudioService] Som não carregado: "${key}".`);
+      return fallbackMs;
+    }
+
+    const isPlaying = !audio.paused && !audio.ended;
+    if (isPlaying) {
+      return this.getRemainingMs(key, fallbackMs);
+    }
+
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
+    return this.getDurationMs(key, fallbackMs);
+  }
+
   // -------------------------------------------------------
   // Controle global
   // -------------------------------------------------------

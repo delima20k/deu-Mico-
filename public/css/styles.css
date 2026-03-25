@@ -103,26 +103,67 @@ body {
 .global-tournament-toast {
   position: fixed;
   left: 50%;
-  bottom: max(18px, env(safe-area-inset-bottom, 0px) + 12px);
-  transform: translateX(-50%) translateY(14px);
-  background: rgba(18, 38, 24, 0.94);
+  top: max(14px, env(safe-area-inset-top, 0px) + 8px);
+  bottom: auto;
+  transform: translateX(-50%) translateY(-14px);
+  background: rgba(18, 38, 24, 0.96);
   color: #fff;
-  border-radius: 12px;
-  padding: 11px 14px;
-  font-weight: 700;
-  font-size: clamp(0.78rem, 2.1vw, 0.92rem);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  padding: 10px 12px;
   opacity: 0;
   pointer-events: none;
-  z-index: 2000;
+  z-index: 300000;
   transition: opacity 180ms ease, transform 180ms ease;
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
-  text-align: center;
-  max-width: min(92vw, 680px);
+  max-width: min(92vw, 440px);
+  min-width: min(86vw, 320px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .global-tournament-toast--visible {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+.global-tournament-toast--text-only {
+  min-width: min(86vw, 280px);
+}
+
+.global-tournament-toast__avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.14);
+  flex: 0 0 auto;
+}
+
+.global-tournament-toast__content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.global-tournament-toast__title {
+  margin: 0;
+  font-size: clamp(0.82rem, 2.15vw, 0.97rem);
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.global-tournament-toast__subtitle {
+  margin: 0;
+  font-size: clamp(0.74rem, 1.95vw, 0.86rem);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 /* ---------- Tela genérica ---------- */

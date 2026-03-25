@@ -652,6 +652,7 @@ export class TournamentRepository {
             lastJoinEvent: {
               uid,
               name: userData?.name || 'Jogador',
+              avatarUrl: userData?.avatarUrl || '',
               ts: now,
               enrolledCount,
               eventId: `join_${uid}_${now}`,

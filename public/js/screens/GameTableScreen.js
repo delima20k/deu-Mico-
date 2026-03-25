@@ -39,6 +39,7 @@ import { AdConfig }           from '../services/adConfig.js';
 import { TournamentService }  from '../services/TournamentService.js';
 
 const CHAT_TRAIL_SPEED_MODE = 'slow';
+const PRESENCE_LEAVE_CONFIRMATION_MS = 3000;
 const CHAT_TRAIL_SPEED_PRESETS = {
   turbo: {
     mineDurationMs: 1500,
@@ -160,6 +161,9 @@ export class GameTableScreen extends Screen {
 
   /** @type {number|null} Timer de saída automática por abandono */
   #autoExitTimer = null;
+
+  /** @type {Map<string, ReturnType<typeof setTimeout>>} Timers pendentes para confirmar ausência de jogadores */
+  #pendingLeaveTimers = new Map();
 
   /** @type {number} Quantidade de jogadores presentes no momento */
   #activePlayers = 0;
@@ -672,6 +676,12 @@ export class GameTableScreen extends Screen {
       this.#autoExitTimer = null;
     }
 
+    // Cancela confirmações de saída pendentes
+    for (const timerId of this.#pendingLeaveTimers.values()) {
+      clearTimeout(timerId);
+    }
+    this.#pendingLeaveTimers.clear();
+
     // Para monitor de presença
     this.#presenceUnsub?.();
     this.#presenceUnsub = null;
@@ -787,6 +797,12 @@ export class GameTableScreen extends Screen {
   #startPresenceMonitor() {
     this.#presenceUnsub?.();
 
+    // Garante que timers antigos não vazem entre reinicializações do monitor
+    for (const timerId of this.#pendingLeaveTimers.values()) {
+      clearTimeout(timerId);
+    }
+    this.#pendingLeaveTimers.clear();
+
     // Pré-popula apenas o mapa de nomes (para exibição em notificações).
     // NÃO pré-populamos #prevPlayerUids com this.#players:
     // o primeiro callback do Firebase estabelece o baseline real.
@@ -811,36 +827,60 @@ export class GameTableScreen extends Screen {
         const currentUids = new Set(players.map(p => p.uid));
         this.#activePlayers = currentUids.size;
 
+        // Se jogador reapareceu, cancela eventual confirmação de saída pendente
+        for (const uid of currentUids) {
+          const timerId = this.#pendingLeaveTimers.get(uid);
+          if (timerId) {
+            clearTimeout(timerId);
+            this.#pendingLeaveTimers.delete(uid);
+          }
+        }
+
         // Detecta quem saiu comparando com snapshot anterior
         for (const uid of this.#prevPlayerUids) {
           if (!currentUids.has(uid) && uid !== this.#myUid) {
-            const saved = this.#presenceMap[uid]
-              || this.#players.find(p => p.uid === uid);
-            const name = saved?.name || 'Jogador';
-            // isWinner: havia só 2 no snapshot anterior → o restante é o vencedor
-            const isWinner = this.#prevPlayerUids.size === 2;
-            const isGameOver = isWinner || currentUids.size < 2;
+            if (this.#pendingLeaveTimers.has(uid)) continue;
 
-            if (isGameOver) {
-              // Fim de partida → sempre exibir modal (countdown + auto-exit)
-              this.#notifyPlayerLeft(uid, name, isWinner);
-            } else {
-              // Aguarda 1.5s para o evento player_left chegar via animEvents.
-              // Se chegar antes (saída intencional), o toast já foi exibido
-              // e o modal não precisa ser mostrado.
-              const capturedUid  = uid;
-              const capturedName = name;
-              setTimeout(() => {
-                if (!this.#receivedPlayerLeftEvents.has(capturedUid)) {
-                  this.#notifyPlayerLeft(capturedUid, capturedName, false);
-                }
-              }, 1500);
-            }
+            // Confirma a saída após uma janela curta para absorver reconexões rápidas
+            // e evitar falso-positivo em 2p (queda momentânea de presença no RTDB).
+            const previousCount = this.#prevPlayerUids.size;
+            const timerId = setTimeout(() => {
+              this.#pendingLeaveTimers.delete(uid);
 
-            // Se restaram menos de 2 jogadores, força saída em 10s
-            if (currentUids.size < 2) {
-              this.#scheduleAutoExit();
-            }
+              // Se reapareceu em snapshot mais recente, não notifica saída
+              if (this.#prevPlayerUids?.has(uid)) return;
+
+              const saved = this.#presenceMap[uid]
+                || this.#players.find(p => p.uid === uid);
+              const name = saved?.name || 'Jogador';
+              const activeCountNow = this.#prevPlayerUids?.size || 0;
+              // isWinner: havia só 2 quando a ausência foi detectada
+              const isWinner = previousCount === 2;
+              const isGameOver = isWinner || activeCountNow < 2;
+
+              if (isGameOver) {
+                // Fim de partida → exibe modal (countdown + auto-exit)
+                this.#notifyPlayerLeft(uid, name, isWinner);
+              } else {
+                // Aguarda 1.5s para o evento player_left chegar via animEvents.
+                // Se chegar antes (saída intencional), o toast já foi exibido
+                // e o modal não precisa ser mostrado.
+                const capturedUid  = uid;
+                const capturedName = name;
+                setTimeout(() => {
+                  if (!this.#receivedPlayerLeftEvents.has(capturedUid)) {
+                    this.#notifyPlayerLeft(capturedUid, capturedName, false);
+                  }
+                }, 1500);
+              }
+
+              // Se restaram menos de 2 jogadores após confirmação, força saída em 10s
+              if (activeCountNow < 2) {
+                this.#scheduleAutoExit();
+              }
+            }, PRESENCE_LEAVE_CONFIRMATION_MS);
+
+            this.#pendingLeaveTimers.set(uid, timerId);
           }
         }
 

@@ -55,8 +55,19 @@ export class TournamentGlobalNotifierService {
   /** @type {HTMLElement|null} */
   #toastEl = null;
 
+  /** @type {HTMLImageElement|null} */
+  #toastAvatarEl = null;
+
+  /** @type {HTMLElement|null} */
+  #toastTitleEl = null;
+
+  /** @type {HTMLElement|null} */
+  #toastSubtitleEl = null;
+
   /** @type {number|null} */
   #toastTimer = null;
+
+  static #DEFAULT_TOAST_MS = 12000;
 
   static getInstance() {
     if (!TournamentGlobalNotifierService.#instance) {
@@ -177,10 +188,20 @@ export class TournamentGlobalNotifierService {
     if (joinUid === this.#myUid) return;
 
     const name = instance?.lastJoinEvent?.name || 'Jogador';
+    const avatarUrl = instance?.lastJoinEvent?.avatarUrl || '';
     const enrolledCount = Number(instance?.enrolledCount || 0);
+    const maxParticipants = Number(instance?.maxParticipants || 6);
 
-    this.#audioService.playForce('tournament-opponent-entry');
-    this.#showToast(`Novo inscrito no campeonato: ${name} (${enrolledCount}/6)`);
+    const audioDurationMs = this.#audioService.playUntilEnd(
+      'tournament-opponent-entry',
+      TournamentGlobalNotifierService.#DEFAULT_TOAST_MS
+    );
+    this.#showJoinToast({
+      name,
+      avatarUrl,
+      enrolledCount,
+      maxParticipants,
+    }, audioDurationMs);
   }
 
   /**
@@ -201,8 +222,11 @@ export class TournamentGlobalNotifierService {
     if (!previous || previous === eventKey) return;
 
     if (type === 'countdown_started') {
-      this.#audioService.playForce('tournament-opponent-entry');
-      this.#showToast('6/6 completo: o campeonato vai começar em 1 minuto.');
+      const audioDurationMs = this.#audioService.playUntilEnd(
+        'tournament-opponent-entry',
+        TournamentGlobalNotifierService.#DEFAULT_TOAST_MS
+      );
+      this.#showToast('6/6 completo: o campeonato vai começar em 1 minuto.', audioDurationMs);
     }
   }
 
@@ -319,26 +343,104 @@ export class TournamentGlobalNotifierService {
    * @param {string} message
    * @private
    */
-  #showToast(message) {
+  #showToast(message, minVisibleMs = TournamentGlobalNotifierService.#DEFAULT_TOAST_MS) {
     if (!message) return;
 
-    if (!this.#toastEl) {
-      this.#toastEl = document.createElement('div');
-      this.#toastEl.className = 'global-tournament-toast';
-      document.body.append(this.#toastEl);
-    }
+    this.#ensureToastEl();
+    if (!this.#toastEl || !this.#toastTitleEl || !this.#toastSubtitleEl || !this.#toastAvatarEl) return;
 
-    this.#toastEl.textContent = message;
+    this.#toastEl.classList.add('global-tournament-toast--text-only');
+    this.#toastAvatarEl.style.display = 'none';
+    this.#toastTitleEl.textContent = String(message);
+    this.#toastSubtitleEl.textContent = '';
     this.#toastEl.classList.add('global-tournament-toast--visible');
 
     if (this.#toastTimer !== null) {
       clearTimeout(this.#toastTimer);
     }
 
+    const visibleMs = Math.max(
+      TournamentGlobalNotifierService.#DEFAULT_TOAST_MS,
+      Number(minVisibleMs || 0)
+    );
+
     this.#toastTimer = setTimeout(() => {
       this.#toastTimer = null;
       this.#toastEl?.classList.remove('global-tournament-toast--visible');
-    }, 3400);
+    }, visibleMs);
+  }
+
+  /**
+   * @param {{name: string, avatarUrl?: string, enrolledCount: number, maxParticipants: number}} data
+   * @private
+   */
+  #showJoinToast(data, minVisibleMs = TournamentGlobalNotifierService.#DEFAULT_TOAST_MS) {
+    this.#ensureToastEl();
+    if (!this.#toastEl || !this.#toastTitleEl || !this.#toastSubtitleEl || !this.#toastAvatarEl) return;
+
+    const name = String(data?.name || 'Jogador');
+    const enrolledCount = Number(data?.enrolledCount || 0);
+    const maxParticipants = Math.max(2, Number(data?.maxParticipants || 6));
+    const avatarUrl = String(data?.avatarUrl || '').trim();
+
+    this.#toastEl.classList.remove('global-tournament-toast--text-only');
+    this.#toastAvatarEl.style.display = '';
+    this.#toastAvatarEl.src = avatarUrl || 'icons/icon-192.png';
+    this.#toastAvatarEl.alt = `Avatar de ${name}`;
+    this.#toastAvatarEl.onerror = () => {
+      if (this.#toastAvatarEl) {
+        this.#toastAvatarEl.onerror = null;
+        this.#toastAvatarEl.src = 'icons/icon-192.png';
+      }
+    };
+
+    this.#toastTitleEl.textContent = `${name} entrou no campeonato`;
+    this.#toastSubtitleEl.textContent = `Inscritos: ${enrolledCount}/${maxParticipants}`;
+    this.#toastEl.classList.add('global-tournament-toast--visible');
+
+    if (this.#toastTimer !== null) {
+      clearTimeout(this.#toastTimer);
+    }
+
+    const visibleMs = Math.max(
+      TournamentGlobalNotifierService.#DEFAULT_TOAST_MS,
+      Number(minVisibleMs || 0)
+    );
+
+    this.#toastTimer = setTimeout(() => {
+      this.#toastTimer = null;
+      this.#toastEl?.classList.remove('global-tournament-toast--visible');
+    }, visibleMs);
+  }
+
+  /** @private */
+  #ensureToastEl() {
+    if (this.#toastEl) return;
+
+    const root = document.createElement('div');
+    root.className = 'global-tournament-toast';
+
+    const avatar = document.createElement('img');
+    avatar.className = 'global-tournament-toast__avatar';
+    avatar.alt = 'Avatar do jogador';
+
+    const content = document.createElement('div');
+    content.className = 'global-tournament-toast__content';
+
+    const title = document.createElement('p');
+    title.className = 'global-tournament-toast__title';
+
+    const subtitle = document.createElement('p');
+    subtitle.className = 'global-tournament-toast__subtitle';
+
+    content.append(title, subtitle);
+    root.append(avatar, content);
+    document.body.append(root);
+
+    this.#toastEl = root;
+    this.#toastAvatarEl = avatar;
+    this.#toastTitleEl = title;
+    this.#toastSubtitleEl = subtitle;
   }
 
   /** @private */
