@@ -39,19 +39,31 @@ export class TournamentService {
   /** @type {string|null} */
   #currentInstanceId = null;
 
-  /** @type {Set<string>} matchIds que o usuário saiu voluntariamente nesta sessão */
+  /** @type {Set<string>} matchIds que o usuário saiu voluntariamente (persistido em localStorage) */
   #userLeftMatchIds = new Set();
+
+  static #STORAGE_KEY = 'deu-mico:leftTournamentMatchIds';
 
   /** @type {boolean} */
   #ensuringJoinableInstance = false;
 
   /**
    * Registra que o usuário saiu voluntariamente de uma partida.
-   * Impede redirecionamento automático de volta à mesma partida.
+   * Persiste em localStorage para sobreviver a refreshes.
    * @param {string} matchId
    */
   recordUserLeftMatch(matchId) {
-    if (matchId) this.#userLeftMatchIds.add(matchId);
+    if (!matchId) return;
+    this.#userLeftMatchIds.add(matchId);
+    try {
+      const stored = JSON.parse(localStorage.getItem(TournamentService.#STORAGE_KEY) || '[]');
+      if (!stored.includes(matchId)) {
+        stored.push(matchId);
+        // Mantém no máximo 50 entradas para não crescer indefinidamente
+        const trimmed = stored.slice(-50);
+        localStorage.setItem(TournamentService.#STORAGE_KEY, JSON.stringify(trimmed));
+      }
+    } catch (_) { /* localStorage indisponível — sem problema, funciona apenas na sessão */ }
   }
 
   /**
@@ -76,6 +88,11 @@ export class TournamentService {
   constructor(repo, authService) {
     this.#repo = repo;
     this.#authService = authService;
+    // Carrega partidas "saídas" do localStorage para bloquear redirects entre refreshes
+    try {
+      const stored = JSON.parse(localStorage.getItem(TournamentService.#STORAGE_KEY) || '[]');
+      if (Array.isArray(stored)) stored.forEach((id) => this.#userLeftMatchIds.add(id));
+    } catch (_) { /* localStorage indisponível — começa com set vazio */ }
   }
 
   /**

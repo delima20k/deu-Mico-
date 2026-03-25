@@ -962,6 +962,44 @@ export class TournamentScreen extends Screen {
     // Não redireciona se o usuário saiu voluntariamente desta partida (via GameExitButton)
     if (this.#tournamentService.wasMatchLeftByUser(matchId)) return;
 
+    // Valida se o usuário é realmente jogador desta partida antes de redirecionar
+    try {
+      const { MatchRepository } = await import('../repositories/MatchRepository.js');
+      const match = await MatchRepository.getInstance().getMatchById(matchId);
+
+      if (!match) {
+        console.warn(`[TournamentRound] Partida ${matchId} não existe — redirect cancelado.`);
+        this.#tournamentService.recordUserLeftMatch(matchId);
+        this.#navigatedMatchId = matchId;
+        return;
+      }
+
+      const matchState = match.getState();
+      if (['finished', 'abandoned', 'ended', 'cancelled'].includes(matchState)) {
+        console.warn(`[TournamentRound] Partida ${matchId} encerrada (${matchState}) — redirect cancelado.`);
+        this.#tournamentService.recordUserLeftMatch(matchId);
+        this.#navigatedMatchId = matchId;
+        return;
+      }
+
+      if (this.#myUid && !match.hasPlayer(this.#myUid)) {
+        console.warn(`[TournamentRound] Usuário não é jogador da partida ${matchId} — redirect cancelado.`);
+        this.#tournamentService.recordUserLeftMatch(matchId);
+        this.#navigatedMatchId = matchId;
+        return;
+      }
+    } catch (error) {
+      const isPermissionDenied = String(error?.message || error).includes('permission_denied');
+      if (isPermissionDenied) {
+        console.warn(`[TournamentRound] Sem permissão para partida ${matchId} — usuário não é jogador ou partida encerrada. Redirect cancelado.`);
+      } else {
+        console.error('[TournamentRound] Erro ao validar partida antes de redirecionar:', error);
+      }
+      this.#tournamentService.recordUserLeftMatch(matchId);
+      this.#navigatedMatchId = matchId;
+      return;
+    }
+
     const playersMap = state.activePlayers && Object.keys(state.activePlayers).length > 0
       ? state.activePlayers
       : state.enrolledUsers;
