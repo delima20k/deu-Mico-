@@ -156,7 +156,17 @@ export class TournamentService {
           if (status === 'active') {
             const isActivePlayer = !!instance?.activePlayers?.[myUid];
             if (!isActivePlayer) {
-              staleInstancesForUid.push(instance.instanceId);
+              staleInstancesForUid.push({ instanceId: instance.instanceId, strategy: 'clear-index' });
+              return false;
+            }
+          }
+
+          // Usuário que não confirmou presença no countdown não deve ficar preso
+          // na rodada lotada ao voltar para se inscrever novamente.
+          if (status === 'countdown' && instance?.confirmationRequired) {
+            const confirmed = !!instance?.presenceConfirmations?.[myUid]?.confirmed;
+            if (!confirmed) {
+              staleInstancesForUid.push({ instanceId: instance.instanceId, strategy: 'leave-countdown' });
               return false;
             }
           }
@@ -166,8 +176,16 @@ export class TournamentService {
 
       // Limpa enrollmentIndex de instâncias stale em background
       if (myUid && staleInstancesForUid.length > 0) {
-        staleInstancesForUid.forEach((instanceId) => {
-          console.log(`[TournamentService] Limpando inscrição stale uid=${myUid} instanceId=${instanceId}`);
+        staleInstancesForUid.forEach(({ instanceId, strategy }) => {
+          console.log(`[TournamentService] Limpando inscrição stale uid=${myUid} instanceId=${instanceId} strategy=${strategy}`);
+
+          if (strategy === 'leave-countdown') {
+            this.#repo.leaveTournament(tournamentId, myUid).catch((err) => {
+              console.warn('[TournamentService] Falha ao remover inscrição stale do countdown:', err);
+            });
+            return;
+          }
+
           this.#repo.removeEnrollmentIndex(tournamentId, myUid).catch((err) => {
             console.warn('[TournamentService] Falha ao limpar enrollmentIndex stale:', err);
           });
@@ -181,7 +199,7 @@ export class TournamentService {
         return status === 'waiting' && count < max;
       }) || null;
 
-      if (!myInstance && !waitingJoinable && !this.#ensuringJoinableInstance) {
+      if (!waitingJoinable && !this.#ensuringJoinableInstance) {
         this.#ensuringJoinableInstance = true;
         this.#repo.ensureJoinableInstance(tournamentId, {
           maxParticipants: TournamentService.DEFAULT_MAX_PARTICIPANTS,

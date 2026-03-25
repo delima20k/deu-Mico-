@@ -364,7 +364,19 @@ export class TournamentRepository {
     const instance = instances.find((row) => {
       if (!row?.enrolledUsers?.[uid]) return false;
       const status = row.status || 'waiting';
-      return status !== 'finished';
+      if (status === 'finished') return false;
+
+      // Em active, só conta como inscrito se ainda estiver nos jogadores ativos.
+      if (status === 'active') {
+        return !!row?.activePlayers?.[uid];
+      }
+
+      // Em countdown com confirmação obrigatória, só conta se confirmou presença.
+      if (status === 'countdown' && row?.confirmationRequired) {
+        return !!row?.presenceConfirmations?.[uid]?.confirmed;
+      }
+
+      return true;
     }) || null;
 
     return { instance };
