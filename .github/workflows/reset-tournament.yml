@@ -1,0 +1,47 @@
+# Reset do Campeonato — GitHub Actions
+# Executa manualmente via: Actions → "Reset Campeonato" → Run workflow
+#
+# Requer os seguintes secrets no repositório:
+# GitHub → Settings → Secrets and variables → Actions → New repository secret:
+#   FIREBASE_PROJECT_ID       = deu-mico-pwa
+#   FIREBASE_CLIENT_EMAIL     = firebase-adminsdk-xxxxx@deu-mico-pwa.iam.gserviceaccount.com
+#   FIREBASE_PRIVATE_KEY      = -----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n
+#   FIREBASE_DATABASE_URL     = https://deu-mico-pwa-default-rtdb.firebaseio.com
+
+name: Reset Campeonato
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Digite RESETAR para confirmar o reset do campeonato'
+        required: true
+        default: ''
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar confirmação
+        if: ${{ github.event.inputs.confirm != 'RESETAR' }}
+        run: |
+          echo "❌ Confirmação incorreta. Digite exatamente: RESETAR"
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Instalar dependências
+        run: npm ci --omit=dev
+
+      - name: Executar reset do campeonato
+        env:
+          FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+        run: node scripts/reset-tournament.js
