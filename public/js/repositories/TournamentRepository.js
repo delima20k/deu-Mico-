@@ -695,11 +695,9 @@ export class TournamentRepository {
           await this.#setEnrollmentIndex(tournamentId, uid, joinableInstanceId);
 
           if (isFull || status !== 'waiting') {
-            const pointerRef = dbMod.ref(db, `tournaments/currentJoinableInstanceId/${tournamentId}`);
-            const pointerSnap = await dbMod.get(pointerRef);
-            if (pointerSnap.exists() && pointerSnap.val() === joinableInstanceId) {
-              await this.ensureJoinableInstance(tournamentId, { maxParticipants });
-            }
+            // Sempre garante uma nova instância waiting para inscrições simultâneas.
+            // Não depende do ponteiro atual para evitar contador preso em 6/6 por corrida.
+            await this.ensureJoinableInstance(tournamentId, { maxParticipants });
           }
 
           return {
