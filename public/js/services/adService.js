@@ -285,13 +285,7 @@ export class AdService {
       btnClose.textContent = '✕ Fechar sem bônus';
       btnClose.type = 'button';
 
-      const btnClaim = document.createElement('button');
-      btnClaim.className = 'ad-rewarded-panel__btn ad-rewarded-panel__btn--claim';
-      btnClaim.textContent = '🎁 Resgatar bônus';
-      btnClaim.type = 'button';
-      btnClaim.style.display = 'none';
-
-      panel.append(title, desc, timer, btnClaim, btnClose);
+      panel.append(title, desc, timer, btnClose);
       overlay.append(panel);
       document.body.append(overlay);
 
@@ -307,8 +301,11 @@ export class AdService {
           timer.textContent = `Aguarde ${secs}s…`;
         } else {
           clearInterval(interval);
-          timer.textContent = '✅ Pronto! Resgate seu bônus.';
-          btnClaim.style.display = '';
+          timer.textContent = '✅ Bônus liberado!';
+          if (resolved) return;
+          resolved = true;
+          cleanup();
+          resolve(true);
         }
       }, 1000);
 
@@ -320,12 +317,7 @@ export class AdService {
         resolve(false);
       });
 
-      btnClaim.addEventListener('click', () => {
-        if (resolved) return;
-        resolved = true;
-        cleanup();
-        resolve(true);
-      });
+      // Sem botão extra: ao assistir até o fim, recompensa é liberada automaticamente.
     });
   }
 

@@ -261,6 +261,19 @@ export class TournamentService {
   }
 
   /**
+   * Confirma presença do usuário atual na instância em countdown.
+   * @param {string} instanceId
+   * @returns {Promise<{confirmed: boolean, instance: Object|null}>}
+   */
+  async confirmCurrentTournamentPresence(instanceId) {
+    const currentUser = await this.#authService.getCurrentUser();
+    if (!currentUser?.uid) {
+      throw new Error('[Tournament] Usuario nao autenticado para confirmar presenca');
+    }
+    return this.#repo.confirmPresence(instanceId, currentUser.uid);
+  }
+
+  /**
    * Tenta iniciar torneio apos countdown (idempotente).
    * @returns {Promise<boolean>}
    */

@@ -67,6 +67,15 @@ export class TournamentGlobalNotifierService {
   /** @type {number|null} */
   #toastTimer = null;
 
+  /** @type {HTMLButtonElement|null} */
+  #toastActionBtnEl = null;
+
+  /** @type {string|null} */
+  #pendingConfirmInstanceId = null;
+
+  /** @type {boolean} */
+  #confirmPresenceInFlight = false;
+
   static #DEFAULT_TOAST_MS = 12000;
 
   static getInstance() {
@@ -141,6 +150,7 @@ export class TournamentGlobalNotifierService {
     this.#handleSystemNotice(myInstance);
 
     const status = myInstance.status || 'waiting';
+    const hasConfirmedPresence = !!myInstance?.presenceConfirmations?.[this.#myUid]?.confirmed;
     const matchId = myInstance?.currentMatchId || null;
     if (matchId && this.#tournamentService.wasMatchLeftByUser(matchId)) {
       this.#clearTimer();
@@ -148,6 +158,11 @@ export class TournamentGlobalNotifierService {
     }
 
     if (status === 'countdown') {
+      if (!hasConfirmedPresence) {
+        this.#showPresenceConfirmToast(myInstance);
+      } else {
+        this.#hideActionButton();
+      }
       const endsAt = Number(myInstance.countdownEndsAt || 0);
       this.#scheduleRedirect(endsAt);
       return;
@@ -167,6 +182,7 @@ export class TournamentGlobalNotifierService {
     }
 
     this.#clearTimer();
+    this.#hideActionButton();
   }
 
   /**
@@ -227,6 +243,11 @@ export class TournamentGlobalNotifierService {
         TournamentGlobalNotifierService.#DEFAULT_TOAST_MS
       );
       this.#showToast('6/6 completo: o campeonato vai começar em 1 minuto.', audioDurationMs);
+      return;
+    }
+
+    if (type === 'countdown_canceled_unconfirmed') {
+      this.#showToast('Countdown cancelado por ausência de confirmação. Vagas reabertas.');
     }
   }
 
@@ -350,6 +371,7 @@ export class TournamentGlobalNotifierService {
     if (!this.#toastEl || !this.#toastTitleEl || !this.#toastSubtitleEl || !this.#toastAvatarEl) return;
 
     this.#toastEl.classList.add('global-tournament-toast--text-only');
+    this.#hideActionButton();
     this.#toastAvatarEl.style.display = 'none';
     this.#toastTitleEl.textContent = String(message);
     this.#toastSubtitleEl.textContent = '';
@@ -384,6 +406,7 @@ export class TournamentGlobalNotifierService {
     const avatarUrl = String(data?.avatarUrl || '').trim();
 
     this.#toastEl.classList.remove('global-tournament-toast--text-only');
+    this.#hideActionButton();
     this.#toastAvatarEl.style.display = '';
     this.#toastAvatarEl.src = avatarUrl || 'icons/icon-192.png';
     this.#toastAvatarEl.alt = `Avatar de ${name}`;
@@ -433,7 +456,15 @@ export class TournamentGlobalNotifierService {
     const subtitle = document.createElement('p');
     subtitle.className = 'global-tournament-toast__subtitle';
 
-    content.append(title, subtitle);
+    const actionBtn = document.createElement('button');
+    actionBtn.className = 'global-tournament-toast__action global-tournament-toast__action--hidden';
+    actionBtn.type = 'button';
+    actionBtn.textContent = 'Confirmar presença';
+    actionBtn.addEventListener('click', () => {
+      void this.#onConfirmPresenceClicked();
+    });
+
+    content.append(title, subtitle, actionBtn);
     root.append(avatar, content);
     document.body.append(root);
 
@@ -441,6 +472,89 @@ export class TournamentGlobalNotifierService {
     this.#toastAvatarEl = avatar;
     this.#toastTitleEl = title;
     this.#toastSubtitleEl = subtitle;
+    this.#toastActionBtnEl = actionBtn;
+  }
+
+  /** @private */
+  #hideActionButton() {
+    if (!this.#toastActionBtnEl) return;
+    this.#toastActionBtnEl.classList.add('global-tournament-toast__action--hidden');
+    this.#toastActionBtnEl.disabled = false;
+    this.#toastActionBtnEl.textContent = 'Confirmar presença';
+    this.#pendingConfirmInstanceId = null;
+    this.#confirmPresenceInFlight = false;
+  }
+
+  /**
+   * @param {Object} instance
+   * @private
+   */
+  #showPresenceConfirmToast(instance) {
+    const instanceId = instance?.instanceId;
+    if (!instanceId) return;
+
+    this.#ensureToastEl();
+    if (!this.#toastEl || !this.#toastTitleEl || !this.#toastSubtitleEl || !this.#toastAvatarEl || !this.#toastActionBtnEl) return;
+
+    const endsAt = Number(instance?.countdownEndsAt || 0);
+    const remainSec = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+
+    this.#pendingConfirmInstanceId = instanceId;
+    this.#toastEl.classList.add('global-tournament-toast--text-only');
+    this.#toastAvatarEl.style.display = 'none';
+    this.#toastTitleEl.textContent = 'Campeonato vai começar em 1 minuto';
+    this.#toastSubtitleEl.textContent = `Confirme sua presença para garantir vaga (${remainSec}s)`;
+    this.#toastActionBtnEl.classList.remove('global-tournament-toast__action--hidden');
+    this.#toastActionBtnEl.disabled = this.#confirmPresenceInFlight;
+    this.#toastActionBtnEl.textContent = this.#confirmPresenceInFlight
+      ? 'Confirmando...'
+      : 'Confirmar presença';
+
+    this.#toastEl.classList.add('global-tournament-toast--visible');
+
+    if (this.#toastTimer !== null) {
+      clearTimeout(this.#toastTimer);
+    }
+
+    const visibleMs = Math.max(
+      TournamentGlobalNotifierService.#DEFAULT_TOAST_MS,
+      Math.max(0, endsAt - Date.now())
+    );
+
+    this.#toastTimer = setTimeout(() => {
+      this.#toastTimer = null;
+      this.#toastEl?.classList.remove('global-tournament-toast--visible');
+    }, visibleMs);
+  }
+
+  /** @private */
+  async #onConfirmPresenceClicked() {
+    if (this.#confirmPresenceInFlight) return;
+    if (!this.#pendingConfirmInstanceId) return;
+    if (!this.#toastActionBtnEl || !this.#toastSubtitleEl) return;
+
+    this.#confirmPresenceInFlight = true;
+    this.#toastActionBtnEl.disabled = true;
+    this.#toastActionBtnEl.textContent = 'Confirmando...';
+
+    try {
+      const result = await this.#tournamentService.confirmCurrentTournamentPresence(this.#pendingConfirmInstanceId);
+      if (result?.confirmed) {
+        this.#toastSubtitleEl.textContent = 'Presença confirmada. Você será redirecionado para a partida.';
+        this.#toastActionBtnEl.textContent = 'Confirmado';
+      } else {
+        this.#toastSubtitleEl.textContent = 'Não foi possível confirmar agora. Tente novamente.';
+        this.#toastActionBtnEl.disabled = false;
+        this.#toastActionBtnEl.textContent = 'Confirmar presença';
+      }
+    } catch (error) {
+      console.error('[TournamentGlobalNotifier] erro ao confirmar presença:', error);
+      this.#toastSubtitleEl.textContent = 'Falha ao confirmar presença. Verifique sua conexão e tente novamente.';
+      this.#toastActionBtnEl.disabled = false;
+      this.#toastActionBtnEl.textContent = 'Confirmar presença';
+    } finally {
+      this.#confirmPresenceInFlight = false;
+    }
   }
 
   /** @private */

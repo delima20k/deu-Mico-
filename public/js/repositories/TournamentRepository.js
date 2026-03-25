@@ -141,6 +141,8 @@ export class TournamentRepository {
       currentMatchId: defaults.currentMatchId || null,
       currentMatchNumber: Number(defaults.currentMatchNumber || 0),
       phase: defaults.phase || 'waiting',
+      confirmationRequired: !!defaults.confirmationRequired,
+      presenceConfirmations: defaults.presenceConfirmations || {},
       countdownStartAt: defaults.countdownStartAt || null,
       countdownEndsAt: defaults.countdownEndsAt || null,
       startedAt: defaults.startedAt || null,
@@ -625,11 +627,27 @@ export class TournamentRepository {
           let countdownStartAt = base.countdownStartAt || null;
           let countdownEndsAt = base.countdownEndsAt || null;
           let lastSystemNotice = base.lastSystemNotice || null;
+          let confirmationRequired = !!base.confirmationRequired;
+          let presenceConfirmations = { ...(base.presenceConfirmations || {}) };
+
+          // Mantém mapa em sincronia com inscritos (remove órfãos)
+          for (const confirmedUid of Object.keys(presenceConfirmations)) {
+            if (!enrolledUsers[confirmedUid]) {
+              delete presenceConfirmations[confirmedUid];
+            }
+          }
 
           if (enrolledCount >= normalizedMax && status === 'waiting') {
             countdownStartAt = countdownStartAt || now;
             countdownEndsAt = countdownEndsAt || (countdownStartAt + countdownDurationMs);
             nextStatus = 'countdown';
+            confirmationRequired = true;
+            for (const confirmedUid of Object.keys(enrolledUsers)) {
+              presenceConfirmations[confirmedUid] = {
+                confirmed: false,
+                ts: null,
+              };
+            }
             lastSystemNotice = {
               type: 'countdown_started',
               ts: now,
@@ -647,6 +665,8 @@ export class TournamentRepository {
             enrolledCount,
             status: nextStatus,
             phase: nextStatus === 'countdown' ? 'countdown' : (base.phase || 'waiting'),
+            confirmationRequired,
+            presenceConfirmations,
             countdownStartAt,
             countdownEndsAt,
             lastJoinEvent: {
@@ -766,12 +786,15 @@ export class TournamentRepository {
       let countdownStartAt = current.countdownStartAt || null;
       let countdownEndsAt = current.countdownEndsAt || null;
       let lastSystemNotice = current.lastSystemNotice || null;
+      let confirmationRequired = !!current.confirmationRequired;
+      const presenceConfirmations = { ...(current.presenceConfirmations || {}) };
 
       if (status === 'countdown' && enrolledCount < Number(current.maxParticipants || 6)) {
         nextStatus = 'waiting';
         nextPhase = 'waiting';
         countdownStartAt = null;
         countdownEndsAt = null;
+        confirmationRequired = false;
         lastSystemNotice = {
           type: 'countdown_canceled',
           ts: now,
@@ -780,6 +803,8 @@ export class TournamentRepository {
         };
       }
 
+      delete presenceConfirmations[uid];
+
       return {
         ...current,
         enrolledUsers,
@@ -787,6 +812,8 @@ export class TournamentRepository {
         enrolledCount,
         status: nextStatus,
         phase: nextPhase,
+        confirmationRequired,
+        presenceConfirmations,
         countdownStartAt,
         countdownEndsAt,
         lastSystemNotice,
@@ -995,8 +1022,42 @@ export class TournamentRepository {
       }
 
       const enrolledUsers = { ...(current.enrolledUsers || {}) };
-      // Ao sair de countdown para active (primeira partida), sempre usa
-      // todos os inscritos para evitar activePlayers parcial/stale.
+      const confirmationRequired = !!current.confirmationRequired;
+      const confirmations = { ...(current.presenceConfirmations || {}) };
+
+      // Remove não confirmados no momento da virada do countdown.
+      if (confirmationRequired) {
+        for (const uid of Object.keys(enrolledUsers)) {
+          const confirmed = !!confirmations?.[uid]?.confirmed;
+          if (!confirmed) {
+            delete enrolledUsers[uid];
+          }
+        }
+      }
+
+      const confirmedCount = Object.keys(enrolledUsers).length;
+      if (confirmedCount < Number(current.maxParticipants || 6)) {
+        return {
+          ...current,
+          status: 'waiting',
+          phase: 'waiting',
+          enrolledUsers,
+          enrolledCount: confirmedCount,
+          activePlayers: {},
+          confirmationRequired: false,
+          presenceConfirmations: {},
+          countdownStartAt: null,
+          countdownEndsAt: null,
+          lastSystemNotice: {
+            type: 'countdown_canceled_unconfirmed',
+            ts: now,
+            text: 'Countdown cancelado por ausência de confirmação. Vagas reabertas.',
+            eventId: `countdown_unconfirmed_${instanceId}_${now}`,
+          },
+          updatedAt: now,
+        };
+      }
+
       const activePlayers = { ...enrolledUsers };
 
       const matchNumber = Number(current.currentMatchNumber || 0) > 0
@@ -1015,6 +1076,10 @@ export class TournamentRepository {
         currentMatchId,
         currentMatchNumber: matchNumber,
         activePlayers,
+        enrolledUsers,
+        enrolledCount: Object.keys(activePlayers).length,
+        confirmationRequired: false,
+        presenceConfirmations: {},
         eliminatedPlayers: { ...(current.eliminatedPlayers || {}) },
         processedMatchResults: { ...(current.processedMatchResults || {}) },
         lastSystemNotice: {
@@ -1056,6 +1121,55 @@ export class TournamentRepository {
       started: instance?.status === 'active',
       instance,
     };
+  }
+
+  /**
+   * Confirma presença do usuário durante o countdown da rodada.
+   * @param {string} instanceId
+   * @param {string} uid
+   * @returns {Promise<{confirmed: boolean, instance: Object|null}>}
+   */
+  async confirmPresence(instanceId, uid) {
+    if (!instanceId || !uid) {
+      throw new Error('[TournamentRound] confirmPresence requer instanceId e uid');
+    }
+
+    const { db, dbMod } = this.#getDbContext();
+    const ref = dbMod.ref(db, `tournaments/instances/${instanceId}`);
+
+    const result = await dbMod.runTransaction(ref, (current) => {
+      if (!current) return current;
+      const now = Date.now();
+      const status = current.status || 'waiting';
+      const enrolledUsers = { ...(current.enrolledUsers || {}) };
+      if (status !== 'countdown' || !enrolledUsers[uid]) return current;
+
+      const presenceConfirmations = { ...(current.presenceConfirmations || {}) };
+      presenceConfirmations[uid] = {
+        confirmed: true,
+        ts: now,
+      };
+
+      return {
+        ...current,
+        confirmationRequired: true,
+        presenceConfirmations,
+        lastSystemNotice: {
+          type: 'presence_confirmed',
+          ts: now,
+          text: `${enrolledUsers[uid]?.name || 'Jogador'} confirmou presença`,
+          eventId: `presence_confirmed_${instanceId}_${uid}_${now}`,
+        },
+        updatedAt: now,
+      };
+    });
+
+    const instance = result.snapshot.exists()
+      ? { instanceId, ...result.snapshot.val() }
+      : null;
+
+    const confirmed = !!instance?.presenceConfirmations?.[uid]?.confirmed;
+    return { confirmed, instance };
   }
 
   /**
