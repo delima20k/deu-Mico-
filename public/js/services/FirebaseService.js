@@ -169,8 +169,9 @@ export class FirebaseService {
       err.code = 'auth/no-current-user';
       throw err;
     }
+    const continueUrl = `${window.location.origin}/#login`;
     const actionCodeSettings = {
-      url: window.location.origin,
+      url: continueUrl,
       handleCodeInApp: false,
     };
     await this.#mod.sendEmailVerification(user, actionCodeSettings);

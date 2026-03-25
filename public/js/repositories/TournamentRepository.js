@@ -995,9 +995,9 @@ export class TournamentRepository {
       }
 
       const enrolledUsers = { ...(current.enrolledUsers || {}) };
-      const activePlayers = Object.keys(current.activePlayers || {}).length > 0
-        ? { ...(current.activePlayers || {}) }
-        : { ...enrolledUsers };
+      // Ao sair de countdown para active (primeira partida), sempre usa
+      // todos os inscritos para evitar activePlayers parcial/stale.
+      const activePlayers = { ...enrolledUsers };
 
       const matchNumber = Number(current.currentMatchNumber || 0) > 0
         ? Number(current.currentMatchNumber || 1)
@@ -1038,6 +1038,17 @@ export class TournamentRepository {
         matchNumber: Number(instance.currentMatchNumber || 1),
         playersMap: instance.activePlayers || {},
       });
+
+      // Segurança: garante nova instância waiting (contador 0) para
+      // próximos inscritos enquanto a rodada atual está em andamento.
+      if (instance.tournamentId) {
+        await this.ensureJoinableInstance(instance.tournamentId, {
+          maxParticipants: instance.maxParticipants,
+        }).catch((error) => {
+          console.warn('[TournamentRound] Falha ao garantir instancia waiting após start:', error);
+        });
+      }
+
       console.log(`[TournamentRound] instance started instanceId=${instanceId} matchId=${newMatchId}`);
     }
 

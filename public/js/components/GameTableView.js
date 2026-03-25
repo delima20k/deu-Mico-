@@ -69,11 +69,12 @@ export class GameTableView {
     // Constrói container de badges mas NÃO insere no wrapper
     // (será inserido pelo GameTableScreen diretamente no .hex-table)
     // Classe extra com nº de jogadores para permitir CSS scoping por layout
+    const playersCountClass = `game-table-view__players--${this.#tableLayout.playersCount}p`;
     const roomTypeClass = this.#roomType !== 'tournament'
       ? `game-table-view__players--${this.#roomType}`
       : '';
     this.#playersContainer = Dom.create('div', {
-      classes: ['game-table-view__players', roomTypeClass].filter(Boolean)
+      classes: ['game-table-view__players', playersCountClass, roomTypeClass].filter(Boolean)
     });
 
     // Renderiza os badges de cada jogador
