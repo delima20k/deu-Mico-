@@ -143,13 +143,36 @@ export class TournamentService {
     const unsubInstances = this.#repo.subscribeTournamentInstances(tournamentId, (instances) => {
       const list = Array.isArray(instances) ? instances : [];
 
+      // Instâncias stale detectadas neste ciclo para limpeza assíncrona
+      const staleInstancesForUid = [];
+
       const myInstance = myUid
         ? list.find((instance) => {
           const hasMe = !!instance?.enrolledUsers?.[myUid];
           const status = instance?.status || 'waiting';
-          return hasMe && status !== 'finished';
+          if (!hasMe || status === 'finished') return false;
+          // Se a instância está ativa, o usuário precisa estar em activePlayers
+          // Caso contrário é uma inscrição stale (sobrou de partida anterior)
+          if (status === 'active') {
+            const isActivePlayer = !!instance?.activePlayers?.[myUid];
+            if (!isActivePlayer) {
+              staleInstancesForUid.push(instance.instanceId);
+              return false;
+            }
+          }
+          return true;
         }) || null
         : null;
+
+      // Limpa enrollmentIndex de instâncias stale em background
+      if (myUid && staleInstancesForUid.length > 0) {
+        staleInstancesForUid.forEach((instanceId) => {
+          console.log(`[TournamentService] Limpando inscrição stale uid=${myUid} instanceId=${instanceId}`);
+          this.#repo.removeEnrollmentIndex(tournamentId, myUid).catch((err) => {
+            console.warn('[TournamentService] Falha ao limpar enrollmentIndex stale:', err);
+          });
+        });
+      }
 
       const waitingJoinable = list.find((instance) => {
         const status = instance?.status || 'waiting';
