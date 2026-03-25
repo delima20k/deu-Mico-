@@ -144,6 +144,13 @@ export class TournamentGlobalNotifierService {
 
     if (status === 'active') {
       this.#clearTimer();
+      const activePlayers = myInstance?.activePlayers || {};
+      const hasActivePlayers = Object.keys(activePlayers).length > 0;
+      if (hasActivePlayers && !activePlayers[this.#myUid]) {
+        // Usuário está inscrito no torneio mas não é jogador ativo nesta partida — evita redirect indevido
+        console.log('[TournamentGlobalNotifier] Usuário não é jogador ativo desta partida — redirect ignorado.');
+        return;
+      }
       void this.#forceToTournamentMatch(myInstance);
       return;
     }
@@ -238,6 +245,47 @@ export class TournamentGlobalNotifierService {
     if (!matchId) return;
 
     if (this.#lastForcedMatchId === matchId) return;
+
+    // Verificação 1: partida já foi processada/encerrada no torneio (sem I/O)
+    const processedResults = instance?.processedMatchResults || {};
+    if (processedResults[matchId]) {
+      console.log(`[TournamentGlobalNotifier] Partida ${matchId} já processada — ignorando redirect.`);
+      return;
+    }
+
+    // Verificação 2: validar partida no Firebase antes de redirecionar
+    try {
+      const { MatchRepository } = await import('../repositories/MatchRepository.js');
+      const match = await MatchRepository.getInstance().getMatchById(matchId);
+
+      if (!match) {
+        console.warn(`[TournamentGlobalNotifier] Partida ${matchId} não encontrada no Firebase — ignorando redirect.`);
+        this.#lastForcedMatchId = matchId;
+        return;
+      }
+
+      const matchState = match.getState();
+      if (['finished', 'abandoned', 'ended', 'cancelled'].includes(matchState)) {
+        console.warn(`[TournamentGlobalNotifier] Partida ${matchId} encerrada (${matchState}) — ignorando redirect.`);
+        this.#lastForcedMatchId = matchId;
+        return;
+      }
+
+      if (this.#myUid && !match.hasPlayer(this.#myUid)) {
+        console.warn(`[TournamentGlobalNotifier] Usuário não é jogador da partida ${matchId} — ignorando redirect.`);
+        this.#lastForcedMatchId = matchId;
+        return;
+      }
+    } catch (error) {
+      const isPermissionDenied = String(error?.message || error).includes('permission_denied');
+      if (isPermissionDenied) {
+        console.warn(`[TournamentGlobalNotifier] Sem permissão para partida ${matchId} — usuário não é jogador ou partida encerrada. Redirect cancelado.`);
+      } else {
+        console.error('[TournamentGlobalNotifier] Erro ao validar partida antes de redirecionar:', error);
+      }
+      this.#lastForcedMatchId = matchId;
+      return;
+    }
 
     const playersMap = instance?.activePlayers && Object.keys(instance.activePlayers).length > 0
       ? instance.activePlayers
