@@ -980,6 +980,16 @@ export class TournamentRepository {
   }
 
   /**
+   * Remove o enrollmentIndex de um usuário (método público para limpeza externa).
+   * @param {string} tournamentId
+   * @param {string} uid
+   * @returns {Promise<void>}
+   */
+  async removeEnrollmentIndex(tournamentId, uid) {
+    return this.#clearEnrollmentIndex(tournamentId, uid);
+  }
+
+  /**
    * Ativa torneio se countdown acabou (idempotente).
    * @param {string} tournamentId
    * @returns {Promise<boolean>} true se ficou ativo
@@ -1354,6 +1364,13 @@ export class TournamentRepository {
     if (!result.snapshot.exists()) return null;
 
     const updatedInstance = { instanceId, ...result.snapshot.val() };
+
+    // Limpa enrollmentIndex do jogador eliminado (micoUid) imediatamente
+    if (micoUid && updatedInstance.tournamentId && updatedInstance.status === 'active') {
+      await this.#clearEnrollmentIndex(updatedInstance.tournamentId, micoUid).catch((err) => {
+        console.warn(`[TournamentRound] Falha ao limpar enrollmentIndex do eliminado uid=${micoUid}:`, err);
+      });
+    }
 
     if (updatedInstance.status === 'finished') {
       const enrolledUsers = updatedInstance.enrolledUsers || {};

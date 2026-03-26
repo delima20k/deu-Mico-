@@ -150,7 +150,15 @@ export class TournamentService {
         ? list.find((instance) => {
           const hasMe = !!instance?.enrolledUsers?.[myUid];
           const status = instance?.status || 'waiting';
+          
+          // Se a instância está finished, limpa o enrollmentIndex
+          if (hasMe && status === 'finished') {
+            staleInstancesForUid.push({ instanceId: instance.instanceId, strategy: 'clear-index-finished' });
+            return false;
+          }
+          
           if (!hasMe || status === 'finished') return false;
+          
           // Se a instância está ativa, o usuário precisa estar em activePlayers
           // Caso contrário é uma inscrição stale (sobrou de partida anterior)
           if (status === 'active') {
@@ -186,6 +194,7 @@ export class TournamentService {
             return;
           }
 
+          // Para qualquer outra estratégia, limpa apenas o enrollmentIndex
           this.#repo.removeEnrollmentIndex(tournamentId, myUid).catch((err) => {
             console.warn('[TournamentService] Falha ao limpar enrollmentIndex stale:', err);
           });
