@@ -159,26 +159,43 @@ export class TournamentScreen extends Screen {
     }
 
     // LIMPEZA FORÇADA: Remove inscrições stale antigas do usuário antes de carregar dados
+    console.log('[DEBUG TournamentScreen] 🔍 Iniciando limpeza forçada para uid:', this.#myUid?.slice(0, 8));
     try {
       const tournamentId = await this.#tournamentService.getCurrentTournamentId();
+      console.log('[DEBUG TournamentScreen] 🎯 Tournament ID:', tournamentId);
       const repo = TournamentRepository.getInstance();
       
       // Verifica se o usuário tem enrollmentIndex apontando para instância finished/stale
       const enrollment = await repo.findUserEnrollment(tournamentId, this.#myUid).catch(() => ({ instance: null }));
+      console.log('[DEBUG TournamentScreen] 📋 Enrollment encontrado:', {
+        hasInstance: !!enrollment?.instance,
+        instanceId: enrollment?.instance?.tournamentInstanceId,
+        status: enrollment?.instance?.status,
+        enrolledCount: enrollment?.instance?.enrolledCount,
+        enrolledUsersKeys: enrollment?.instance?.enrolledUsers ? Object.keys(enrollment.instance.enrolledUsers) : [],
+        isInActivePlayers: !!enrollment?.instance?.activePlayers?.[this.#myUid],
+        isInEliminatedPlayers: !!enrollment?.instance?.eliminatedPlayers?.[this.#myUid]
+      });
+      
       if (enrollment?.instance) {
         const status = enrollment.instance.status || 'waiting';
         const isActivePlayer = !!enrollment.instance.activePlayers?.[this.#myUid];
         
         // Se instância finished OU usuário não está em activePlayers, limpa
         if (status === 'finished' || (status === 'active' && !isActivePlayer)) {
-          console.log(`[TournamentScreen] Limpando inscrição stale uid=${this.#myUid.slice(0, 8)}... status=${status} isActive=${isActivePlayer}`);
+          console.log(`[DEBUG TournamentScreen] ⚠️ LIMPANDO inscrição stale: status=${status} isActive=${isActivePlayer}`);
           await repo.removeEnrollmentIndex(tournamentId, this.#myUid).catch(err => {
-            console.warn('[TournamentScreen] Falha ao limpar enrollmentIndex stale:', err);
+            console.error('[DEBUG TournamentScreen] ❌ Falha ao limpar enrollmentIndex:', err);
           });
+          console.log('[DEBUG TournamentScreen] ✅ enrollmentIndex removido com sucesso');
+        } else {
+          console.log('[DEBUG TournamentScreen] ✓ Inscrição válida, não precisa limpar');
         }
+      } else {
+        console.log('[DEBUG TournamentScreen] ℹ️ Nenhum enrollment encontrado para este usuário');
       }
     } catch (err) {
-      console.warn('[TournamentScreen] Erro na limpeza forçada de enrollmentIndex:', err);
+      console.error('[DEBUG TournamentScreen] 💥 Erro na limpeza forçada:', err);
     }
 
     const profile = await authService.getProfile(this.#myUid).catch(() => null);
@@ -419,6 +436,18 @@ export class TournamentScreen extends Screen {
     this.#unsubLeaderboard?.();
 
     this.#unsubTournament = await this.#tournamentService.subscribeCurrentTournament((state) => {
+      console.log('[DEBUG TournamentScreen] 📡 subscribeCurrentTournament callback:', {
+        myUid: state?.myUid?.slice(0, 8),
+        currentInstanceId: state?.currentInstanceId,
+        staleInstanceId: state?.staleInstanceId,
+        currentStatus: state?.status,
+        currentEnrolledCount: state?.enrolledCount,
+        currentEnrolledUsers: state?.enrolledUsers ? Object.keys(state.enrolledUsers) : [],
+        staleStatus: state?.stale?.status,
+        staleEnrolledCount: state?.stale?.enrolledCount,
+        staleEnrolledUsers: state?.stale?.enrolledUsers ? Object.keys(state.stale.enrolledUsers) : []
+      });
+      
       this.#myUid = state?.myUid || null;
       this.#currentRealtimeState = state;
       const selected = this.#resolveObservedInstance(state);
@@ -633,6 +662,13 @@ export class TournamentScreen extends Screen {
       this.#enrollmentCardWrapperEl.style.display = showCard ? '' : 'none';
       if (showCard) {
         const maxCount = Number(state.maxParticipants || 6);
+        console.log('[DEBUG TournamentScreen] 🔢 Atualizando contador:', {
+          enrolledCount,
+          maxCount,
+          status,
+          enrolledUsersKeys: state?.enrolledUsers ? Object.keys(state.enrolledUsers) : [],
+          enrolledUsersCount: state?.enrolledUsers ? Object.keys(state.enrolledUsers).length : 0
+        });
         this.#enrollmentCard.updateCount(enrolledCount, maxCount);
         // Atualiza label e estado do botão conforme o status da rodada
         const btn = this.#enrollmentCardWrapperEl.querySelector('.lobby-card__button');
