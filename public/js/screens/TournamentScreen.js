@@ -15,6 +15,7 @@ import { SideMenu } from '../components/SideMenu.js';
 import { TournamentCard } from '../components/TournamentCard.js';
 import { LobbyCard } from '../components/LobbyCard.js';
 import { TournamentService } from '../services/TournamentService.js';
+import { TournamentRepository } from '../repositories/TournamentRepository.js';
 import { AuthService } from '../services/AuthService.js';
 import { Dom } from '../utils/Dom.js';
 import { AdService } from '../services/adService.js';
@@ -155,6 +156,29 @@ export class TournamentScreen extends Screen {
     if (!this.#myUid) {
       this.#screenManager.show('LoginScreen');
       return;
+    }
+
+    // LIMPEZA FORÇADA: Remove inscrições stale antigas do usuário antes de carregar dados
+    try {
+      const tournamentId = await this.#tournamentService.getCurrentTournamentId();
+      const repo = TournamentRepository.getInstance();
+      
+      // Verifica se o usuário tem enrollmentIndex apontando para instância finished/stale
+      const enrollment = await repo.findUserEnrollment(tournamentId, this.#myUid).catch(() => ({ instance: null }));
+      if (enrollment?.instance) {
+        const status = enrollment.instance.status || 'waiting';
+        const isActivePlayer = !!enrollment.instance.activePlayers?.[this.#myUid];
+        
+        // Se instância finished OU usuário não está em activePlayers, limpa
+        if (status === 'finished' || (status === 'active' && !isActivePlayer)) {
+          console.log(`[TournamentScreen] Limpando inscrição stale uid=${this.#myUid.slice(0, 8)}... status=${status} isActive=${isActivePlayer}`);
+          await repo.removeEnrollmentIndex(tournamentId, this.#myUid).catch(err => {
+            console.warn('[TournamentScreen] Falha ao limpar enrollmentIndex stale:', err);
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[TournamentScreen] Erro na limpeza forçada de enrollmentIndex:', err);
     }
 
     const profile = await authService.getProfile(this.#myUid).catch(() => null);
