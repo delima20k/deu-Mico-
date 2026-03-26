@@ -492,4 +492,27 @@ export class TournamentService {
       })));
     });
   }
+
+  /**
+   * Elimina um jogador que saiu de uma partida ativa de torneio.
+   * @param {{instanceId: string, uid: string, matchId: string}} payload
+   * @returns {Promise<{eliminated: boolean, instance: Object|null, shouldAdvance: boolean}>}
+   */
+  async eliminatePlayerWhoLeftMatch(payload) {
+    if (!payload?.instanceId || !payload?.uid || !payload?.matchId) {
+      console.warn('[TournamentService] eliminatePlayerWhoLeftMatch: parâmetros insuficientes');
+      return { eliminated: false, instance: null, shouldAdvance: false };
+    }
+
+    console.log(
+      `[TournamentService] eliminando jogador instanceId=${payload.instanceId} ` +
+      `uid=${payload.uid.slice(0, 8)}... matchId=${payload.matchId}`
+    );
+
+    return this.#repo.eliminatePlayerFromActiveMatch(
+      payload.instanceId,
+      payload.uid,
+      payload.matchId
+    );
+  }
 }

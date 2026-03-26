@@ -1807,4 +1807,168 @@ export class TournamentRepository {
 
     return () => unsubscribe();
   }
+
+  /**
+   * Elimina um jogador que saiu de uma partida ativa de torneio.
+   * Remove o jogador dos activePlayers, move para eliminatedPlayers,
+   * limpa enrollmentIndex e processa eliminação.
+   * @param {string} instanceId
+   * @param {string} uid - UID do jogador que saiu
+   * @param {string} matchId - ID da partida atual
+   * @returns {Promise<{eliminated: boolean, instance: Object|null, shouldAdvance: boolean}>}
+   */
+  async eliminatePlayerFromActiveMatch(instanceId, uid, matchId) {
+    if (!instanceId || !uid) {
+      throw new Error('[TournamentRound] eliminatePlayerFromActiveMatch requer instanceId e uid');
+    }
+
+    const { db, dbMod } = this.#getDbContext();
+    const ref = dbMod.ref(db, `tournaments/instances/${instanceId}`);
+    let shouldCreateNextMatch = false;
+
+    const result = await dbMod.runTransaction(ref, (current) => {
+      if (!current) return current;
+
+      const now = Date.now();
+      const status = current.status || 'waiting';
+      
+      // Só elimina se a partida está ativa
+      if (status !== 'active') {
+        return current;
+      }
+
+      const activePlayers = { ...(current.activePlayers || {}) };
+      const eliminatedPlayers = { ...(current.eliminatedPlayers || {}) };
+      const enrolledUsers = { ...(current.enrolledUsers || {}) };
+
+      // Verifica se o jogador está realmente ativo
+      if (!activePlayers[uid]) {
+        return current;
+      }
+
+      // Move jogador de activePlayers para eliminatedPlayers
+      const playerData = { 
+        ...activePlayers[uid], 
+        eliminatedAt: now, 
+        eliminatedByMatchId: matchId,
+        leftVoluntarily: true 
+      };
+      
+      delete activePlayers[uid];
+      eliminatedPlayers[uid] = playerData;
+
+      // Verifica se ainda há jogadores suficientes para continuar
+      const survivors = Object.keys(activePlayers);
+      
+      // Se só sobrar 1 jogador ou menos, encerra o torneio
+      if (survivors.length <= 1) {
+        const cumulativeStats = { ...(current.cumulativeStats || {}) };
+        const standings = Object.values(cumulativeStats)
+          .sort((a, b) => {
+            const pA = Number(a?.pointsMilli || 0);
+            const pB = Number(b?.pointsMilli || 0);
+            if (pB !== pA) return pB - pA;
+
+            const pairsA = Number(a?.pairs || 0);
+            const pairsB = Number(b?.pairs || 0);
+            if (pairsB !== pairsA) return pairsB - pairsA;
+
+            const mA = Number(a?.micoLosses || 0);
+            const mB = Number(b?.micoLosses || 0);
+            if (mA !== mB) return mA - mB;
+
+            return String(a?.name || '').localeCompare(String(b?.name || ''));
+          })
+          .map((row, index) => ({
+            ...row,
+            rank: index + 1,
+            points: (Number(row?.pointsMilli || 0) / 1000).toFixed(2),
+          }));
+
+        const championUid = survivors[0] || null;
+        const runnerUp = standings.find((row) => row.uid && row.uid !== championUid) || null;
+
+        return {
+          ...current,
+          enrolledUsers,
+          activePlayers,
+          eliminatedPlayers,
+          cumulativeStats,
+          finalStandings: standings,
+          status: 'finished',
+          phase: 'finished',
+          championUid,
+          runnerUpUid: runnerUp?.uid || null,
+          finishedAt: now,
+          currentMatchId: null,
+          lastSystemNotice: {
+            type: 'tournament_finished_by_elimination',
+            ts: now,
+            text: 'Campeonato encerrado por desistências',
+            eventId: `finished_${instanceId}_${now}`,
+          },
+          updatedAt: now,
+        };
+      }
+
+      // Se ainda há múltiplos jogadores, apenas marca a eliminação
+      return {
+        ...current,
+        enrolledUsers,
+        activePlayers,
+        eliminatedPlayers,
+        lastSystemNotice: {
+          type: 'player_eliminated',
+          ts: now,
+          text: `${playerData.name || 'Jogador'} foi eliminado`,
+          eventId: `eliminated_${uid}_${now}`,
+        },
+        updatedAt: now,
+      };
+    });
+
+    if (!result.snapshot.exists()) {
+      return { eliminated: false, instance: null, shouldAdvance: false };
+    }
+
+    const updatedInstance = { instanceId, ...result.snapshot.val() };
+
+    // Limpa enrollmentIndex do jogador eliminado
+    if (updatedInstance.tournamentId) {
+      await this.#clearEnrollmentIndex(updatedInstance.tournamentId, uid)
+        .catch(err => console.warn('[TournamentRound] Falha ao limpar enrollmentIndex:', err));
+    }
+
+    // Se o torneio foi finalizado, cria nova instância waiting
+    if (updatedInstance.status === 'finished' && updatedInstance.tournamentId) {
+      const enrolledUsers = updatedInstance.enrolledUsers || {};
+      const activePlayers = updatedInstance.activePlayers || {};
+      const eliminatedPlayers = updatedInstance.eliminatedPlayers || {};
+      const uids = new Set([
+        ...Object.keys(enrolledUsers),
+        ...Object.keys(activePlayers),
+        ...Object.keys(eliminatedPlayers),
+      ]);
+
+      // Limpa enrollmentIndex de todos os participantes
+      if (uids.size > 0) {
+        const updates = {};
+        for (const playerUid of uids) {
+          updates[`tournaments/enrollmentIndex/${updatedInstance.tournamentId}/${playerUid}`] = null;
+        }
+        await dbMod.update(dbMod.ref(db), updates);
+      }
+
+      // Cria nova instância waiting
+      await this.ensureJoinableInstance(updatedInstance.tournamentId, {
+        maxParticipants: updatedInstance.maxParticipants,
+      });
+    }
+
+    return {
+      eliminated: true,
+      instance: updatedInstance,
+      shouldAdvance: updatedInstance.status === 'finished',
+    };
+  }
 }

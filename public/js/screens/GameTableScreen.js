@@ -1010,6 +1010,17 @@ export class GameTableScreen extends Screen {
       this.#tournamentService.recordUserLeftMatch(this.#matchId);
     }
 
+    // Se estiver em partida de torneio ativa, elimina o jogador automaticamente
+    if (this.#tournamentInstanceId && this.#matchId) {
+      await this.#tournamentService.eliminatePlayerWhoLeftMatch({
+        instanceId: this.#tournamentInstanceId,
+        uid: this.#myUid,
+        matchId: this.#matchId,
+      }).catch(err => {
+        console.error('[GameExit] erro ao eliminar jogador do torneio:', err);
+      });
+    }
+
     await MatchService.getInstance()
       .leaveMatch(this.#matchId, this.#myUid)
       .catch(err => console.error('[GameExit] erro no leaveMatch:', err));

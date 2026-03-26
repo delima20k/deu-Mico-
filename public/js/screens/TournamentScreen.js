@@ -438,7 +438,11 @@ export class TournamentScreen extends Screen {
         this.#lastSystemNoticeId = noticeEventKey;
 
         if (isJoinedInSelected && selected?.lastSystemNotice?.type === 'countdown_started') {
-          this.#showSystemNotice('6/6 completo. Combate comeca em 1 minuto.');
+          const activeCount = selected.activePlayers 
+            ? Object.keys(selected.activePlayers).length 
+            : nextEnrolledCount;
+          const maxCount = Number(selected.maxParticipants || 6);
+          this.#showSystemNotice(`${activeCount}/${maxCount} jogadores. Combate comeca em 1 minuto.`);
         }
       }
 
@@ -633,7 +637,12 @@ export class TournamentScreen extends Screen {
 
     if (status === 'countdown') {
       this.#finalStandingsWrapEl?.classList.add('tournament-screen__final-standings--hidden');
-      this.#statusBannerEl.textContent = '6/6 completo. Combate comeca em 1 minuto.';
+      // Durante countdown, mostra quantidade atual de jogadores ativos
+      const activeCount = state.activePlayers 
+        ? Object.keys(state.activePlayers).length 
+        : enrolledCount;
+      const maxCount = Number(state.maxParticipants || 6);
+      this.#statusBannerEl.textContent = `${activeCount}/${maxCount} jogadores. Combate comeca em 1 minuto.`;
       this.#countdownEl.classList.remove('tournament-screen__countdown--hidden');
       this.#startCountdownTicker(Number(state.countdownEndsAt || 0));
       return;
