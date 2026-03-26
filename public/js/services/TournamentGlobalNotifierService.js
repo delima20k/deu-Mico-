@@ -238,11 +238,16 @@ export class TournamentGlobalNotifierService {
     if (!previous || previous === eventKey) return;
 
     if (type === 'countdown_started') {
+      const activeCount = instance.activePlayers 
+        ? Object.keys(instance.activePlayers).length 
+        : Number(instance?.enrolledCount || 0);
+      const maxCount = Number(instance?.maxParticipants || 6);
+      
       const audioDurationMs = this.#audioService.playUntilEnd(
         'tournament-opponent-entry',
         TournamentGlobalNotifierService.#DEFAULT_TOAST_MS
       );
-      this.#showToast('6/6 completo: o campeonato vai começar em 1 minuto.', audioDurationMs);
+      this.#showToast(`${activeCount}/${maxCount} jogadores: o campeonato vai começar em 1 minuto.`, audioDurationMs);
       return;
     }
 

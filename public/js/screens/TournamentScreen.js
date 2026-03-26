@@ -246,7 +246,7 @@ export class TournamentScreen extends Screen {
     // Card de espera da rodada — reutiliza div.lobby-card (mesmo componente OOP de RoomsScreen)
     // Exibido quando o jogador está inscrito e a rodada está em waiting/countdown.
     this.#enrollmentCard = new LobbyCard({
-      playersCount: 6,       // atualizado dinamicamente pelo maxParticipants da instância
+      playersCount: TournamentService.DEFAULT_MAX_PARTICIPANTS,       // atualizado dinamicamente pelo maxParticipants da instância
       queueKey: 'tournament',
       presenceCount: 0,
       label: 'Aguardando jogadores',
