@@ -161,15 +161,18 @@ export class TournamentScreen extends Screen {
       return;
     }
 
-    // LIMPEZA FORÇADA: Remove inscrições stale do usuário ao entrar na tela
+    // LIMPEZA FORÇADA: Remove inscrições stale do usuário ao entrar na tela.
+    // Limpa qualquer instância que NÃO seja waiting ou countdown — isso inclui:
+    //   - finished: partida encerrada
+    //   - active: redirect é tratado via activePlayers; enrollmentIndex não é necessário
+    // Isso garante que o botão PARTICIPAR sempre funcione após uma partida anterior.
     try {
       const tournamentId = await this.#tournamentService.getCurrentTournamentId();
       const repo = TournamentRepository.getInstance();
       const enrollment = await repo.findUserEnrollment(tournamentId, this.#myUid).catch(() => ({ instance: null }));
       if (enrollment?.instance) {
         const status = enrollment.instance.status || 'waiting';
-        const isActivePlayer = !!enrollment.instance.activePlayers?.[this.#myUid];
-        if (status === 'finished' || (status === 'active' && !isActivePlayer)) {
+        if (status !== 'waiting' && status !== 'countdown') {
           await repo.removeEnrollmentIndex(tournamentId, this.#myUid).catch(() => {});
         }
       }

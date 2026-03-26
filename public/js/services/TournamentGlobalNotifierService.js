@@ -138,7 +138,11 @@ export class TournamentGlobalNotifierService {
     const myInstance = instances.find((instance) => {
       const hasMe = !!instance?.enrolledUsers?.[this.#myUid];
       const status = instance?.status || 'waiting';
-      return hasMe && status !== 'finished';
+      if (!hasMe || status === 'finished') return false;
+      // Para instâncias active: só considera se o usuário for jogador ativo.
+      // Isso evita toasts e redirects indevidos para usuários com dados stale.
+      if (status === 'active') return !!instance?.activePlayers?.[this.#myUid];
+      return true;
     }) || null;
 
     if (!myInstance) {
