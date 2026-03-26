@@ -420,6 +420,27 @@
   text-align: center;
 }
 
+.tournament-screen__active-matches-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 0 14px 0;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(255, 200, 50, 0.18);
+  border: 1px solid rgba(255, 200, 50, 0.45);
+  color: #ffe580;
+  font-weight: 700;
+  font-size: clamp(0.88rem, 2vw, 1rem);
+  text-align: center;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.tournament-screen__active-matches-banner--hidden {
+  display: none;
+}
+
 .tournament-screen__status-banner {
   margin-top: 14px;
   padding: 10px 12px;

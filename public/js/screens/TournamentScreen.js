@@ -125,6 +125,9 @@ export class TournamentScreen extends Screen {
 
   /** @type {HTMLElement|null} Wrapper que controla visibilidade do #enrollmentCard */
   #enrollmentCardWrapperEl = null;
+
+  /** @type {HTMLElement|null} Banner mostrando quantidade de partidas ativas em tempo real */
+  #activeMatchesBannerEl = null;
   /**
    * @param {import('../core/ScreenManager.js').ScreenManager} screenManager
    */
@@ -158,46 +161,20 @@ export class TournamentScreen extends Screen {
       return;
     }
 
-    // LIMPEZA FORÇADA: Remove inscrições stale antigas do usuário antes de carregar dados
-    console.log('[DEBUG TournamentScreen] 🔍 Iniciando limpeza forçada para uid:', this.#myUid?.slice(0, 8));
+    // LIMPEZA FORÇADA: Remove inscrições stale do usuário ao entrar na tela
     try {
       const tournamentId = await this.#tournamentService.getCurrentTournamentId();
-      console.log('[DEBUG TournamentScreen] 🎯 Tournament ID:', tournamentId);
       const repo = TournamentRepository.getInstance();
-      
-      // Verifica se o usuário tem enrollmentIndex apontando para instância finished/stale
       const enrollment = await repo.findUserEnrollment(tournamentId, this.#myUid).catch(() => ({ instance: null }));
-      console.log('[DEBUG TournamentScreen] 📋 Enrollment encontrado:', {
-        hasInstance: !!enrollment?.instance,
-        instanceId: enrollment?.instance?.instanceId,
-        tournamentId: enrollment?.instance?.tournamentId,
-        status: enrollment?.instance?.status,
-        enrolledCount: enrollment?.instance?.enrolledCount,
-        enrolledUsersKeys: enrollment?.instance?.enrolledUsers ? Object.keys(enrollment.instance.enrolledUsers) : [],
-        isInActivePlayers: !!enrollment?.instance?.activePlayers?.[this.#myUid],
-        isInEliminatedPlayers: !!enrollment?.instance?.eliminatedPlayers?.[this.#myUid],
-        fullInstance: enrollment?.instance
-      });
-      
       if (enrollment?.instance) {
         const status = enrollment.instance.status || 'waiting';
         const isActivePlayer = !!enrollment.instance.activePlayers?.[this.#myUid];
-        
-        // Se instância finished OU usuário não está em activePlayers, limpa
         if (status === 'finished' || (status === 'active' && !isActivePlayer)) {
-          console.log(`[DEBUG TournamentScreen] ⚠️ LIMPANDO inscrição stale: status=${status} isActive=${isActivePlayer}`);
-          await repo.removeEnrollmentIndex(tournamentId, this.#myUid).catch(err => {
-            console.error('[DEBUG TournamentScreen] ❌ Falha ao limpar enrollmentIndex:', err);
-          });
-          console.log('[DEBUG TournamentScreen] ✅ enrollmentIndex removido com sucesso');
-        } else {
-          console.log('[DEBUG TournamentScreen] ✓ Inscrição válida, não precisa limpar');
+          await repo.removeEnrollmentIndex(tournamentId, this.#myUid).catch(() => {});
         }
-      } else {
-        console.log('[DEBUG TournamentScreen] ℹ️ Nenhum enrollment encontrado para este usuário');
       }
     } catch (err) {
-      console.error('[DEBUG TournamentScreen] 💥 Erro na limpeza forçada:', err);
+      // Silencioso — falha de limpeza não bloqueia carregamento
     }
 
     const profile = await authService.getProfile(this.#myUid).catch(() => null);
@@ -257,6 +234,12 @@ export class TournamentScreen extends Screen {
     const sectionTitle = Dom.create('h2', {
       classes: 'tournament-screen__section-title',
       text: 'Torneio Atual',
+    });
+
+    // Banner de partidas ativas em tempo real
+    this.#activeMatchesBannerEl = Dom.create('div', {
+      classes: 'tournament-screen__active-matches-banner tournament-screen__active-matches-banner--hidden',
+      text: '',
     });
 
     this.#tournamentCard = new TournamentCard({
@@ -327,6 +310,7 @@ export class TournamentScreen extends Screen {
 
     tournamentSection.append(
       sectionTitle,
+      this.#activeMatchesBannerEl,
       tournamentCardEl,
       this.#statusBannerEl,
       this.#countdownEl,
@@ -424,6 +408,7 @@ export class TournamentScreen extends Screen {
 
     this.#enrollmentCard = null;
     this.#enrollmentCardWrapperEl = null;
+    this.#activeMatchesBannerEl = null;
 
     AdService.getInstance().hideBanner(AdConfig.bannerPlacements.tournament);
     AdService.getInstance().hideBanner(AdConfig.bannerPlacements.ranking);
@@ -438,23 +423,6 @@ export class TournamentScreen extends Screen {
     this.#unsubLeaderboard?.();
 
     this.#unsubTournament = await this.#tournamentService.subscribeCurrentTournament((state) => {
-      console.log('[DEBUG TournamentScreen] 📡 subscribeCurrentTournament callback:', {
-        myUid: state?.myUid?.slice(0, 8),
-        tournamentId: state?.tournamentId,
-        instancesCount: state?.instances?.length || 0,
-        hasMyInstance: !!state?.myInstance,
-        hasJoinableInstance: !!state?.joinableInstance,
-        hasSelectedInstance: !!state?.selectedInstance,
-        selectedInstanceId: state?.selectedInstance?.instanceId,
-        selectedStatus: state?.selectedInstance?.status,
-        selectedEnrolledCount: state?.selectedInstance?.enrolledCount,
-        selectedEnrolledUsers: state?.selectedInstance?.enrolledUsers ? Object.keys(state.selectedInstance.enrolledUsers) : [],
-        selectedMaxParticipants: state?.selectedInstance?.maxParticipants,
-        myInstanceId: state?.myInstance?.instanceId,
-        myInstanceStatus: state?.myInstance?.status,
-        joinableInstanceId: state?.joinableInstance?.instanceId
-      });
-      
       this.#myUid = state?.myUid || null;
       this.#currentRealtimeState = state;
       const selected = this.#resolveObservedInstance(state);
@@ -617,6 +585,21 @@ export class TournamentScreen extends Screen {
   #renderTournamentState() {
     if (!this.#tournamentCard) return;
 
+    // Contador de partidas ativas em tempo real
+    const allInstances = Array.isArray(this.#currentRealtimeState?.instances)
+      ? this.#currentRealtimeState.instances : [];
+    const activeMatchesCount = allInstances.filter(i => i?.status === 'active').length;
+    if (this.#activeMatchesBannerEl) {
+      if (activeMatchesCount > 0) {
+        this.#activeMatchesBannerEl.textContent =
+          `🎮 ${activeMatchesCount} partida${activeMatchesCount > 1 ? 's' : ''} em andamento agora`;
+        this.#activeMatchesBannerEl.classList.remove('tournament-screen__active-matches-banner--hidden');
+      } else {
+        this.#activeMatchesBannerEl.textContent = '';
+        this.#activeMatchesBannerEl.classList.add('tournament-screen__active-matches-banner--hidden');
+      }
+    }
+
     const state = this.#currentTournament;
     if (!state) {
       this.#statusBannerEl.textContent = 'Aguardando abertura de nova rodada de campeonato...';
@@ -669,13 +652,6 @@ export class TournamentScreen extends Screen {
       this.#enrollmentCardWrapperEl.style.display = showCard ? '' : 'none';
       if (showCard) {
         const maxCount = Number(state.maxParticipants || 6);
-        console.log('[DEBUG TournamentScreen] 🔢 Atualizando contador:', {
-          enrolledCount,
-          maxCount,
-          status,
-          enrolledUsersKeys: state?.enrolledUsers ? Object.keys(state.enrolledUsers) : [],
-          enrolledUsersCount: state?.enrolledUsers ? Object.keys(state.enrolledUsers).length : 0
-        });
         this.#enrollmentCard.updateCount(enrolledCount, maxCount);
         // Atualiza label e estado do botão conforme o status da rodada
         const btn = this.#enrollmentCardWrapperEl.querySelector('.lobby-card__button');
@@ -718,7 +694,7 @@ export class TournamentScreen extends Screen {
 
     if (status === 'active') {
       this.#finalStandingsWrapEl?.classList.add('tournament-screen__final-standings--hidden');
-      this.#statusBannerEl.textContent = 'Campeonato em andamento. Prepare-se para a partida.';
+      this.#statusBannerEl.textContent = 'Partida em andamento. Aguardando abertura de nova vaga...';
       this.#countdownEl.classList.add('tournament-screen__countdown--hidden');
       this.#clearCountdownTicker();
       return;
@@ -970,46 +946,22 @@ export class TournamentScreen extends Screen {
     const instances = Array.isArray(state?.instances) ? state.instances : [];
 
     if (this.#myUid) {
-      const myInstance = instances.find((instance) => {
+      // Mostra apenas instâncias onde o usuário está ESPERANDO (waiting ou countdown)
+      // Se usuário está em partida ativa (active), mostra a joinable para que possa
+      // ver o próximo torneio disponível — o redirect para a partida é feito por #maybeNavigateToCurrentMatch
+      const myWaitingInstance = instances.find((instance) => {
         const hasMe = !!instance?.enrolledUsers?.[this.#myUid];
         const status = instance?.status || 'waiting';
-        
-        // Instâncias finished não contam
-        if (status === 'finished') return false;
-        
-        // Se não está nos enrolledUsers, não é minha instância
-        if (!hasMe) return false;
-        
-        // Se está em status 'active', só conta se estiver em activePlayers
-        if (status === 'active') {
-          return !!instance?.activePlayers?.[this.#myUid];
-        }
-        
-        // Para waiting/countdown, estar em enrolledUsers é suficiente
-        return true;
+        if (!hasMe || status === 'finished') return false;
+        return status === 'waiting' || status === 'countdown';
       }) || null;
 
-      if (myInstance) {
-        console.log('[DEBUG TournamentScreen] 🎯 Usando myInstance:', {
-          instanceId: myInstance.instanceId,
-          status: myInstance.status,
-          enrolledCount: myInstance.enrolledCount,
-          isInActivePlayers: !!myInstance.activePlayers?.[this.#myUid]
-        });
-        return myInstance;
+      if (myWaitingInstance) {
+        return myWaitingInstance;
       }
     }
 
-    const fallback = state?.selectedInstance || state?.joinableInstance || null;
-    if (fallback) {
-      console.log('[DEBUG TournamentScreen] 📍 Usando fallback instance:', {
-        instanceId: fallback.instanceId,
-        status: fallback.status,
-        enrolledCount: fallback.enrolledCount
-      });
-    }
-    
-    return fallback;
+    return state?.joinableInstance || state?.selectedInstance || null;
   }
 
   /**
