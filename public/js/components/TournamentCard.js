@@ -107,11 +107,23 @@ export class TournamentCard {
       if (enrolledEl) {
         const enrolledCount = Number(tournament.enrolledCount || 0);
         const maxParticipants = Number(tournament.maxParticipants || 0);
-        const suffix = maxParticipants > 0
-          ? ` (${enrolledCount}/${maxParticipants})`
-          : '';
-
-        enrolledEl.textContent = `👥 ${enrolledCount} inscritos${suffix}`;
+        const status = tournament.status || 'waiting';
+        
+        // Status 'active': mostra "Em andamento", não "inscritos"
+        if (status === 'active') {
+          enrolledEl.textContent = `🎮 Rodada em andamento`;
+        }
+        // Status 'finished': mostra "Finalizado"
+        else if (status === 'finished') {
+          enrolledEl.textContent = `✅ Rodada finalizada`;
+        }
+        // Status 'waiting' ou 'countdown': mostra inscritos
+        else {
+          const suffix = maxParticipants > 0
+            ? ` (${enrolledCount}/${maxParticipants})`
+            : '';
+          enrolledEl.textContent = `👥 ${enrolledCount} inscritos${suffix}`;
+        }
       }
     }
   }
