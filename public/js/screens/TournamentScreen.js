@@ -169,12 +169,14 @@ export class TournamentScreen extends Screen {
       const enrollment = await repo.findUserEnrollment(tournamentId, this.#myUid).catch(() => ({ instance: null }));
       console.log('[DEBUG TournamentScreen] 📋 Enrollment encontrado:', {
         hasInstance: !!enrollment?.instance,
-        instanceId: enrollment?.instance?.tournamentInstanceId,
+        instanceId: enrollment?.instance?.instanceId,
+        tournamentId: enrollment?.instance?.tournamentId,
         status: enrollment?.instance?.status,
         enrolledCount: enrollment?.instance?.enrolledCount,
         enrolledUsersKeys: enrollment?.instance?.enrolledUsers ? Object.keys(enrollment.instance.enrolledUsers) : [],
         isInActivePlayers: !!enrollment?.instance?.activePlayers?.[this.#myUid],
-        isInEliminatedPlayers: !!enrollment?.instance?.eliminatedPlayers?.[this.#myUid]
+        isInEliminatedPlayers: !!enrollment?.instance?.eliminatedPlayers?.[this.#myUid],
+        fullInstance: enrollment?.instance
       });
       
       if (enrollment?.instance) {
@@ -438,14 +440,19 @@ export class TournamentScreen extends Screen {
     this.#unsubTournament = await this.#tournamentService.subscribeCurrentTournament((state) => {
       console.log('[DEBUG TournamentScreen] 📡 subscribeCurrentTournament callback:', {
         myUid: state?.myUid?.slice(0, 8),
-        currentInstanceId: state?.currentInstanceId,
-        staleInstanceId: state?.staleInstanceId,
-        currentStatus: state?.status,
-        currentEnrolledCount: state?.enrolledCount,
-        currentEnrolledUsers: state?.enrolledUsers ? Object.keys(state.enrolledUsers) : [],
-        staleStatus: state?.stale?.status,
-        staleEnrolledCount: state?.stale?.enrolledCount,
-        staleEnrolledUsers: state?.stale?.enrolledUsers ? Object.keys(state.stale.enrolledUsers) : []
+        tournamentId: state?.tournamentId,
+        instancesCount: state?.instances?.length || 0,
+        hasMyInstance: !!state?.myInstance,
+        hasJoinableInstance: !!state?.joinableInstance,
+        hasSelectedInstance: !!state?.selectedInstance,
+        selectedInstanceId: state?.selectedInstance?.instanceId,
+        selectedStatus: state?.selectedInstance?.status,
+        selectedEnrolledCount: state?.selectedInstance?.enrolledCount,
+        selectedEnrolledUsers: state?.selectedInstance?.enrolledUsers ? Object.keys(state.selectedInstance.enrolledUsers) : [],
+        selectedMaxParticipants: state?.selectedInstance?.maxParticipants,
+        myInstanceId: state?.myInstance?.instanceId,
+        myInstanceStatus: state?.myInstance?.status,
+        joinableInstanceId: state?.joinableInstance?.instanceId
       });
       
       this.#myUid = state?.myUid || null;
@@ -966,15 +973,43 @@ export class TournamentScreen extends Screen {
       const myInstance = instances.find((instance) => {
         const hasMe = !!instance?.enrolledUsers?.[this.#myUid];
         const status = instance?.status || 'waiting';
-        return hasMe && status !== 'finished';
+        
+        // Instâncias finished não contam
+        if (status === 'finished') return false;
+        
+        // Se não está nos enrolledUsers, não é minha instância
+        if (!hasMe) return false;
+        
+        // Se está em status 'active', só conta se estiver em activePlayers
+        if (status === 'active') {
+          return !!instance?.activePlayers?.[this.#myUid];
+        }
+        
+        // Para waiting/countdown, estar em enrolledUsers é suficiente
+        return true;
       }) || null;
 
       if (myInstance) {
+        console.log('[DEBUG TournamentScreen] 🎯 Usando myInstance:', {
+          instanceId: myInstance.instanceId,
+          status: myInstance.status,
+          enrolledCount: myInstance.enrolledCount,
+          isInActivePlayers: !!myInstance.activePlayers?.[this.#myUid]
+        });
         return myInstance;
       }
     }
 
-    return state?.selectedInstance || state?.joinableInstance || null;
+    const fallback = state?.selectedInstance || state?.joinableInstance || null;
+    if (fallback) {
+      console.log('[DEBUG TournamentScreen] 📍 Usando fallback instance:', {
+        instanceId: fallback.instanceId,
+        status: fallback.status,
+        enrolledCount: fallback.enrolledCount
+      });
+    }
+    
+    return fallback;
   }
 
   /**
