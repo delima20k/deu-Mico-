@@ -1230,6 +1230,7 @@ export class TournamentRepository {
       const eliminatedPlayers = { ...(current.eliminatedPlayers || {}) };
       const enrolledUsers = { ...(current.enrolledUsers || {}) };
       const cumulativeStats = { ...(current.cumulativeStats || {}) };
+      let enrolledCount = Number(current.enrolledCount || 0);
 
       if (!activePlayers[micoUid]) {
         processed[matchId] = {
@@ -1279,6 +1280,12 @@ export class TournamentRepository {
       const loserData = { ...(activePlayers[micoUid] || {}), eliminatedAt: now, eliminatedByMatchId: matchId };
       delete activePlayers[micoUid];
       eliminatedPlayers[micoUid] = loserData;
+      
+      // Remove também de enrolledUsers e decrementa contador
+      if (enrolledUsers[micoUid]) {
+        delete enrolledUsers[micoUid];
+        enrolledCount = Math.max(0, enrolledCount - 1);
+      }
 
       processed[matchId] = {
         ts: now,
@@ -1315,6 +1322,7 @@ export class TournamentRepository {
         return {
           ...current,
           enrolledUsers,
+          enrolledCount,
           activePlayers,
           eliminatedPlayers,
           cumulativeStats,
@@ -1343,6 +1351,7 @@ export class TournamentRepository {
       return {
         ...current,
         enrolledUsers,
+        enrolledCount,
         activePlayers,
         eliminatedPlayers,
         cumulativeStats,
@@ -1857,6 +1866,7 @@ export class TournamentRepository {
       const activePlayers = { ...(current.activePlayers || {}) };
       const eliminatedPlayers = { ...(current.eliminatedPlayers || {}) };
       const enrolledUsers = { ...(current.enrolledUsers || {}) };
+      let enrolledCount = Number(current.enrolledCount || 0);
 
       // Verifica se o jogador está realmente ativo
       if (!activePlayers[uid]) {
@@ -1873,6 +1883,12 @@ export class TournamentRepository {
       
       delete activePlayers[uid];
       eliminatedPlayers[uid] = playerData;
+      
+      // Remove também de enrolledUsers e decrementa contador
+      if (enrolledUsers[uid]) {
+        delete enrolledUsers[uid];
+        enrolledCount = Math.max(0, enrolledCount - 1);
+      }
 
       // Verifica se ainda há jogadores suficientes para continuar
       const survivors = Object.keys(activePlayers);
@@ -1908,6 +1924,7 @@ export class TournamentRepository {
         return {
           ...current,
           enrolledUsers,
+          enrolledCount,
           activePlayers,
           eliminatedPlayers,
           cumulativeStats,
@@ -1932,6 +1949,7 @@ export class TournamentRepository {
       return {
         ...current,
         enrolledUsers,
+        enrolledCount,
         activePlayers,
         eliminatedPlayers,
         lastSystemNotice: {
