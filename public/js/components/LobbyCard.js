@@ -102,14 +102,23 @@ export class LobbyCard {
   /**
    * Atualiza o contador de jogadores na fila (preferir este sobre updatePresence).
    * @param {number} count
+   * @param {number} [max] - Se fornecido, atualiza também o título para "count/max jogadores"
    */
-  updateCount(count) {
+  updateCount(count, max = null) {
     this.#presenceCount = count;
     if (this.#el) {
       const presenceEl = this.#el.querySelector('.lobby-card__presence');
       if (presenceEl) {
         const text = count === 1 ? '1 pessoa aguardando' : `${count} pessoas aguardando`;
         presenceEl.textContent = text;
+      }
+      
+      // Atualiza título se max foi fornecido e não há label personalizado fixo
+      if (max !== null) {
+        const titleEl = this.#el.querySelector('.lobby-card__title');
+        if (titleEl) {
+          titleEl.textContent = `${count}/${max} jogadores`;
+        }
       }
     }
   }

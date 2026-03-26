@@ -249,7 +249,7 @@ export class TournamentScreen extends Screen {
       playersCount: TournamentService.DEFAULT_MAX_PARTICIPANTS,       // atualizado dinamicamente pelo maxParticipants da instância
       queueKey: 'tournament',
       presenceCount: 0,
-      label: 'Aguardando jogadores',
+      label: null,  // título dinâmico via updateCount(count, max)
       buttonLabel: 'Desistir',
       onJoin: () => this.#onLeaveTournament(),
     });
@@ -608,7 +608,8 @@ export class TournamentScreen extends Screen {
       const showCard = isJoined && (status === 'waiting' || status === 'countdown');
       this.#enrollmentCardWrapperEl.style.display = showCard ? '' : 'none';
       if (showCard) {
-        this.#enrollmentCard.updateCount(enrolledCount);
+        const maxCount = Number(state.maxParticipants || 6);
+        this.#enrollmentCard.updateCount(enrolledCount, maxCount);
         // Atualiza label e estado do botão conforme o status da rodada
         const btn = this.#enrollmentCardWrapperEl.querySelector('.lobby-card__button');
         if (btn) {
