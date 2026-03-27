@@ -358,17 +358,25 @@ export class TournamentRepository {
    * @param {string} uid
    * @returns {Promise<{instance: Object|null}>}
    */
+  static #ACTIVE_STALE_MS = 12 * 60 * 60 * 1000; // 12h
+
   async findUserEnrollment(tournamentId, uid) {
     if (!uid) return { instance: null };
     const instances = await this.getInstancesByTournament(tournamentId);
+    const nowTs = Date.now();
     const instance = instances.find((row) => {
       if (!row?.enrolledUsers?.[uid]) return false;
       const status = row.status || 'waiting';
       if (status === 'finished') return false;
 
-      // Em active, só conta como inscrito se ainda estiver nos jogadores ativos.
+      // Em active, só conta como inscrito se:
+      //  1. Ainda estiver nos jogadores ativos.
+      //  2. A partida foi iniciada há menos de 12h (evita bloquear por instâncias stale).
       if (status === 'active') {
-        return !!row?.activePlayers?.[uid];
+        if (!row?.activePlayers?.[uid]) return false;
+        const startedAt = Number(row.startedAt || 0);
+        if (startedAt > 0 && (nowTs - startedAt) > TournamentRepository.#ACTIVE_STALE_MS) return false;
+        return true;
       }
 
       // Em countdown com confirmação obrigatória, só conta se confirmou presença.
@@ -551,6 +559,20 @@ export class TournamentRepository {
 
     const existingEnrollment = await this.findUserEnrollment(tournamentId, uid);
     if (existingEnrollment.instance) {
+      const existingStatus = existingEnrollment.instance.status || 'waiting';
+      // findUserEnrollment já filtra instâncias active stale (>12h), então se retornou
+      // active aqui, a partida é recente e válida — respeita a inscrição.
+      if (existingStatus !== 'active') {
+        await this.#setEnrollmentIndex(tournamentId, uid, existingEnrollment.instance.instanceId);
+        return {
+          joined: false,
+          alreadyJoined: true,
+          instanceId: existingEnrollment.instance.instanceId,
+          instance: existingEnrollment.instance,
+          tournament: await this.getTournamentById(tournamentId),
+        };
+      }
+      // active e recente: respeita
       await this.#setEnrollmentIndex(tournamentId, uid, existingEnrollment.instance.instanceId);
       return {
         joined: false,
@@ -566,7 +588,13 @@ export class TournamentRepository {
 
     if (claimResult.alreadyEnrolledInstanceId) {
       const indexedInstance = await this.getInstanceById(claimResult.alreadyEnrolledInstanceId);
-      if (indexedInstance?.enrolledUsers?.[uid] && indexedInstance.status !== 'finished') {
+      const iStatus = indexedInstance?.status || 'finished';
+      const isActiveStale = iStatus === 'active' && (() => {
+        const startedAt = Number(indexedInstance?.startedAt || 0);
+        return startedAt > 0 && (Date.now() - startedAt) > TournamentRepository.#ACTIVE_STALE_MS;
+      })();
+
+      if (indexedInstance?.enrolledUsers?.[uid] && iStatus !== 'finished' && !isActiveStale) {
         return {
           joined: false,
           alreadyJoined: true,
@@ -776,12 +804,18 @@ export class TournamentRepository {
         return current;
       }
 
-      // Regra de desistência: permitida somente antes de iniciar a partida ativa.
+      // Regra de desistência: só bloqueia se a rodada ATIVA for recente (< 12h).
+      // Instâncias ativas antigas (stale) permitem saída forçada para liberar o jogador.
       if (status === 'active') {
-        return {
-          ...current,
-          updatedAt: now,
-        };
+        const startedAt = Number(current.startedAt || 0);
+        const isStale = startedAt > 0 && (now - startedAt) > TournamentRepository.#ACTIVE_STALE_MS;
+        if (!isStale) {
+          return {
+            ...current,
+            updatedAt: now,
+          };
+        }
+        // Stale: remove player e deixa a transação continuar para saída normal
       }
 
       delete enrolledUsers[uid];
