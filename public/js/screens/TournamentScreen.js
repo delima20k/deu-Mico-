@@ -161,21 +161,14 @@ export class TournamentScreen extends Screen {
       return;
     }
 
-    // LIMPEZA FORÇADA: Remove inscrições stale do usuário ao entrar na tela.
-    // Limpa qualquer instância que NÃO seja waiting ou countdown — isso inclui:
-    //   - finished: partida encerrada
-    //   - active: redirect é tratado via activePlayers; enrollmentIndex não é necessário
-    // Isso garante que o botão PARTICIPAR sempre funcione após uma partida anterior.
+    // LIMPEZA FORÇADA: Valida e remove inscrição stale do índice ao entrar na tela.
+    // Cobre: claims expirados, instâncias encerradas/ativas sem assento e
+    // instâncias waiting/countdown de rodadas antigas (> 48h).
+    // Garante que o botão PARTICIPAR sempre funcione após rodadas anteriores.
     try {
       const tournamentId = await this.#tournamentService.getCurrentTournamentId();
       const repo = TournamentRepository.getInstance();
-      const enrollment = await repo.findUserEnrollment(tournamentId, this.#myUid).catch(() => ({ instance: null }));
-      if (enrollment?.instance) {
-        const status = enrollment.instance.status || 'waiting';
-        if (status !== 'waiting' && status !== 'countdown') {
-          await repo.removeEnrollmentIndex(tournamentId, this.#myUid).catch(() => {});
-        }
-      }
+      await repo.validateAndCleanEnrollmentIndex(tournamentId, this.#myUid);
     } catch (err) {
       // Silencioso — falha de limpeza não bloqueia carregamento
     }
@@ -588,10 +581,19 @@ export class TournamentScreen extends Screen {
   #renderTournamentState() {
     if (!this.#tournamentCard) return;
 
-    // Contador de partidas ativas em tempo real
+    // Contador de partidas REAIS ativas em tempo real.
+    // Uma partida activa é real apenas se possui currentMatchId (partida criada)
+    // e foi iniciada nas últimas 12h (evita exibir instâncias stale do Firebase).
     const allInstances = Array.isArray(this.#currentRealtimeState?.instances)
       ? this.#currentRealtimeState.instances : [];
-    const activeMatchesCount = allInstances.filter(i => i?.status === 'active').length;
+    const MAX_ACTIVE_MATCH_AGE_MS = 12 * 60 * 60 * 1000; // 12h
+    const nowTs = Date.now();
+    const activeMatchesCount = allInstances.filter(i => {
+      if (i?.status !== 'active') return false;
+      if (!i.currentMatchId) return false; // sem partida real criada
+      const startedAt = Number(i.startedAt || 0);
+      return startedAt > 0 && (nowTs - startedAt) < MAX_ACTIVE_MATCH_AGE_MS;
+    }).length;
     if (this.#activeMatchesBannerEl) {
       if (activeMatchesCount > 0) {
         this.#activeMatchesBannerEl.textContent =

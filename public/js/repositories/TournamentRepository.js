@@ -867,12 +867,11 @@ export class TournamentRepository {
     const instance = await this.getInstanceById(instanceId);
     const status = instance?.status || 'waiting';
     const hasEnrollment = !!instance?.enrolledUsers?.[uid];
-    const hasActiveSeat = !!instance?.activePlayers?.[uid];
-    const isValid = status === 'active'
-      ? hasActiveSeat
-      : !!(hasEnrollment && status !== 'finished');
 
-    if (!isValid) {
+    // Modelo "sala de jogos": instâncias ativas ou encerradas liberam o índice.
+    // "Active" players em partida serão detectados por findUserEnrollment (fallback),
+    // que verifica activePlayers — evitando inscrição simultânea em duas rodadas.
+    if (status === 'active' || status === 'finished' || !hasEnrollment) {
       await dbMod.remove(indexRef);
       return { instance: null };
     }
@@ -987,6 +986,82 @@ export class TournamentRepository {
    */
   async removeEnrollmentIndex(tournamentId, uid) {
     return this.#clearEnrollmentIndex(tournamentId, uid);
+  }
+
+  /**
+   * Valida o enrollmentIndex do usuário e remove entradas stale.
+   * Cobre:
+   *   - claim expirado (pendingToken sem instanceId há mais de 15s)
+   *   - instância não encontrada no DB
+   *   - instância com status 'finished'
+   *   - instância 'active' sem assento em activePlayers
+   *   - instância 'waiting'/'countdown' com mais de 48h (rodada antiga)
+   * @param {string} tournamentId
+   * @param {string} uid
+   * @returns {Promise<void>}
+   */
+  async validateAndCleanEnrollmentIndex(tournamentId, uid) {
+    if (!uid) return;
+    const { db, dbMod } = this.#getDbContext();
+    const indexRef = dbMod.ref(db, this.#buildEnrollmentIndexPath(tournamentId, uid));
+    const snap = await dbMod.get(indexRef);
+
+    if (!snap.exists()) return;
+
+    const indexed = snap.val() || {};
+    const instanceId = indexed.instanceId || null;
+
+    // Sem instanceId = claim pendente; limpa se expirado (TTL = 15s)
+    if (!instanceId) {
+      const claimTs = Number(indexed.claimTs || 0);
+      if (Date.now() - claimTs >= 15_000) {
+        await dbMod.remove(indexRef);
+      }
+      return;
+    }
+
+    // Valida a instância referenciada
+    const instance = await this.getInstanceById(instanceId).catch(() => null);
+    if (!instance) {
+      await dbMod.remove(indexRef);
+      return;
+    }
+
+    const status = instance.status || 'waiting';
+
+    if (status === 'finished') {
+      await dbMod.remove(indexRef);
+      return;
+    }
+
+    // Modelo "sala de jogos": instância ativa = rodada em andamento.
+    // Libera SEMPRE o índice para que o usuário possa participar da próxima rodada.
+    // Jogadores ativos são redirecionados para a partida pelo #maybeNavigateToCurrentMatch.
+    if (status === 'active') {
+      await dbMod.remove(indexRef);
+      return;
+    }
+
+    // Instâncias waiting/countdown que não são a instância joinável atual = rodada
+    // abandonada que nunca se completou. Libera o usuário para a rodada atual.
+    if (status === 'waiting' || status === 'countdown') {
+      const pointerRef = dbMod.ref(db, `tournaments/currentJoinableInstanceId/${tournamentId}`);
+      const pointerSnap = await dbMod.get(pointerRef).catch(() => null);
+      const currentJoinableId = pointerSnap?.exists?.() ? pointerSnap.val() : null;
+
+      if (currentJoinableId && instanceId !== currentJoinableId) {
+        await dbMod.remove(indexRef);
+        return;
+      }
+
+      // Fallback: instância waiting/countdown com mais de 48h = rodada antiga, limpa
+      if (Number(instance.createdAt || 0) > 0) {
+        const ageMs = Date.now() - Number(instance.createdAt);
+        if (ageMs > 48 * 60 * 60 * 1000) {
+          await dbMod.remove(indexRef);
+        }
+      }
+    }
   }
 
   /**
@@ -1132,6 +1207,18 @@ export class TournamentRepository {
         }).catch((error) => {
           console.warn('[TournamentRound] Falha ao garantir instancia waiting após start:', error);
         });
+      }
+
+      // Modelo "sala de jogos": ao iniciar a rodada, limpa o enrollmentIndex de TODOS
+      // os jogadores inscritos. Isso os libera para participar da próxima rodada sem
+      // precisar esperar o torneio terminar. Jogadores ativos serão redirecionados para
+      // a partida pelo #maybeNavigateToCurrentMatch (usa activePlayers, não o índice).
+      const enrolledUids = Object.keys(instance.activePlayers || instance.enrolledUsers || {});
+      if (enrolledUids.length > 0) {
+        await Promise.all(
+          enrolledUids.map((uid) => this.#clearEnrollmentIndex(instance.tournamentId, uid).catch(() => {}))
+        );
+        console.log(`[TournamentRound] enrollmentIndex limpo para ${enrolledUids.length} jogadores ao iniciar rodada ${instanceId}`);
       }
 
       console.log(`[TournamentRound] instance started instanceId=${instanceId} matchId=${newMatchId}`);

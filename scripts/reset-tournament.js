@@ -63,7 +63,7 @@ initializeApp({
 const db = getDatabase();
 
 async function main() {
-  console.log(`\n🎯  Resetando campeonato: ${TOURNAMENT_ID}\n`);
+  console.log(`\n🎯  Reset COMPLETO do campeonato: ${TOURNAMENT_ID}\n`);
 
   // 1. Buscar todas as instâncias do torneio
   console.log('📋  Buscando instâncias...');
@@ -76,46 +76,32 @@ async function main() {
 
   console.log(`   → ${myInstances.length} instância(s) encontrada(s)`);
 
-  const updates = {};
-  const enrolledUids = new Set();
-
-  // 2. Marcar todas como finished e coletar UIDs para limpar o enrollmentIndex
+  // 2. DELETAR todas as instâncias do torneio (não apenas marcar como finished)
+  //    Deletar evita que instâncias stale apareçam no banner "partidas em andamento"
+  //    e que enrollmentIndex antigos bloqueiem novos jogadores de participar.
+  const deleteUpdates = {};
   for (const inst of myInstances) {
-    const { instanceId, status, enrolledUsers = {}, activePlayers = {}, eliminatedPlayers = {} } = inst;
-
-    if (status !== 'finished') {
-      console.log(`   → Encerrando instância: ${instanceId} (status=${status})`);
-      updates[`tournaments/instances/${instanceId}/status`] = 'finished';
-      updates[`tournaments/instances/${instanceId}/finishedAt`] = Date.now();
-      updates[`tournaments/instances/${instanceId}/updatedAt`] = Date.now();
-    } else {
-      console.log(`   → Instância já encerrada: ${instanceId}`);
-    }
-
-    // Coletar todos os UIDs inscritos
-    for (const uid of [
-      ...Object.keys(enrolledUsers),
-      ...Object.keys(activePlayers),
-      ...Object.keys(eliminatedPlayers),
-    ]) {
-      enrolledUids.add(uid);
-    }
+    const { instanceId, status } = inst;
+    console.log(`   → Deletando instância: ${instanceId} (status=${status})`);
+    deleteUpdates[`tournaments/instances/${instanceId}`] = null;
   }
 
-  // 3. Limpar enrollmentIndex de todos os usuários
-  console.log(`\n🧹  Limpando enrollmentIndex de ${enrolledUids.size} usuário(s)...`);
-  for (const uid of enrolledUids) {
-    updates[`tournaments/enrollmentIndex/${TOURNAMENT_ID}/${uid}`] = null;
-    console.log(`   → uid: ${uid}`);
-  }
-
-  // 4. Aplicar todas as limpezas de uma vez
-  if (Object.keys(updates).length > 0) {
-    await db.ref('/').update(updates);
-    console.log('\n✅  Instâncias encerradas e índices limpos.');
+  if (Object.keys(deleteUpdates).length > 0) {
+    await db.ref('/').update(deleteUpdates);
+    console.log(`\n✅  ${myInstances.length} instância(s) deletada(s).`);
   } else {
-    console.log('\n⚠️   Nada a limpar.');
+    console.log('\n⚠️   Nenhuma instância encontrada para deletar.');
   }
+
+  // 3. Limpar TODOS os enrollmentIndex do torneio de uma vez (path inteiro)
+  console.log(`\n🧹  Limpando enrollmentIndex completo do torneio...`);
+  await db.ref(`tournaments/enrollmentIndex/${TOURNAMENT_ID}`).remove();
+  console.log('   → enrollmentIndex limpo.');
+
+  // 4. Limpar o pointer currentJoinableInstanceId
+  console.log('\n🧹  Limpando pointer currentJoinableInstanceId...');
+  await db.ref(`tournaments/currentJoinableInstanceId/${TOURNAMENT_ID}`).remove();
+  console.log('   → pointer limpo.');
 
   // 5. Criar nova instância waiting 0/6
   const now = Date.now();
