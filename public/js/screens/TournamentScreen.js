@@ -1115,7 +1115,32 @@ export class TournamentScreen extends Screen {
         this.#justJoinedAt = Date.now();
         this.#statusBannerEl.textContent = 'Inscricao confirmada. Aguarde os demais participantes.';
       } else if (result?.alreadyJoined) {
-        this.#statusBannerEl.textContent = 'Voce ja esta inscrito nesta rodada.';
+        // Auto-cura: Firebase diz "já inscrito" mas a UI não mostra o usuário na instância
+        // visível (dados stale de rodada anterior). Força saída e tenta de novo.
+        const uiShowsMeEnrolled = !!(this.#currentTournament?.enrolledUsers?.[this.#myUid]);
+        if (!uiShowsMeEnrolled) {
+          console.warn('[TournamentRound] alreadyJoined=true mas UI não mostra inscrição — forçando limpeza e re-inscrição...');
+          try {
+            await this.#tournamentService.leaveCurrentTournament();
+          } catch (_) { /* ignora erro de saída */ }
+          // Garante remoção direta do índice mesmo que leaveTournament falhe
+          try {
+            const tournamentId = await this.#tournamentService.getCurrentTournamentId();
+            if (tournamentId) {
+              await TournamentRepository.getInstance().removeEnrollmentIndex(tournamentId, this.#myUid);
+            }
+          } catch (_) { /* ignora */ }
+          // Tenta nova inscrição após forçar saída
+          const retryResult = await this.#tournamentService.joinCurrentTournament();
+          if (retryResult?.joined) {
+            this.#justJoinedAt = Date.now();
+            this.#statusBannerEl.textContent = 'Inscricao confirmada. Aguarde os demais participantes.';
+          } else {
+            this.#statusBannerEl.textContent = 'Aguardando sincronizacao. Tente novamente em instantes.';
+          }
+        } else {
+          this.#statusBannerEl.textContent = 'Voce ja esta inscrito nesta rodada.';
+        }
       }
       console.log(
         `[TournamentRound] join result joined=${result.joined} alreadyJoined=${result.alreadyJoined} instanceId=${result.instanceId}`
