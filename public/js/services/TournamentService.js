@@ -151,8 +151,11 @@ export class TournamentService {
           const hasMe = !!instance?.enrolledUsers?.[myUid];
           const status = instance?.status || 'waiting';
           
+          console.log(`[TournamentService] 🔍 Verificando instância ${instance?.instanceId} - status=${status} hasMe=${hasMe} uid=${myUid?.slice(0,8)}`);
+          
           // Se a instância está finished, limpa o enrollmentIndex
           if (hasMe && status === 'finished') {
+            console.log(`[TournamentService] ♻️ Instância finished - limpando enrollmentIndex`);
             staleInstancesForUid.push({ instanceId: instance.instanceId, strategy: 'clear-index-finished' });
             return false;
           }
@@ -163,38 +166,47 @@ export class TournamentService {
           // Caso contrário é uma inscrição stale (sobrou de partida anterior)
           if (status === 'active') {
             const isActivePlayer = !!instance?.activePlayers?.[myUid];
+            console.log(`[TournamentService] 🎮 Instância active - isActivePlayer=${isActivePlayer}`);
             if (!isActivePlayer) {
+              console.log(`[TournamentService] ⚠️ Usuário em enrolledUsers mas não em activePlayers - limpando`);
               staleInstancesForUid.push({ instanceId: instance.instanceId, strategy: 'clear-index' });
               return false;
             }
           }
 
-          // Usuário que não confirmou presença no countdown não deve ficar preso
-          // na rodada lotada ao voltar para se inscrever novamente.
-          if (status === 'countdown' && instance?.confirmationRequired) {
+          // ✅ CORREÇÃO CRÍTICA: NÃO remove usuários automaticamente no countdown!
+          // O countdown tem seu próprio timer de 60s que remove não-confirmados.
+          // Remover aqui impede que o popup de confirmação apareça!
+          if (status === 'countdown') {
             const confirmed = !!instance?.presenceConfirmations?.[myUid]?.confirmed;
-            if (!confirmed) {
-              staleInstancesForUid.push({ instanceId: instance.instanceId, strategy: 'leave-countdown' });
-              return false;
-            }
+            console.log(`[TournamentService] ⏰ Countdown detectado - confirmed=${confirmed} confirmationRequired=${!!instance?.confirmationRequired}`);
+            // Retorna true para permitir que TournamentGlobalNotifierService mostre o popup
+            return true;
           }
+          
           return true;
         }) || null
         : null;
+      
+      if (myInstance) {
+        console.log(`[TournamentService] ✅ myInstance encontrado:`, {
+          instanceId: myInstance.instanceId,
+          status: myInstance.status,
+          enrolledCount: myInstance.enrolledCount,
+          confirmationRequired: myInstance.confirmationRequired,
+          hasPresenceConfirmation: !!myInstance.presenceConfirmations?.[myUid],
+          confirmed: !!myInstance.presenceConfirmations?.[myUid]?.confirmed,
+        });
+      } else {
+        console.log(`[TournamentService] ❌ Nenhuma instância válida para uid=${myUid?.slice(0,8)}`);
+      }
 
       // Limpa enrollmentIndex de instâncias stale em background
       if (myUid && staleInstancesForUid.length > 0) {
         staleInstancesForUid.forEach(({ instanceId, strategy }) => {
-          console.log(`[TournamentService] Limpando inscrição stale uid=${myUid} instanceId=${instanceId} strategy=${strategy}`);
+          console.log(`[TournamentService] ♻️ Limpando inscrição stale uid=${myUid?.slice(0,8)} instanceId=${instanceId} strategy=${strategy}`);
 
-          if (strategy === 'leave-countdown') {
-            this.#repo.leaveTournament(tournamentId, myUid).catch((err) => {
-              console.warn('[TournamentService] Falha ao remover inscrição stale do countdown:', err);
-            });
-            return;
-          }
-
-          // Para qualquer outra estratégia, limpa apenas o enrollmentIndex
+          // Limpa apenas o enrollmentIndex (não remove o usuário da instância)
           this.#repo.removeEnrollmentIndex(tournamentId, myUid).catch((err) => {
             console.warn('[TournamentService] Falha ao limpar enrollmentIndex stale:', err);
           });

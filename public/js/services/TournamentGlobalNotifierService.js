@@ -114,21 +114,27 @@ export class TournamentGlobalNotifierService {
    * @returns {Promise<void>}
    */
   async start(screenManager) {
+    console.log('[TournamentGlobalNotifier] 🚀 INICIANDO serviço...');
     this.#screenManager = screenManager;
     this.#clearTimer();
 
     this.#unsubAuth?.();
     this.#unsubAuth = this.#authService.onAuthStateChanged((user) => {
       this.#myUid = user?.uid || null;
+      console.log(`[TournamentGlobalNotifier] 👤 Auth state changed: uid=${user?.uid?.slice(0,8) || 'null'}`);
     });
 
     const currentUser = await this.#authService.getCurrentUser().catch(() => null);
     this.#myUid = currentUser?.uid || null;
+    console.log(`[TournamentGlobalNotifier] 👤 Current user: uid=${this.#myUid?.slice(0,8) || 'null'}`);
 
     this.#unsubTournament?.();
+    console.log('[TournamentGlobalNotifier] 📡 Subscribing to tournament state...');
     this.#unsubTournament = await this.#tournamentService.subscribeCurrentTournament((state) => {
+      console.log('[TournamentGlobalNotifier] 📥 State update received');
       this.#handleTournamentState(state);
     });
+    console.log('[TournamentGlobalNotifier] ✅ Serviço iniciado com sucesso');
   }
 
   stop() {
@@ -146,23 +152,29 @@ export class TournamentGlobalNotifierService {
    * @private
    */
   #handleTournamentState(state) {
+    console.log('[TournamentGlobalNotifier] 🔄 #handleTournamentState called');
+    
     if (!state || !this.#myUid) {
-      console.log('[TournamentGlobalNotifier] Sem state ou myUid, saindo');
+      console.log(`[TournamentGlobalNotifier] ⚠️ Sem state ou myUid - state=${!!state} myUid=${!!this.#myUid}`);
       return;
     }
 
     const instances = Array.isArray(state.instances) ? state.instances : [];
-    console.log(`[TournamentGlobalNotifier] Processando ${instances.length} instâncias para usuário ${this.#myUid.slice(0,8)}`);
+    console.log(`[TournamentGlobalNotifier] 📊 Processando ${instances.length} instâncias para uid=${this.#myUid.slice(0,8)}`);
     
     const myInstance = instances.find((instance) => {
       const hasMe = !!instance?.enrolledUsers?.[this.#myUid];
       const status = instance?.status || 'waiting';
       
+      console.log(`[TournamentGlobalNotifier]   🔍 Checking ${instance?.instanceId} - status=${status} hasMe=${hasMe}`);
+      
       if (!hasMe) {
+        console.log(`[TournamentGlobalNotifier]     ❌ Não estou inscrito nesta instância`);
         return false;
       }
       
       if (status === 'finished') {
+        console.log(`[TournamentGlobalNotifier]     ⛔ Instância finished - ignorando`);
         return false;
       }
       
@@ -170,24 +182,36 @@ export class TournamentGlobalNotifierService {
       // Isso evita toasts e redirects indevidos para usuários com dados stale.
       if (status === 'active') {
         const isActive = !!instance?.activePlayers?.[this.#myUid];
+        console.log(`[TournamentGlobalNotifier]     🎮 Active - isActivePlayer=${isActive}`);
         if (!isActive) {
-          console.log(`[TournamentGlobalNotifier] Usuário está em enrolledUsers mas não em activePlayers (status=active) - ignorando instância ${instance.instanceId}`);
+          console.log(`[TournamentGlobalNotifier]     ⚠️ Em enrolledUsers mas não em activePlayers - ignorando`);
         }
         return isActive;
       }
       
+      console.log(`[TournamentGlobalNotifier]     ✅ Instância válida!`);
       return true;
     }) || null;
 
     if (myInstance) {
-      console.log(`[TournamentGlobalNotifier] ✅ myInstance encontrado: ${myInstance.instanceId} status=${myInstance.status}`);
+      console.log(`[TournamentGlobalNotifier] 🎯 myInstance ENCONTRADO:`, {
+        instanceId: myInstance.instanceId,
+        status: myInstance.status,
+        enrolledCount: myInstance.enrolledCount,
+        confirmationRequired: myInstance.confirmationRequired,
+        hasLastSystemNotice: !!myInstance.lastSystemNotice,
+        systemNoticeType: myInstance.lastSystemNotice?.type,
+      });
     } else {
-      console.log('[TournamentGlobalNotifier] ❌ Nenhuma instância ativa para este usuário');
+      console.log('[TournamentGlobalNotifier] ❌ NENHUMA instância válida encontrada');
       this.#clearTimer();
       return;
     }
 
+    console.log('[TournamentGlobalNotifier] 📢 Chamando #handleJoinNotice...');
     this.#handleJoinNotice(myInstance);
+    
+    console.log('[TournamentGlobalNotifier] 📢 Chamando #handleSystemNotice...');
     this.#handleSystemNotice(myInstance);
 
     const status = myInstance.status || 'waiting';
@@ -201,14 +225,24 @@ export class TournamentGlobalNotifierService {
 
     if (status === 'countdown') {
       const endsAt = Number(myInstance.countdownEndsAt || 0);
-      console.log(`[TournamentGlobalNotifier] Countdown detectado para ${this.#myUid?.slice(0,8)} - confirmado=${hasConfirmedPresence}`);
+      const remainSec = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+      
+      console.log(`[TournamentGlobalNotifier] ⏰ STATUS COUNTDOWN detectado!`, {
+        uid: this.#myUid?.slice(0,8),
+        instanceId: myInstance.instanceId,
+        hasConfirmedPresence,
+        endsAt: new Date(endsAt).toISOString(),
+        remainingSec: remainSec,
+        confirmationRequired: myInstance.confirmationRequired,
+      });
       
       if (!hasConfirmedPresence) {
+        console.log(`[TournamentGlobalNotifier] 🔔 Usuário NÃO confirmou - MOSTRANDO POPUP de confirmação...`);
         this.#showPresenceConfirmToast(myInstance);
         this.#startCountdownTimer(endsAt);
         this.#attachAppExitListeners(myInstance);
       } else {
-        console.log('[TournamentGlobalNotifier] Presença já confirmada - ocultando botão');
+        console.log('[TournamentGlobalNotifier] ✅ Presença JÁ CONFIRMADA - ocultando botão');
         this.#hideActionButton();
         this.#clearCountdownTimer();
       }
@@ -275,33 +309,56 @@ export class TournamentGlobalNotifierService {
    * @private
    */
   #handleSystemNotice(instance) {
+    console.log('[TournamentGlobalNotifier] 🔔 #handleSystemNotice EXECUTANDO');
+    
     const instanceId = instance?.instanceId;
     const eventId = instance?.lastSystemNotice?.eventId;
     const type = instance?.lastSystemNotice?.type;
 
-    if (!instanceId || !eventId) return;
+    console.log(`[TournamentGlobalNotifier]   📝 instanceId=${instanceId} eventId=${eventId} type=${type}`);
+
+    if (!instanceId || !eventId) {
+      console.log(`[TournamentGlobalNotifier]   ⚠️ Sem instanceId ou eventId - abortando`);
+      return;
+    }
 
     const eventKey = `${instanceId}:${eventId}`;
     const previous = this.#lastNoticeEventByInstance.get(instanceId);
+    
+    console.log(`[TournamentGlobalNotifier]   🔑 eventKey="${eventKey}" previous="${previous || 'null'}"`);
+    
     this.#lastNoticeEventByInstance.set(instanceId, eventKey);
 
-    if (!previous || previous === eventKey) return;
+    if (!previous) {
+      console.log(`[TournamentGlobalNotifier]   🆕 PRIMEIRO evento para esta instância - processando!`);
+    } else if (previous === eventKey) {
+      console.log(`[TournamentGlobalNotifier]   ♻️ Evento JÁ PROCESSADO - ignorando`);
+      return;
+    } else {
+      console.log(`[TournamentGlobalNotifier]   🆕 NOVO evento (diferente do anterior) - processando!`);
+    }
 
-    console.log(`[TournamentGlobalNotifier] 📢 System notice: type=${type} eventId=${eventId}`);
+    console.log(`[TournamentGlobalNotifier] 🎯 PROCESSANDO System Notice: type=${type}`);
 
     if (type === 'countdown_started') {
+      console.log(`[TournamentGlobalNotifier] ⏰ COUNTDOWN STARTED detectado!`);
       const activeCount = instance.activePlayers 
         ? Object.keys(instance.activePlayers).length 
         : Number(instance?.enrolledCount || 0);
       const maxCount = Number(instance?.maxParticipants || 6);
       
-      console.log(`[TournamentGlobalNotifier] Countdown started: ${activeCount}/${maxCount} jogadores`);
+      console.log(`[TournamentGlobalNotifier] 🎉 MOSTRANDO TOAST: Countdown iniciado ${activeCount}/${maxCount} jogadores!`);
       
       const audioDurationMs = this.#audioService.playUntilEnd(
         'tournament-opponent-entry',
         TournamentGlobalNotifierService.#DEFAULT_TOAST_MS
       );
+      
+      console.log(`[TournamentGlobalNotifier] 🔊 Som tocando por ${audioDurationMs}ms`);
+      
       this.#showToast(`${activeCount}/${maxCount} jogadores: o campeonato vai começar em 1 minuto.`, audioDurationMs);
+      
+      console.log(`[TournamentGlobalNotifier] ✅ Toast exibido com sucesso!`);
       return;
     }
 
@@ -567,22 +624,35 @@ export class TournamentGlobalNotifierService {
     this.#confirmPresenceInFlight = false;
   }
 
-  /**
-   * @param {Object} instance
-   * @private
-   */
-  #showPresenceConfirmToast(instance) {
+  /**ole.log('[TournamentGlobalNotifier] 🎯 #showPresenceConfirmToast EXECUTANDO...');
+    
     const instanceId = instance?.instanceId;
     if (!instanceId) {
-      console.warn('[TournamentGlobalNotifier] #showPresenceConfirmToast chamado sem instanceId');
+      console.error('[TournamentGlobalNotifier] ❌ #showPresenceConfirmToast chamado sem instanceId!');
       return;
     }
 
+    console.log(`[TournamentGlobalNotifier] 📋 instanceId=${instanceId}`);
+    
     this.#ensureToastEl();
+    
     if (!this.#toastEl || !this.#toastTitleEl || !this.#toastSubtitleEl || !this.#toastAvatarEl || !this.#toastActionBtnEl) {
-      console.error('[TournamentGlobalNotifier] Elementos do toast não foram criados');
+      console.error('[TournamentGlobalNotifier] ❌ Elementos do toast NÃO foram criados!', {
+        toastEl: !!this.#toastEl,
+        titleEl: !!this.#toastTitleEl,
+        subtitleEl: !!this.#toastSubtitleEl,
+        avatarEl: !!this.#toastAvatarEl,
+        actionBtnEl: !!this.#toastActionBtnEl,
+      });
       return;
     }
+
+    console.log('[TournamentGlobalNotifier] ✅ Todos os elementos do toast existem');
+
+    const endsAt = Number(instance?.countdownEndsAt || 0);
+    const remainSec = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+
+    console.log(`[TournamentGlobalNotifier] ⏰ Tempo restante: ${remainSec}s (endsAt=${new Date(endsAt).toISOString()}
 
     const endsAt = Number(instance?.countdownEndsAt || 0);
     const remainSec = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
@@ -590,6 +660,9 @@ export class TournamentGlobalNotifierService {
     console.log(`[TournamentGlobalNotifier] 🔔 Mostrando toast de confirmação para ${this.#myUid?.slice(0,8)} (${remainSec}s restantes)`);
 
     this.#pendingConfirmInstanceId = instanceId;
+    
+    console.log('[TournamentGlobalNotifier] 🎨 Configurando elementos do toast...');
+    
     this.#toastEl.classList.add('global-tournament-toast--text-only');
     this.#toastAvatarEl.style.display = 'none';
     this.#toastTitleEl.textContent = 'Campeonato vai começar em 1 minuto';
@@ -600,9 +673,23 @@ export class TournamentGlobalNotifierService {
       ? 'Confirmando...'
       : 'Confirmar presença';
 
+    console.log('[TournamentGlobalNotifier] 🎨 Elementos configurados:', {
+      title: this.#toastTitleEl.textContent,
+      subtitle: this.#toastSubtitleEl.textContent,
+      buttonVisible: !this.#toastActionBtnEl.classList.contains('global-tournament-toast__action--hidden'),
+      buttonDisabled: this.#toastActionBtnEl.disabled,
+    });
+
+    console.log('[TournamentGlobalNotifier] 👁️ TORNANDO TOAST VISÍVEL...');
     this.#toastEl.classList.add('global-tournament-toast--visible');
+    
+    console.log('[TournamentGlobalNotifier] ✅ Toast agora está com classe "visible":', {
+      hasVisibleClass: this.#toastEl.classList.contains('global-tournament-toast--visible'),
+      allClasses: Array.from(this.#toastEl.classList),
+    });
 
     if (this.#toastTimer !== null) {
+      console.log('[TournamentGlobalNotifier] ⏰ Limpando timer anterior');
       clearTimeout(this.#toastTimer);
     }
 
@@ -611,10 +698,15 @@ export class TournamentGlobalNotifierService {
       Math.max(0, endsAt - Date.now())
     );
 
+    console.log(`[TournamentGlobalNotifier] ⏰ Toast ficará visível por ${visibleMs}ms`);
+
     this.#toastTimer = setTimeout(() => {
+      console.log('[TournamentGlobalNotifier] ⏰ Timer expirou - ocultando toast');
       this.#toastTimer = null;
       this.#toastEl?.classList.remove('global-tournament-toast--visible');
     }, visibleMs);
+    
+    console.log('[TournamentGlobalNotifier] 🎉 #showPresenceConfirmToast CONCLUÍDO COM SUCESSO!');
   }
 
   /** @private */

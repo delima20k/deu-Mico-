@@ -694,7 +694,10 @@ export class TournamentRepository {
               text: 'Combate comeca em 1 minuto',
               eventId: `countdown_${joinableInstanceId}_${countdownStartAt}`,
             };
-            console.log(`[TournamentRound] countdown started instanceId=${joinableInstanceId} endsAt=${countdownEndsAt}`);
+            console.log(`[TournamentRepository] 🎉 COUNTDOWN INICIADO! instanceId=${joinableInstanceId} ` +
+                        `enrolledCount=${enrolledCount}/${normalizedMax} ` +
+                        `endsAt=${new Date(countdownEndsAt).toISOString()} ` +
+                        `eventId=${lastSystemNotice.eventId}`);
           }
 
           return {
