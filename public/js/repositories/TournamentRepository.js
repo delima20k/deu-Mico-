@@ -1336,7 +1336,15 @@ export class TournamentRepository {
 
       console.log(`[TournamentRound] ✅ Confirmando presença para ${uid.slice(0,8)} - total confirmados: ${Object.keys(presenceConfirmations).length}`);
 
-      return {
+      // VERIFICA SE TODOS CONFIRMARAM → INICIA IMEDIATAMENTE
+      const totalEnrolled = Object.keys(enrolledUsers).length;
+      const totalConfirmed = Object.keys(presenceConfirmations).filter(
+        uid => presenceConfirmations[uid]?.confirmed
+      ).length;
+
+      console.log(`[TournamentRound] 📊 Confirmações: ${totalConfirmed}/${totalEnrolled}`);
+
+      let updatedData = {
         ...current,
         confirmationRequired: true,
         presenceConfirmations,
@@ -1348,6 +1356,25 @@ export class TournamentRepository {
         },
         updatedAt: now,
       };
+
+      // SE TODOS CONFIRMARAM → Reduz countdown para 5 segundos (inicia quase imediatamente)
+      if (totalConfirmed >= totalEnrolled && totalConfirmed >= 2) {
+        const expeditedEndsAt = now + 5000; // 5 segundos
+        console.log(`[TournamentRound] 🎉 TODOS CONFIRMARAM! Acelerando início para ${new Date(expeditedEndsAt).toISOString()}`);
+        
+        updatedData = {
+          ...updatedData,
+          countdownEndsAt: expeditedEndsAt,
+          lastSystemNotice: {
+            type: 'all_confirmed',
+            ts: now,
+            text: 'Todos confirmaram! Iniciando em 5 segundos...',
+            eventId: `all_confirmed_${instanceId}_${now}`,
+          },
+        };
+      }
+
+      return updatedData;
     });
 
     const instance = result.snapshot.exists()

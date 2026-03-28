@@ -686,12 +686,30 @@ export class TournamentScreen extends Screen {
 
     if (status === 'countdown') {
       this.#finalStandingsWrapEl?.classList.add('tournament-screen__final-standings--hidden');
+      
       // Durante countdown, mostra quantidade atual de jogadores ativos
       const activeCount = state.activePlayers 
         ? Object.keys(state.activePlayers).length 
         : enrolledCount;
       const maxCount = Number(state.maxParticipants || 6);
-      this.#statusBannerEl.textContent = `${activeCount}/${maxCount} jogadores. Combate comeca em 1 minuto.`;
+      
+      // Se confirmação for obrigatória, mostra quantos confirmaram
+      const confirmationRequired = state.confirmationRequired;
+      const presenceConfirmations = state.presenceConfirmations || {};
+      const confirmedCount = Object.keys(presenceConfirmations).filter(
+        uid => presenceConfirmations[uid]?.confirmed
+      ).length;
+      
+      if (confirmationRequired && confirmedCount > 0) {
+        const hasConfirmed = this.#myUid && presenceConfirmations[this.#myUid]?.confirmed;
+        const statusText = hasConfirmed
+          ? `✓ Presença confirmada! Aguardando outros jogadores... (${confirmedCount}/${activeCount})`
+          : `Aguardando confirmação de presença... (${confirmedCount}/${activeCount})`;
+        this.#statusBannerEl.textContent = statusText;
+      } else {
+        this.#statusBannerEl.textContent = `${activeCount}/${maxCount} jogadores. Combate comeca em 1 minuto.`;
+      }
+      
       this.#countdownEl.classList.remove('tournament-screen__countdown--hidden');
       this.#startCountdownTicker(Number(state.countdownEndsAt || 0));
       return;

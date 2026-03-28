@@ -625,6 +625,15 @@ export class TournamentGlobalNotifierService {
   }
 
   /** @private */
+  #hideToast() {
+    if (this.#toastTimer !== null) {
+      clearTimeout(this.#toastTimer);
+      this.#toastTimer = null;
+    }
+    this.#toastEl?.classList.remove('global-tournament-toast--visible');
+  }
+
+  /** @private */
   #showPresenceConfirmToast(instance) {
     console.log('[TournamentGlobalNotifier] 🎯 #showPresenceConfirmToast EXECUTANDO...');
     
@@ -735,13 +744,22 @@ export class TournamentGlobalNotifierService {
       console.log('[TournamentGlobalNotifier] Resultado da confirmação:', result);
       
       if (result?.confirmed) {
-        const remainMs = this.#countdownEndsAt ? Math.max(0, this.#countdownEndsAt - Date.now()) : 0;
-        const remainSec = Math.ceil(remainMs / 1000);
-        this.#toastSubtitleEl.textContent = `Presença confirmada. O campeonato vai começar em ${remainSec}s`;
+        this.#toastSubtitleEl.textContent = 'Presença confirmada! Redirecionando...';
         this.#toastActionBtnEl.textContent = 'Confirmado ✓';
         this.#toastActionBtnEl.disabled = true;
         this.#removeAppExitListeners(); // Remove listeners após confirmação bem-sucedida
         console.log('[TournamentGlobalNotifier] ✅ Presença confirmada com sucesso');
+        
+        // REDIRECIONA IMEDIATAMENTE para tela de espera do torneio
+        console.log('[TournamentGlobalNotifier] 🚀 Redirecionando para TournamentScreen...');
+        setTimeout(() => {
+          this.#hideToast();
+          if (this.#screenManager) {
+            this.#screenManager.navigateTo('tournament');
+          } else {
+            window.location.hash = '#tournament';
+          }
+        }, 800); // Delay mínimo para usuário ver confirmação
       } else {
         console.warn('[TournamentGlobalNotifier] Confirmação retornou false');
         this.#toastSubtitleEl.textContent = 'Não foi possível confirmar agora. Tente novamente.';

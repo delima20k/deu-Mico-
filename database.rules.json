@@ -38,7 +38,7 @@
     },
     "matches": {
       "$matchId": {
-        ".read": "auth != null && root.child('matches/' + $matchId + '/meta/players/' + auth.uid).exists()",
+        ".read": "auth != null && (root.child('matches/' + $matchId + '/meta/players/' + auth.uid).exists() || root.child('matches/' + $matchId + '/meta/tournamentInstanceId').val() != null)",
         "meta": {
           ".write": "auth != null && (root.child('matches/' + $matchId + '/meta/players/' + auth.uid).exists() || (!data.exists() && newData.child('players').hasChildren()))"
         },
