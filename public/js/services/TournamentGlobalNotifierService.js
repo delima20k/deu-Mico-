@@ -624,7 +624,9 @@ export class TournamentGlobalNotifierService {
     this.#confirmPresenceInFlight = false;
   }
 
-  /**ole.log('[TournamentGlobalNotifier] 🎯 #showPresenceConfirmToast EXECUTANDO...');
+  /** @private */
+  #showPresenceConfirmToast(instance) {
+    console.log('[TournamentGlobalNotifier] 🎯 #showPresenceConfirmToast EXECUTANDO...');
     
     const instanceId = instance?.instanceId;
     if (!instanceId) {
