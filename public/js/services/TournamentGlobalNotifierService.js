@@ -146,20 +146,43 @@ export class TournamentGlobalNotifierService {
    * @private
    */
   #handleTournamentState(state) {
-    if (!state || !this.#myUid) return;
+    if (!state || !this.#myUid) {
+      console.log('[TournamentGlobalNotifier] Sem state ou myUid, saindo');
+      return;
+    }
 
     const instances = Array.isArray(state.instances) ? state.instances : [];
+    console.log(`[TournamentGlobalNotifier] Processando ${instances.length} instâncias para usuário ${this.#myUid.slice(0,8)}`);
+    
     const myInstance = instances.find((instance) => {
       const hasMe = !!instance?.enrolledUsers?.[this.#myUid];
       const status = instance?.status || 'waiting';
-      if (!hasMe || status === 'finished') return false;
+      
+      if (!hasMe) {
+        return false;
+      }
+      
+      if (status === 'finished') {
+        return false;
+      }
+      
       // Para instâncias active: só considera se o usuário for jogador ativo.
       // Isso evita toasts e redirects indevidos para usuários com dados stale.
-      if (status === 'active') return !!instance?.activePlayers?.[this.#myUid];
+      if (status === 'active') {
+        const isActive = !!instance?.activePlayers?.[this.#myUid];
+        if (!isActive) {
+          console.log(`[TournamentGlobalNotifier] Usuário está em enrolledUsers mas não em activePlayers (status=active) - ignorando instância ${instance.instanceId}`);
+        }
+        return isActive;
+      }
+      
       return true;
     }) || null;
 
-    if (!myInstance) {
+    if (myInstance) {
+      console.log(`[TournamentGlobalNotifier] ✅ myInstance encontrado: ${myInstance.instanceId} status=${myInstance.status}`);
+    } else {
+      console.log('[TournamentGlobalNotifier] ❌ Nenhuma instância ativa para este usuário');
       this.#clearTimer();
       return;
     }
@@ -171,17 +194,21 @@ export class TournamentGlobalNotifierService {
     const hasConfirmedPresence = !!myInstance?.presenceConfirmations?.[this.#myUid]?.confirmed;
     const matchId = myInstance?.currentMatchId || null;
     if (matchId && this.#tournamentService.wasMatchLeftByUser(matchId)) {
+      console.log(`[TournamentGlobalNotifier] Usuário saiu da match ${matchId} - ignorando`);
       this.#clearTimer();
       return;
     }
 
     if (status === 'countdown') {
       const endsAt = Number(myInstance.countdownEndsAt || 0);
+      console.log(`[TournamentGlobalNotifier] Countdown detectado para ${this.#myUid?.slice(0,8)} - confirmado=${hasConfirmedPresence}`);
+      
       if (!hasConfirmedPresence) {
         this.#showPresenceConfirmToast(myInstance);
         this.#startCountdownTimer(endsAt);
         this.#attachAppExitListeners(myInstance);
       } else {
+        console.log('[TournamentGlobalNotifier] Presença já confirmada - ocultando botão');
         this.#hideActionButton();
         this.#clearCountdownTimer();
       }
@@ -260,11 +287,15 @@ export class TournamentGlobalNotifierService {
 
     if (!previous || previous === eventKey) return;
 
+    console.log(`[TournamentGlobalNotifier] 📢 System notice: type=${type} eventId=${eventId}`);
+
     if (type === 'countdown_started') {
       const activeCount = instance.activePlayers 
         ? Object.keys(instance.activePlayers).length 
         : Number(instance?.enrolledCount || 0);
       const maxCount = Number(instance?.maxParticipants || 6);
+      
+      console.log(`[TournamentGlobalNotifier] Countdown started: ${activeCount}/${maxCount} jogadores`);
       
       const audioDurationMs = this.#audioService.playUntilEnd(
         'tournament-opponent-entry',
@@ -276,6 +307,7 @@ export class TournamentGlobalNotifierService {
 
     if (type === 'countdown_canceled_unconfirmed') {
       const text = instance?.lastSystemNotice?.text || 'Countdown cancelado por ausência de confirmação. Vagas reabertas.';
+      console.log(`[TournamentGlobalNotifier] Countdown cancelado: ${text}`);
       this.#showToast(text);
       this.#clearCountdownTimer();
       this.#removeAppExitListeners();
@@ -283,6 +315,7 @@ export class TournamentGlobalNotifierService {
 
     if (type === 'player_removed_unconfirmed') {
       const text = instance?.lastSystemNotice?.text || 'Um jogador não confirmou presença e foi removido.';
+      console.log(`[TournamentGlobalNotifier] Player removed: ${text}`);
       this.#showToast(text);
     }
   }
@@ -474,7 +507,12 @@ export class TournamentGlobalNotifierService {
 
   /** @private */
   #ensureToastEl() {
-    if (this.#toastEl) return;
+    if (this.#toastEl) {
+      console.log('[TournamentGlobalNotifier] Toast element já existe, reutilizando');
+      return;
+    }
+
+    console.log('[TournamentGlobalNotifier] Criando elementos do toast pela primeira vez');
 
     const root = document.createElement('div');
     root.className = 'global-tournament-toast';
@@ -496,9 +534,15 @@ export class TournamentGlobalNotifierService {
     actionBtn.className = 'global-tournament-toast__action global-tournament-toast__action--hidden';
     actionBtn.type = 'button';
     actionBtn.textContent = 'Confirmar presença';
-    actionBtn.addEventListener('click', () => {
+    
+    // CRÍTICO: Adiciona listener com bind explícito para garantir contexto
+    const clickHandler = () => {
+      console.log('[TournamentGlobalNotifier] 🖱️ Click detectado no botão de confirmação!');
       void this.#onConfirmPresenceClicked();
-    });
+    };
+    actionBtn.addEventListener('click', clickHandler, { passive: false });
+    
+    console.log('[TournamentGlobalNotifier] ✅ Listener de click adicionado ao botão');
 
     content.append(title, subtitle, actionBtn);
     root.append(avatar, content);
@@ -509,6 +553,8 @@ export class TournamentGlobalNotifierService {
     this.#toastTitleEl = title;
     this.#toastSubtitleEl = subtitle;
     this.#toastActionBtnEl = actionBtn;
+    
+    console.log('[TournamentGlobalNotifier] Toast DOM criado e anexado ao body');
   }
 
   /** @private */
@@ -527,13 +573,21 @@ export class TournamentGlobalNotifierService {
    */
   #showPresenceConfirmToast(instance) {
     const instanceId = instance?.instanceId;
-    if (!instanceId) return;
+    if (!instanceId) {
+      console.warn('[TournamentGlobalNotifier] #showPresenceConfirmToast chamado sem instanceId');
+      return;
+    }
 
     this.#ensureToastEl();
-    if (!this.#toastEl || !this.#toastTitleEl || !this.#toastSubtitleEl || !this.#toastAvatarEl || !this.#toastActionBtnEl) return;
+    if (!this.#toastEl || !this.#toastTitleEl || !this.#toastSubtitleEl || !this.#toastAvatarEl || !this.#toastActionBtnEl) {
+      console.error('[TournamentGlobalNotifier] Elementos do toast não foram criados');
+      return;
+    }
 
     const endsAt = Number(instance?.countdownEndsAt || 0);
     const remainSec = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+
+    console.log(`[TournamentGlobalNotifier] 🔔 Mostrando toast de confirmação para ${this.#myUid?.slice(0,8)} (${remainSec}s restantes)`);
 
     this.#pendingConfirmInstanceId = instanceId;
     this.#toastEl.classList.add('global-tournament-toast--text-only');
@@ -565,9 +619,22 @@ export class TournamentGlobalNotifierService {
 
   /** @private */
   async #onConfirmPresenceClicked() {
-    if (this.#confirmPresenceInFlight) return;
-    if (!this.#pendingConfirmInstanceId) return;
-    if (!this.#toastActionBtnEl || !this.#toastSubtitleEl) return;
+    console.log('[TournamentGlobalNotifier] 🖱️ Botão de confirmação clicado');
+    
+    if (this.#confirmPresenceInFlight) {
+      console.log('[TournamentGlobalNotifier] Confirmação já em andamento, ignorando');
+      return;
+    }
+    if (!this.#pendingConfirmInstanceId) {
+      console.warn('[TournamentGlobalNotifier] Sem instanceId pendente para confirmar');
+      return;
+    }
+    if (!this.#toastActionBtnEl || !this.#toastSubtitleEl) {
+      console.error('[TournamentGlobalNotifier] Elementos do toast não disponíveis');
+      return;
+    }
+
+    console.log(`[TournamentGlobalNotifier] Confirmando presença para instanceId=${this.#pendingConfirmInstanceId}`);
 
     this.#confirmPresenceInFlight = true;
     this.#toastActionBtnEl.disabled = true;
@@ -575,20 +642,24 @@ export class TournamentGlobalNotifierService {
 
     try {
       const result = await this.#tournamentService.confirmCurrentTournamentPresence(this.#pendingConfirmInstanceId);
+      console.log('[TournamentGlobalNotifier] Resultado da confirmação:', result);
+      
       if (result?.confirmed) {
         const remainMs = this.#countdownEndsAt ? Math.max(0, this.#countdownEndsAt - Date.now()) : 0;
         const remainSec = Math.ceil(remainMs / 1000);
         this.#toastSubtitleEl.textContent = `Presença confirmada. O campeonato vai começar em ${remainSec}s`;
-        this.#toastActionBtnEl.textContent = 'Confirmado';
+        this.#toastActionBtnEl.textContent = 'Confirmado ✓';
         this.#toastActionBtnEl.disabled = true;
-        this.#removeAppExitListeners(); // Remove listeners após confirmação
+        this.#removeAppExitListeners(); // Remove listeners após confirmação bem-sucedida
+        console.log('[TournamentGlobalNotifier] ✅ Presença confirmada com sucesso');
       } else {
+        console.warn('[TournamentGlobalNotifier] Confirmação retornou false');
         this.#toastSubtitleEl.textContent = 'Não foi possível confirmar agora. Tente novamente.';
         this.#toastActionBtnEl.disabled = false;
         this.#toastActionBtnEl.textContent = 'Confirmar presença';
       }
     } catch (error) {
-      console.error('[TournamentGlobalNotifier] erro ao confirmar presença:', error);
+      console.error('[TournamentGlobalNotifier] ❌ Erro ao confirmar presença:', error);
       this.#toastSubtitleEl.textContent = 'Falha ao confirmar presença. Verifique sua conexão e tente novamente.';
       this.#toastActionBtnEl.disabled = false;
       this.#toastActionBtnEl.textContent = 'Confirmar presença';
@@ -670,7 +741,8 @@ export class TournamentGlobalNotifierService {
   }
 
   /**
-   * Adiciona listeners para detectar quando o usuário sai do app.
+   * Adiciona listeners para detectar quando o usuário realmente abandona o app.
+   * NOTA: Lógica ajustada para PWAs mobile - não remove por minimização temporária.
    * @param {Object} instance
    * @private
    */
@@ -679,52 +751,60 @@ export class TournamentGlobalNotifierService {
 
     this.#removeAppExitListeners();
 
+    let hiddenTimer = null;
+
     // beforeunload: quando usuário fecha aba/navegador
     this.#beforeUnloadListener = () => {
       if (!this.#myUid || !instance?.instanceId) return;
       
-      // Usa sendBeacon para garantir que a requisição seja enviada mesmo com página fechando
       const hasConfirmed = !!instance?.presenceConfirmations?.[this.#myUid]?.confirmed;
       if (!hasConfirmed) {
-        console.log('[TournamentGlobalNotifier] Usuário saindo sem confirmar presença - removendo automaticamente');
+        console.log('[TournamentGlobalNotifier] Usuário fechando navegador sem confirmar - removendo');
         
-        // Remove inscrição via API (usando navigator.sendBeacon se disponível)
+        // Remove inscrição (beforeunload é síncrono, tentativa best-effort)
         void this.#tournamentService.leaveCurrentTournament().catch(err => {
-          console.warn('[TournamentGlobalNotifier] Erro ao remover inscrição no beforeunload:', err);
+          console.warn('[TournamentGlobalNotifier] Erro ao remover no beforeunload:', err);
         });
       }
     };
 
     // visibilitychange: quando usuário minimiza ou troca de aba
+    // IMPORTANTE: PWAs mobile frequentemente mudam para segundo plano.
+    // Só removemos se ficar oculto por tempo prolongado (45s+) sem confirmar.
     this.#visibilityChangeListener = () => {
-      if (document.hidden && this.#myUid && instance?.instanceId) {
+      if (document.hidden) {
+        // App foi para segundo plano
         const hasConfirmed = !!instance?.presenceConfirmations?.[this.#myUid]?.confirmed;
         
-        // Só remove se ficou oculto por mais de 10 segundos sem confirmar
-        if (!hasConfirmed) {
-          const checkHiddenTimeout = setTimeout(() => {
-            if (document.hidden) {
-              console.log('[TournamentGlobalNotifier] App oculto há 10s sem confirmação - removendo');
+        if (!hasConfirmed && this.#myUid && instance?.instanceId) {
+          console.log('[TournamentGlobalNotifier] App minimizado sem confirmação - aguardando 45s...');
+          
+          // Dá tempo generoso (45s) para usuário voltar - comum em PWAs mobile
+          hiddenTimer = setTimeout(() => {
+            if (document.hidden && !instance?.presenceConfirmations?.[this.#myUid]?.confirmed) {
+              console.log('[TournamentGlobalNotifier] App oculto há 45s sem confirmação - removendo');
               void this.#tournamentService.leaveCurrentTournament().catch(err => {
-                console.warn('[TournamentGlobalNotifier] Erro ao remover inscrição no visibilitychange:', err);
+                console.warn('[TournamentGlobalNotifier] Erro ao remover no visibilitychange:', err);
               });
+            } else {
+              console.log('[TournamentGlobalNotifier] Usuário voltou ou confirmou - cancelando remoção');
             }
-          }, 10000); // 10 segundos
-
-          // Limpa timeout se voltar antes dos 10s
-          const clearOnVisible = () => {
-            if (!document.hidden) {
-              clearTimeout(checkHiddenTimeout);
-              document.removeEventListener('visibilitychange', clearOnVisible);
-            }
-          };
-          document.addEventListener('visibilitychange', clearOnVisible);
+          }, 45000); // 45 segundos - tempo mais realista para PWAs
+        }
+      } else {
+        // App voltou para primeiro plano - cancela timer
+        if (hiddenTimer) {
+          console.log('[TournamentGlobalNotifier] App voltou - cancelando timer de remoção');
+          clearTimeout(hiddenTimer);
+          hiddenTimer = null;
         }
       }
     };
 
     window.addEventListener('beforeunload', this.#beforeUnloadListener);
     document.addEventListener('visibilitychange', this.#visibilityChangeListener);
+    
+    console.log('[TournamentGlobalNotifier] Listeners de saída ativados (45s grace period)');
   }
 
   /**
@@ -740,5 +820,6 @@ export class TournamentGlobalNotifierService {
       document.removeEventListener('visibilitychange', this.#visibilityChangeListener);
       this.#visibilityChangeListener = null;
     }
+    console.log('[TournamentGlobalNotifier] Listeners de saída removidos');
   }
 }

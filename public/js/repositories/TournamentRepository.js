@@ -1170,9 +1170,15 @@ export class TournamentRepository {
       }
 
       const confirmedCount = Object.keys(enrolledUsers).length;
-      if (confirmedCount < Number(current.maxParticipants || 6)) {
-        // Gera mensagem informando quem foi removido
-        let noticeText = 'Countdown cancelado por ausência de confirmação. Vagas reabertas.';
+      
+      // MIN_PLAYERS para iniciar torneio: 2 jogadores (não exige todos os 6)
+      const MIN_PLAYERS = 2;
+      
+      if (confirmedCount < MIN_PLAYERS) {
+        // Menos de 2 jogadores confirmaram - cancela countdown
+        console.log(`[TournamentRound] Apenas ${confirmedCount} confirmaram - cancelando countdown (mínimo: ${MIN_PLAYERS})`);
+        
+        let noticeText = 'Countdown cancelado por falta de confirmações. Vagas reabertas.';
         if (removedPlayers.length > 0) {
           const removedNames = removedPlayers.map(p => p.name).join(', ');
           noticeText = `${removedNames} não confirmou presença. Torneio Deu Mico! vai esperar outro${removedPlayers.length > 1 ? 's' : ''} oponente${removedPlayers.length > 1 ? 's' : ''} entrar.`;
@@ -1198,6 +1204,12 @@ export class TournamentRepository {
           },
           updatedAt: now,
         };
+      }
+      
+      // Se chegamos aqui, temos >= 2 jogadores confirmados - INICIA O TORNEIO
+      console.log(`[TournamentRound] ${confirmedCount} jogadores confirmaram - iniciando torneio!`);
+      if (removedPlayers.length > 0) {
+        console.log(`[TournamentRound] Jogadores removidos por não confirmar: ${removedPlayers.map(p => p.name).join(', ')}`);
       }
 
       const activePlayers = { ...enrolledUsers };
@@ -1288,21 +1300,38 @@ export class TournamentRepository {
       throw new Error('[TournamentRound] confirmPresence requer instanceId e uid');
     }
 
+    console.log(`[TournamentRound] 🔄 Confirmando presença: instanceId=${instanceId} uid=${uid.slice(0,8)}`);
+
     const { db, dbMod } = this.#getDbContext();
     const ref = dbMod.ref(db, `tournaments/instances/${instanceId}`);
 
     const result = await dbMod.runTransaction(ref, (current) => {
-      if (!current) return current;
+      if (!current) {
+        console.warn('[TournamentRound] Transaction aborted - instance não existe');
+        return current;
+      }
+      
       const now = Date.now();
       const status = current.status || 'waiting';
       const enrolledUsers = { ...(current.enrolledUsers || {}) };
-      if (status !== 'countdown' || !enrolledUsers[uid]) return current;
+      
+      if (status !== 'countdown') {
+        console.warn(`[TournamentRound] Status não é countdown (${status}) - abortando confirmação`);
+        return current;
+      }
+      
+      if (!enrolledUsers[uid]) {
+        console.warn(`[TournamentRound] Usuário ${uid.slice(0,8)} não está em enrolledUsers - abortando confirmação`);
+        return current;
+      }
 
       const presenceConfirmations = { ...(current.presenceConfirmations || {}) };
       presenceConfirmations[uid] = {
         confirmed: true,
         ts: now,
       };
+
+      console.log(`[TournamentRound] ✅ Confirmando presença para ${uid.slice(0,8)} - total confirmados: ${Object.keys(presenceConfirmations).length}`);
 
       return {
         ...current,
@@ -1323,6 +1352,13 @@ export class TournamentRepository {
       : null;
 
     const confirmed = !!instance?.presenceConfirmations?.[uid]?.confirmed;
+    
+    if (confirmed) {
+      console.log(`[TournamentRound] ✅ Presença confirmada com sucesso para ${uid.slice(0,8)}`);
+    } else {
+      console.warn(`[TournamentRound] ⚠️ Presença NÃO foi confirmada para ${uid.slice(0,8)}`);
+    }
+    
     return { confirmed, instance };
   }
 
