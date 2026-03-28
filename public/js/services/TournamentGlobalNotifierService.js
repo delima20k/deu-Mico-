@@ -654,11 +654,7 @@ export class TournamentGlobalNotifierService {
     const endsAt = Number(instance?.countdownEndsAt || 0);
     const remainSec = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
 
-    console.log(`[TournamentGlobalNotifier] ⏰ Tempo restante: ${remainSec}s (endsAt=${new Date(endsAt).toISOString()}
-
-    const endsAt = Number(instance?.countdownEndsAt || 0);
-    const remainSec = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
-
+    console.log(`[TournamentGlobalNotifier] ⏰ Tempo restante: ${remainSec}s (endsAt=${new Date(endsAt).toISOString()})`);
     console.log(`[TournamentGlobalNotifier] 🔔 Mostrando toast de confirmação para ${this.#myUid?.slice(0,8)} (${remainSec}s restantes)`);
 
     this.#pendingConfirmInstanceId = instanceId;
