@@ -1155,10 +1155,15 @@ export class TournamentRepository {
       const confirmations = { ...(current.presenceConfirmations || {}) };
 
       // Remove não confirmados no momento da virada do countdown.
+      const removedPlayers = [];
       if (confirmationRequired) {
         for (const uid of Object.keys(enrolledUsers)) {
           const confirmed = !!confirmations?.[uid]?.confirmed;
           if (!confirmed) {
+            removedPlayers.push({
+              uid,
+              name: enrolledUsers[uid]?.name || 'Jogador',
+            });
             delete enrolledUsers[uid];
           }
         }
@@ -1166,6 +1171,13 @@ export class TournamentRepository {
 
       const confirmedCount = Object.keys(enrolledUsers).length;
       if (confirmedCount < Number(current.maxParticipants || 6)) {
+        // Gera mensagem informando quem foi removido
+        let noticeText = 'Countdown cancelado por ausência de confirmação. Vagas reabertas.';
+        if (removedPlayers.length > 0) {
+          const removedNames = removedPlayers.map(p => p.name).join(', ');
+          noticeText = `${removedNames} não confirmou presença. Torneio Deu Mico! vai esperar outro${removedPlayers.length > 1 ? 's' : ''} oponente${removedPlayers.length > 1 ? 's' : ''} entrar.`;
+        }
+
         return {
           ...current,
           status: 'waiting',
@@ -1180,8 +1192,9 @@ export class TournamentRepository {
           lastSystemNotice: {
             type: 'countdown_canceled_unconfirmed',
             ts: now,
-            text: 'Countdown cancelado por ausência de confirmação. Vagas reabertas.',
+            text: noticeText,
             eventId: `countdown_unconfirmed_${instanceId}_${now}`,
+            removedPlayers: removedPlayers.map(p => ({ uid: p.uid, name: p.name })),
           },
           updatedAt: now,
         };

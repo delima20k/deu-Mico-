@@ -76,6 +76,18 @@ export class TournamentGlobalNotifierService {
   /** @type {boolean} */
   #confirmPresenceInFlight = false;
 
+  /** @type {number|null} */
+  #countdownTimerInterval = null;
+
+  /** @type {number|null} */
+  #countdownEndsAt = null;
+
+  /** @type {Function|null} */
+  #beforeUnloadListener = null;
+
+  /** @type {Function|null} */
+  #visibilityChangeListener = null;
+
   static #DEFAULT_TOAST_MS = 12000;
 
   static getInstance() {
@@ -125,6 +137,8 @@ export class TournamentGlobalNotifierService {
     this.#unsubTournament = null;
     this.#unsubAuth = null;
     this.#clearTimer();
+    this.#clearCountdownTimer();
+    this.#removeAppExitListeners();
   }
 
   /**
@@ -162,12 +176,15 @@ export class TournamentGlobalNotifierService {
     }
 
     if (status === 'countdown') {
+      const endsAt = Number(myInstance.countdownEndsAt || 0);
       if (!hasConfirmedPresence) {
         this.#showPresenceConfirmToast(myInstance);
+        this.#startCountdownTimer(endsAt);
+        this.#attachAppExitListeners(myInstance);
       } else {
         this.#hideActionButton();
+        this.#clearCountdownTimer();
       }
-      const endsAt = Number(myInstance.countdownEndsAt || 0);
       this.#scheduleRedirect(endsAt);
       return;
     }
@@ -186,7 +203,9 @@ export class TournamentGlobalNotifierService {
     }
 
     this.#clearTimer();
+    this.#clearCountdownTimer();
     this.#hideActionButton();
+    this.#removeAppExitListeners();
   }
 
   /**
@@ -256,7 +275,15 @@ export class TournamentGlobalNotifierService {
     }
 
     if (type === 'countdown_canceled_unconfirmed') {
-      this.#showToast('Countdown cancelado por ausência de confirmação. Vagas reabertas.');
+      const text = instance?.lastSystemNotice?.text || 'Countdown cancelado por ausência de confirmação. Vagas reabertas.';
+      this.#showToast(text);
+      this.#clearCountdownTimer();
+      this.#removeAppExitListeners();
+    }
+
+    if (type === 'player_removed_unconfirmed') {
+      const text = instance?.lastSystemNotice?.text || 'Um jogador não confirmou presença e foi removido.';
+      this.#showToast(text);
     }
   }
 
@@ -549,8 +576,12 @@ export class TournamentGlobalNotifierService {
     try {
       const result = await this.#tournamentService.confirmCurrentTournamentPresence(this.#pendingConfirmInstanceId);
       if (result?.confirmed) {
-        this.#toastSubtitleEl.textContent = 'Presença confirmada. Você será redirecionado para a partida.';
+        const remainMs = this.#countdownEndsAt ? Math.max(0, this.#countdownEndsAt - Date.now()) : 0;
+        const remainSec = Math.ceil(remainMs / 1000);
+        this.#toastSubtitleEl.textContent = `Presença confirmada. O campeonato vai começar em ${remainSec}s`;
         this.#toastActionBtnEl.textContent = 'Confirmado';
+        this.#toastActionBtnEl.disabled = true;
+        this.#removeAppExitListeners(); // Remove listeners após confirmação
       } else {
         this.#toastSubtitleEl.textContent = 'Não foi possível confirmar agora. Tente novamente.';
         this.#toastActionBtnEl.disabled = false;
@@ -571,6 +602,143 @@ export class TournamentGlobalNotifierService {
     if (this.#redirectTimer !== null) {
       clearTimeout(this.#redirectTimer);
       this.#redirectTimer = null;
+    }
+  }
+
+  /**
+   * Inicia timer de contagem regressiva visual.
+   * @param {number} endsAt
+   * @private
+   */
+  #startCountdownTimer(endsAt) {
+    this.#clearCountdownTimer();
+    if (!endsAt || endsAt <= 0) return;
+
+    this.#countdownEndsAt = endsAt;
+    this.#updateCountdownDisplay();
+
+    this.#countdownTimerInterval = setInterval(() => {
+      this.#updateCountdownDisplay();
+      
+      const remainMs = this.#countdownEndsAt - Date.now();
+      if (remainMs <= 0) {
+        this.#clearCountdownTimer();
+      }
+    }, 1000);
+  }
+
+  /**
+   * Atualiza o display da contagem regressiva.
+   * @private
+   */
+  #updateCountdownDisplay() {
+    if (!this.#toastSubtitleEl || !this.#countdownEndsAt) return;
+
+    const remainMs = Math.max(0, this.#countdownEndsAt - Date.now());
+    const remainSec = Math.ceil(remainMs / 1000);
+
+    if (this.#confirmPresenceInFlight) {
+      return; // Não atualiza durante confirmação
+    }
+
+    const hasConfirmed = this.#toastActionBtnEl?.textContent === 'Confirmado';
+    
+    // Adiciona classe de urgência quando restar pouco tempo
+    if (remainSec <= 15 && !hasConfirmed) {
+      this.#toastSubtitleEl.classList.add('global-tournament-toast__subtitle--urgent');
+    } else {
+      this.#toastSubtitleEl.classList.remove('global-tournament-toast__subtitle--urgent');
+    }
+
+    if (hasConfirmed) {
+      this.#toastSubtitleEl.textContent = `Presença confirmada. O campeonato vai começar em ${remainSec}s`;
+    } else {
+      this.#toastSubtitleEl.textContent = `Confirme sua presença para garantir vaga (${remainSec}s)`;
+    }
+  }
+
+  /**
+   * Limpa o timer de contagem regressiva.
+   * @private
+   */
+  #clearCountdownTimer() {
+    if (this.#countdownTimerInterval !== null) {
+      clearInterval(this.#countdownTimerInterval);
+      this.#countdownTimerInterval = null;
+    }
+    this.#countdownEndsAt = null;
+  }
+
+  /**
+   * Adiciona listeners para detectar quando o usuário sai do app.
+   * @param {Object} instance
+   * @private
+   */
+  #attachAppExitListeners(instance) {
+    if (!instance || !this.#myUid) return;
+
+    this.#removeAppExitListeners();
+
+    // beforeunload: quando usuário fecha aba/navegador
+    this.#beforeUnloadListener = () => {
+      if (!this.#myUid || !instance?.instanceId) return;
+      
+      // Usa sendBeacon para garantir que a requisição seja enviada mesmo com página fechando
+      const hasConfirmed = !!instance?.presenceConfirmations?.[this.#myUid]?.confirmed;
+      if (!hasConfirmed) {
+        console.log('[TournamentGlobalNotifier] Usuário saindo sem confirmar presença - removendo automaticamente');
+        
+        // Remove inscrição via API (usando navigator.sendBeacon se disponível)
+        void this.#tournamentService.leaveCurrentTournament().catch(err => {
+          console.warn('[TournamentGlobalNotifier] Erro ao remover inscrição no beforeunload:', err);
+        });
+      }
+    };
+
+    // visibilitychange: quando usuário minimiza ou troca de aba
+    this.#visibilityChangeListener = () => {
+      if (document.hidden && this.#myUid && instance?.instanceId) {
+        const hasConfirmed = !!instance?.presenceConfirmations?.[this.#myUid]?.confirmed;
+        
+        // Só remove se ficou oculto por mais de 10 segundos sem confirmar
+        if (!hasConfirmed) {
+          const checkHiddenTimeout = setTimeout(() => {
+            if (document.hidden) {
+              console.log('[TournamentGlobalNotifier] App oculto há 10s sem confirmação - removendo');
+              void this.#tournamentService.leaveCurrentTournament().catch(err => {
+                console.warn('[TournamentGlobalNotifier] Erro ao remover inscrição no visibilitychange:', err);
+              });
+            }
+          }, 10000); // 10 segundos
+
+          // Limpa timeout se voltar antes dos 10s
+          const clearOnVisible = () => {
+            if (!document.hidden) {
+              clearTimeout(checkHiddenTimeout);
+              document.removeEventListener('visibilitychange', clearOnVisible);
+            }
+          };
+          document.addEventListener('visibilitychange', clearOnVisible);
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', this.#beforeUnloadListener);
+    document.addEventListener('visibilitychange', this.#visibilityChangeListener);
+  }
+
+  /**
+   * Remove listeners de saída do app.
+   * @private
+   */
+  #removeAppExitListeners() {
+    if (this.#beforeUnloadListener) {
+      window.removeEventListener('beforeunload', this.#beforeUnloadListener);
+      this.#beforeUnloadListener = null;
+    }
+    if (this.#visibilityChangeListener) {
+      document.removeEventListener('visibilitychange', this.#visibilityChangeListener);
+      this.#visibilityChangeListener = null;
     }
   }
 }

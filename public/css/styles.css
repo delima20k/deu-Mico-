@@ -164,6 +164,22 @@ body {
   font-size: clamp(0.74rem, 1.95vw, 0.86rem);
   font-weight: 600;
   color: rgba(255, 255, 255, 0.9);
+  transition: color 0.3s ease;
+}
+
+.global-tournament-toast__subtitle--urgent {
+  color: #ff6b6b;
+  font-weight: 700;
+  animation: pulse-urgent 1s ease-in-out infinite;
+}
+
+@keyframes pulse-urgent {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 
 .global-tournament-toast__action {
