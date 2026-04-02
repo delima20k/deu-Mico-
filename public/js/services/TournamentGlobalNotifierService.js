@@ -225,7 +225,16 @@ export class TournamentGlobalNotifierService {
 
     if (status === 'countdown') {
       const endsAt = Number(myInstance.countdownEndsAt || 0);
-      const remainSec = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+      const countdownStartAt = Number(myInstance.countdownStartAt || 0);
+      // Duracão real armazenada no Firebase; capeamos o remainSec para evitar
+      // que diferênças de relógio entre clientes mostrem mais de 1 minuto.
+      const durationMs = (countdownStartAt > 0 && endsAt > countdownStartAt)
+        ? (endsAt - countdownStartAt)
+        : 60_000;
+      const remainSec = Math.min(
+        Math.round(durationMs / 1000),
+        Math.max(0, Math.ceil((endsAt - Date.now()) / 1000))
+      );
       
       console.log(`[TournamentGlobalNotifier] ⏰ STATUS COUNTDOWN detectado!`, {
         uid: this.#myUid?.slice(0,8),
@@ -246,7 +255,7 @@ export class TournamentGlobalNotifierService {
         this.#hideActionButton();
         this.#clearCountdownTimer();
       }
-      this.#scheduleRedirect(endsAt);
+      this.#scheduleRedirect(endsAt, durationMs);
       return;
     }
 
@@ -379,17 +388,34 @@ export class TournamentGlobalNotifierService {
 
   /**
    * @param {number} endsAt
+   * @param {number} [maxDelayMs] - Duração máxima do countdown (para normalizar relógios divergentes)
    * @private
    */
-  #scheduleRedirect(endsAt) {
+  #scheduleRedirect(endsAt, maxDelayMs = 60_000) {
     if (!endsAt || endsAt <= 0) return;
 
-    const delay = Math.max(0, endsAt - Date.now());
+    const now = Date.now();
+    // Capeamos pelo maxDelayMs para que clientes com relógio atrasado
+    // não aguardem mais do que a duração real do countdown.
+    const delay = Math.min(maxDelayMs, Math.max(0, endsAt - now));
+    
+    console.log(`[TournamentGlobalNotifier] 📅 #scheduleRedirect:`, {
+      endsAt: new Date(endsAt).toISOString(),
+      now: new Date(now).toISOString(),
+      delay: delay,
+      delaySec: Math.round(delay / 1000),
+      hasExistingTimer: this.#redirectTimer !== null,
+    });
+    
     if (this.#redirectTimer !== null) {
+      console.log(`[TournamentGlobalNotifier] ⏸️ Timer já existe, ignorando nova tentativa`);
       return;
     }
 
+    console.log(`[TournamentGlobalNotifier] ⏰ Agendando início automático em ${Math.round(delay/1000)}s`);
+
     this.#redirectTimer = setTimeout(async () => {
+      console.log(`[TournamentGlobalNotifier] ⏰ Timer disparado! Iniciando torneio...`);
       this.#redirectTimer = null;
 
       try {
@@ -448,14 +474,18 @@ export class TournamentGlobalNotifierService {
         return;
       }
     } catch (error) {
-      const isPermissionDenied = String(error?.message || error).includes('permission_denied');
+      const errMsg = String(error?.message || error);
+      const isPermissionDenied = errMsg.includes('permission_denied') || errMsg.includes('Permission denied');
       if (isPermissionDenied) {
-        console.warn(`[TournamentGlobalNotifier] Sem permissão para partida ${matchId} — usuário não é jogador ou partida encerrada. Redirect cancelado.`);
+        // Partida pode ainda não ter sido criada no Firebase (race condition).
+        // NÃO bloqueia retry — a próxima atualização de estado vai tentar novamente.
+        console.warn(`[TournamentGlobalNotifier] Sem permissão para partida ${matchId} — possível race condition, aguardando próxima atualização de estado.`);
+        return;
       } else {
         console.error('[TournamentGlobalNotifier] Erro ao validar partida antes de redirecionar:', error);
+        this.#lastForcedMatchId = matchId;
+        return;
       }
-      this.#lastForcedMatchId = matchId;
-      return;
     }
 
     const playersMap = instance?.activePlayers && Object.keys(instance.activePlayers).length > 0
@@ -661,7 +691,15 @@ export class TournamentGlobalNotifierService {
     console.log('[TournamentGlobalNotifier] ✅ Todos os elementos do toast existem');
 
     const endsAt = Number(instance?.countdownEndsAt || 0);
-    const remainSec = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+    const countdownStartAt = Number(instance?.countdownStartAt || 0);
+    const durationMs = (countdownStartAt > 0 && endsAt > countdownStartAt)
+      ? (endsAt - countdownStartAt)
+      : 60_000;
+    // Capeamos pelo durationMs para evitar exibir mais de 1 minuto em clientes com relógio atrasado.
+    const remainSec = Math.min(
+      Math.round(durationMs / 1000),
+      Math.max(0, Math.ceil((endsAt - Date.now()) / 1000))
+    );
 
     console.log(`[TournamentGlobalNotifier] ⏰ Tempo restante: ${remainSec}s (endsAt=${new Date(endsAt).toISOString()})`);
     console.log(`[TournamentGlobalNotifier] 🔔 Mostrando toast de confirmação para ${this.#myUid?.slice(0,8)} (${remainSec}s restantes)`);
@@ -755,7 +793,9 @@ export class TournamentGlobalNotifierService {
         setTimeout(() => {
           this.#hideToast();
           if (this.#screenManager) {
-            this.#screenManager.navigateTo('tournament');
+            this.#screenManager.show('TournamentScreen').catch(() => {
+              window.location.hash = '#tournament';
+            });
           } else {
             window.location.hash = '#tournament';
           }
