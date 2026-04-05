@@ -125,6 +125,20 @@ export class TournamentGlobalNotifierService {
     this.#unsubAuth = this.#authService.onAuthStateChanged((user) => {
       this.#myUid = user?.uid || null;
       console.log(`[TournamentGlobalNotifier] 👤 Auth state changed: uid=${user?.uid?.slice(0,8) || 'null'}`);
+
+      // Se a subscription falhou antes (auth não estava pronta) e agora há usuário, tenta criar
+      if (user?.uid && !this.#unsubTournament) {
+        console.log('[TournamentGlobalNotifier] 🔄 Auth disponível — criando subscription que falhou anteriormente...');
+        this.#tournamentService.subscribeCurrentTournament((state) => {
+          console.log('[TournamentGlobalNotifier] 📥 State update received (late start)');
+          this.#handleTournamentState(state);
+        }).then((unsub) => {
+          this.#unsubTournament = unsub;
+          console.log('[TournamentGlobalNotifier] ✅ Subscription iniciada após auth resolver');
+        }).catch((err) => {
+          console.warn('[TournamentGlobalNotifier] ⚠️ Falha ao iniciar subscription após auth:', err.message);
+        });
+      }
     });
 
     const currentUser = await this.#authService.getCurrentUser().catch(() => null);

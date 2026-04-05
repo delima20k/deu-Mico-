@@ -47,6 +47,25 @@ export class TournamentService {
   /** @type {boolean} */
   #ensuringJoinableInstance = false;
 
+  /** @type {Set<Function>} Callbacks inscritos no estado do torneio (singleton subscription) */
+  #tournamentCallbacks = new Set();
+
+  /** @type {Function|null} Cancela o `onValue` de instâncias compartilhado */
+  #sharedInstancesUnsub = null;
+
+  /** @type {Function|null} Cancela o `onAuthStateChanged` compartilhado */
+  #sharedAuthUnsub = null;
+
+  /** @type {string|null} TournamentId da subscription compartilhada ativa */
+  #sharedTournamentId = null;
+
+  /** @type {string|null} UID atual compartilhado entre todos os callbacks */
+  #sharedMyUid = null;
+
+  /** Timestamp da última chamada de ensureJoinableInstance (previne tight loop) */
+  #lastEnsureJoinableAt = 0;
+  static #ENSURE_JOINABLE_COOLDOWN_MS = 5_000;
+
   /**
    * Registra que o usuário saiu voluntariamente de uma partida.
    * Persiste em localStorage para sobreviver a refreshes.
@@ -128,128 +147,182 @@ export class TournamentService {
 
   /**
    * Observa estado realtime do torneio atual.
+   * Usa uma subscription SINGLETON compartilhada entre todos os callers:
+   * uma única `onValue` listener para `tournaments/instances` independente
+   * de quantas vezes este método for chamado.
    * @param {(state: Object|null) => void} callback
    * @returns {Promise<Function>} unsubscribe
    */
   async subscribeCurrentTournament(callback) {
     const tournamentId = await this.ensureCurrentTournament();
-    const currentUser = await this.#authService.getCurrentUser().catch(() => null);
-    let myUid = currentUser?.uid || null;
 
-    const unsubAuth = this.#authService.onAuthStateChanged((user) => {
-      myUid = user?.uid || null;
-    });
+    // Registra o callback na lista de subscribers
+    this.#tournamentCallbacks.add(callback);
 
-    const unsubInstances = this.#repo.subscribeTournamentInstances(tournamentId, (instances) => {
-      const list = Array.isArray(instances) ? instances : [];
-
-      // Instâncias stale detectadas neste ciclo para limpeza assíncrona
-      const staleInstancesForUid = [];
-
-      const myInstance = myUid
-        ? list.find((instance) => {
-          const hasMe = !!instance?.enrolledUsers?.[myUid];
-          const status = instance?.status || 'waiting';
-          
-          console.log(`[TournamentService] 🔍 Verificando instância ${instance?.instanceId} - status=${status} hasMe=${hasMe} uid=${myUid?.slice(0,8)}`);
-          
-          // Se a instância está finished, limpa o enrollmentIndex
-          if (hasMe && status === 'finished') {
-            console.log(`[TournamentService] ♻️ Instância finished - limpando enrollmentIndex`);
-            staleInstancesForUid.push({ instanceId: instance.instanceId, strategy: 'clear-index-finished' });
-            return false;
-          }
-          
-          if (!hasMe || status === 'finished') return false;
-          
-          // Se a instância está ativa, o usuário precisa estar em activePlayers
-          // Caso contrário é uma inscrição stale (sobrou de partida anterior)
-          if (status === 'active') {
-            const isActivePlayer = !!instance?.activePlayers?.[myUid];
-            console.log(`[TournamentService] 🎮 Instância active - isActivePlayer=${isActivePlayer}`);
-            if (!isActivePlayer) {
-              console.log(`[TournamentService] ⚠️ Usuário em enrolledUsers mas não em activePlayers - limpando`);
-              staleInstancesForUid.push({ instanceId: instance.instanceId, strategy: 'clear-index' });
-              return false;
-            }
-          }
-
-          // ✅ CORREÇÃO CRÍTICA: NÃO remove usuários automaticamente no countdown!
-          // O countdown tem seu próprio timer de 60s que remove não-confirmados.
-          // Remover aqui impede que o popup de confirmação apareça!
-          if (status === 'countdown') {
-            const confirmed = !!instance?.presenceConfirmations?.[myUid]?.confirmed;
-            console.log(`[TournamentService] ⏰ Countdown detectado - confirmed=${confirmed} confirmationRequired=${!!instance?.confirmationRequired}`);
-            // Retorna true para permitir que TournamentGlobalNotifierService mostre o popup
-            return true;
-          }
-          
-          return true;
-        }) || null
-        : null;
-      
-      if (myInstance) {
-        console.log(`[TournamentService] ✅ myInstance encontrado:`, {
-          instanceId: myInstance.instanceId,
-          status: myInstance.status,
-          enrolledCount: myInstance.enrolledCount,
-          confirmationRequired: myInstance.confirmationRequired,
-          hasPresenceConfirmation: !!myInstance.presenceConfirmations?.[myUid],
-          confirmed: !!myInstance.presenceConfirmations?.[myUid]?.confirmed,
-        });
-      } else {
-        console.log(`[TournamentService] ❌ Nenhuma instância válida para uid=${myUid?.slice(0,8)}`);
-      }
-
-      // Limpa enrollmentIndex de instâncias stale em background
-      if (myUid && staleInstancesForUid.length > 0) {
-        staleInstancesForUid.forEach(({ instanceId, strategy }) => {
-          console.log(`[TournamentService] ♻️ Limpando inscrição stale uid=${myUid?.slice(0,8)} instanceId=${instanceId} strategy=${strategy}`);
-
-          // Limpa apenas o enrollmentIndex (não remove o usuário da instância)
-          this.#repo.removeEnrollmentIndex(tournamentId, myUid).catch((err) => {
-            console.warn('[TournamentService] Falha ao limpar enrollmentIndex stale:', err);
-          });
-        });
-      }
-
-      const waitingJoinable = list.find((instance) => {
-        const status = instance?.status || 'waiting';
-        const count = Number(instance?.enrolledCount || 0);
-        const max = Number(instance?.maxParticipants || TournamentService.DEFAULT_MAX_PARTICIPANTS);
-        return status === 'waiting' && count < max;
-      }) || null;
-
-      if (!waitingJoinable && !this.#ensuringJoinableInstance) {
-        this.#ensuringJoinableInstance = true;
-        this.#repo.ensureJoinableInstance(tournamentId, {
-          maxParticipants: TournamentService.DEFAULT_MAX_PARTICIPANTS,
-        }).catch((error) => {
-          console.warn('[TournamentRound] Falha ao garantir nova instancia waiting:', error);
-        }).finally(() => {
-          this.#ensuringJoinableInstance = false;
-        });
-      }
-
-      const selectedInstance = myInstance || waitingJoinable || null;
-      if (selectedInstance?.instanceId) {
-        this.#currentInstanceId = selectedInstance.instanceId;
-      }
-
-      callback({
-        tournamentId,
-        myUid,
-        instances: list,
-        myInstance,
-        joinableInstance: waitingJoinable,
-        selectedInstance,
-      });
-    });
+    // Cria a subscription compartilhada se ainda não existir ou mudou o tournamentId
+    if (!this.#sharedInstancesUnsub || this.#sharedTournamentId !== tournamentId) {
+      await this.#startSharedTournamentSubscription(tournamentId);
+    }
 
     return () => {
-      unsubInstances?.();
-      unsubAuth?.();
+      this.#tournamentCallbacks.delete(callback);
+      if (this.#tournamentCallbacks.size === 0) {
+        this.#stopSharedTournamentSubscription();
+      }
     };
+  }
+
+  /**
+   * Cria (ou recria) a subscription RTDB compartilhada para instâncias do torneio.
+   * @param {string} tournamentId
+   * @private
+   */
+  async #startSharedTournamentSubscription(tournamentId) {
+    this.#stopSharedTournamentSubscription();
+    this.#sharedTournamentId = tournamentId;
+
+    const currentUser = await this.#authService.getCurrentUser().catch(() => null);
+    this.#sharedMyUid = currentUser?.uid || null;
+
+    this.#sharedAuthUnsub = this.#authService.onAuthStateChanged((user) => {
+      this.#sharedMyUid = user?.uid || null;
+    });
+
+    this.#sharedInstancesUnsub = this.#repo.subscribeTournamentInstances(tournamentId, (instances) => {
+      this.#processInstancesUpdate(tournamentId, instances);
+    });
+  }
+
+  /**
+   * Cancela a subscription RTDB compartilhada.
+   * @private
+   */
+  #stopSharedTournamentSubscription() {
+    this.#sharedInstancesUnsub?.();
+    this.#sharedAuthUnsub?.();
+    this.#sharedInstancesUnsub = null;
+    this.#sharedAuthUnsub = null;
+    this.#sharedTournamentId = null;
+  }
+
+  /**
+   * Processa um update de instâncias e notifica todos os callbacks registrados.
+   * @param {string} tournamentId
+   * @param {Array} instances
+   * @private
+   */
+  #processInstancesUpdate(tournamentId, instances) {
+    const myUid = this.#sharedMyUid;
+    const list = Array.isArray(instances) ? instances : [];
+
+    // Instâncias stale detectadas neste ciclo para limpeza assíncrona
+    const staleInstancesForUid = [];
+
+    const myInstance = myUid
+      ? list.find((instance) => {
+        const hasMe = !!instance?.enrolledUsers?.[myUid];
+        const status = instance?.status || 'waiting';
+
+        console.log(`[TournamentService] 🔍 Verificando instância ${instance?.instanceId} - status=${status} hasMe=${hasMe} uid=${myUid?.slice(0,8)}`);
+
+        // Se a instância está finished, limpa o enrollmentIndex
+        if (hasMe && status === 'finished') {
+          console.log(`[TournamentService] ♻️ Instância finished - limpando enrollmentIndex`);
+          staleInstancesForUid.push({ instanceId: instance.instanceId, strategy: 'clear-index-finished' });
+          return false;
+        }
+
+        if (!hasMe || status === 'finished') return false;
+
+        // Se a instância está ativa, o usuário precisa estar em activePlayers
+        // Caso contrário é uma inscrição stale (sobrou de partida anterior)
+        if (status === 'active') {
+          const isActivePlayer = !!instance?.activePlayers?.[myUid];
+          console.log(`[TournamentService] 🎮 Instância active - isActivePlayer=${isActivePlayer}`);
+          if (!isActivePlayer) {
+            console.log(`[TournamentService] ⚠️ Usuário em enrolledUsers mas não em activePlayers - limpando`);
+            staleInstancesForUid.push({ instanceId: instance.instanceId, strategy: 'clear-index' });
+            return false;
+          }
+        }
+
+        // Não remove usuários no countdown — o timer de 60s faz isso.
+        if (status === 'countdown') {
+          const confirmed = !!instance?.presenceConfirmations?.[myUid]?.confirmed;
+          console.log(`[TournamentService] ⏰ Countdown detectado - confirmed=${confirmed} confirmationRequired=${!!instance?.confirmationRequired}`);
+          return true;
+        }
+
+        return true;
+      }) || null
+      : null;
+
+    if (myInstance) {
+      console.log(`[TournamentService] ✅ myInstance encontrado:`, {
+        instanceId: myInstance.instanceId,
+        status: myInstance.status,
+        enrolledCount: myInstance.enrolledCount,
+        confirmationRequired: myInstance.confirmationRequired,
+        hasPresenceConfirmation: !!myInstance.presenceConfirmations?.[myUid],
+        confirmed: !!myInstance.presenceConfirmations?.[myUid]?.confirmed,
+      });
+    } else {
+      console.log(`[TournamentService] ❌ Nenhuma instância válida para uid=${myUid?.slice(0,8)}`);
+    }
+
+    // Limpa enrollmentIndex de instâncias stale em background
+    if (myUid && staleInstancesForUid.length > 0) {
+      staleInstancesForUid.forEach(({ instanceId, strategy }) => {
+        console.log(`[TournamentService] ♻️ Limpando inscrição stale uid=${myUid?.slice(0,8)} instanceId=${instanceId} strategy=${strategy}`);
+        this.#repo.removeEnrollmentIndex(tournamentId, myUid).catch((err) => {
+          console.warn('[TournamentService] Falha ao limpar enrollmentIndex stale:', err);
+        });
+      });
+    }
+
+    const waitingJoinable = list.find((instance) => {
+      const status = instance?.status || 'waiting';
+      const count = Number(instance?.enrolledCount || 0);
+      const max = Number(instance?.maxParticipants || TournamentService.DEFAULT_MAX_PARTICIPANTS);
+      return status === 'waiting' && count < max;
+    }) || null;
+
+    // Garante instância aguardando joinable — protegido por flag + cooldown para evitar loops
+    const now = Date.now();
+    if (
+      !waitingJoinable &&
+      !this.#ensuringJoinableInstance &&
+      (now - this.#lastEnsureJoinableAt) > TournamentService.#ENSURE_JOINABLE_COOLDOWN_MS
+    ) {
+      this.#lastEnsureJoinableAt = now;
+      this.#ensuringJoinableInstance = true;
+      console.log(`[TournamentService] 🏗️ Sem instância joinable — criando nova (cooldown ok)`);
+      this.#repo.ensureJoinableInstance(tournamentId, {
+        maxParticipants: TournamentService.DEFAULT_MAX_PARTICIPANTS,
+      }).catch((error) => {
+        console.warn('[TournamentRound] Falha ao garantir nova instancia waiting:', error);
+      }).finally(() => {
+        this.#ensuringJoinableInstance = false;
+      });
+    }
+
+    const selectedInstance = myInstance || waitingJoinable || null;
+    if (selectedInstance?.instanceId) {
+      this.#currentInstanceId = selectedInstance.instanceId;
+    }
+
+    const state = {
+      tournamentId,
+      myUid,
+      instances: list,
+      myInstance,
+      joinableInstance: waitingJoinable,
+      selectedInstance,
+    };
+
+    for (const cb of this.#tournamentCallbacks) {
+      cb(state);
+    }
   }
 
   /**
