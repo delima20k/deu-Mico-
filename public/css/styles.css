@@ -103,7 +103,7 @@ body {
 .global-tournament-toast {
   position: fixed;
   left: 50%;
-  top: max(14px, env(safe-area-inset-top, 0px) + 8px);
+  top: max(14px, calc(env(safe-area-inset-top, 0px) + 8px));
   bottom: auto;
   transform: translateX(-50%) translateY(-14px);
   background: rgba(18, 38, 24, 0.96);

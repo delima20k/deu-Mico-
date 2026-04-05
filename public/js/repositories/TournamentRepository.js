@@ -698,6 +698,13 @@ export class TournamentRepository {
                         `enrolledCount=${enrolledCount}/${normalizedMax} ` +
                         `endsAt=${new Date(countdownEndsAt).toISOString()} ` +
                         `eventId=${lastSystemNotice.eventId}`);
+            console.log(`[TournamentRepository] 📅 Detalhes do countdown:`, {
+              now: new Date(now).toISOString(),
+              countdownStartAt: new Date(countdownStartAt).toISOString(),
+              countdownEndsAt: new Date(countdownEndsAt).toISOString(),
+              durationMs: countdownDurationMs,
+              durationSec: Math.round(countdownDurationMs / 1000),
+            });
           }
 
           return {
@@ -1132,6 +1139,8 @@ export class TournamentRepository {
 
     let shouldCreateMatch = false;
     let newMatchId = null;
+    
+    console.log(`[TournamentRound] ⏰ startInstanceIfCountdownElapsed chamado para ${instanceId}`);
 
     const result = await dbMod.runTransaction(ref, (current) => {
       if (!current) return current;
@@ -1139,10 +1148,26 @@ export class TournamentRepository {
       const now = Date.now();
       const status = current.status || 'waiting';
       const endAt = Number(current.countdownEndsAt || 0);
+      
+      console.log(`[TournamentRound] 📊 Transaction check:`, {
+        instanceId,
+        status,
+        endAt: endAt ? new Date(endAt).toISOString() : 'null',
+        now: new Date(now).toISOString(),
+        diff: endAt ? Math.round((endAt - now) / 1000) : 'N/A',
+        willProceed: status === 'countdown' && endAt > 0 && now >= endAt,
+      });
 
       if (status === 'finished') return current;
 
       if (status === 'active') {
+        // Recuperação: se a partida ainda não foi criada (race condition ou falha anterior),
+        // marca shouldCreateMatch=true para tentar novamente (ensureTournamentMatch é idempotente).
+        if (current.currentMatchId && !current.processedMatchResults?.[current.currentMatchId]) {
+          shouldCreateMatch = true;
+          newMatchId = current.currentMatchId;
+          console.log(`[TournamentRound] 🔄 Status já active - garantindo criação da partida ${current.currentMatchId}`);
+        }
         return {
           ...current,
           updatedAt: now,
@@ -1150,8 +1175,11 @@ export class TournamentRepository {
       }
 
       if (status !== 'countdown' || endAt <= 0 || now < endAt) {
+        console.log(`[TournamentRound] ⏸️ Não iniciando: status=${status}, endAt=${endAt}, now=${now}, now<endAt=${now < endAt}`);
         return current;
       }
+      
+      console.log(`[TournamentRound] ✅ Countdown expirou! Processando...`);
 
       const enrolledUsers = { ...(current.enrolledUsers || {}) };
       const confirmationRequired = !!current.confirmationRequired;
@@ -1653,11 +1681,11 @@ export class TournamentRepository {
       joinedCount: 0,
       createdAt: now,
       createdTs: now,
-      meta: {
-        tournamentId: data?.tournamentId || null,
-        tournamentInstanceId: data?.instanceId || null,
-        tournamentMatchNumber: Number(data?.matchNumber || 1),
-      },
+      // CRÍTICO: tournamentInstanceId no nível raiz de meta para satisfazer a regra de
+      // leitura do RTDB: root.child('matches/{id}/meta/tournamentInstanceId').val() != null
+      tournamentInstanceId: data?.instanceId || null,
+      tournamentId: data?.tournamentId || null,
+      tournamentMatchNumber: Number(data?.matchNumber || 1),
     };
 
     const playersPayload = {};
@@ -1670,9 +1698,12 @@ export class TournamentRepository {
       };
     }
 
+    // Inclui players diretamente no metaPayload para satisfazer a regra de escrita:
+    // !data.exists() && newData.child('players').hasChildren()
+    metaPayload.players = playersPayload;
+
     await dbMod.update(dbMod.ref(db), {
       [`matches/${matchId}/meta`]: metaPayload,
-      [`matches/${matchId}/meta/players`]: playersPayload,
       [`matches/${matchId}/state`]: 'pending',
     });
   }

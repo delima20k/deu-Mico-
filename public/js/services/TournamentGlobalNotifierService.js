@@ -477,9 +477,16 @@ export class TournamentGlobalNotifierService {
       const errMsg = String(error?.message || error);
       const isPermissionDenied = errMsg.includes('permission_denied') || errMsg.includes('Permission denied');
       if (isPermissionDenied) {
-        // Partida pode ainda não ter sido criada no Firebase (race condition).
-        // NÃO bloqueia retry — a próxima atualização de estado vai tentar novamente.
-        console.warn(`[TournamentGlobalNotifier] Sem permissão para partida ${matchId} — possível race condition, aguardando próxima atualização de estado.`);
+        // Partida não existe ainda (race condition) ou falhou ao ser criada.
+        // Tenta forçar a criação via startIfCountdownElapsed (idempotente) e aguarda.
+        console.warn(`[TournamentGlobalNotifier] Sem permissão para partida ${matchId} — tentando criar partida...`);
+        try {
+          await this.#tournamentService.startIfCountdownElapsed();
+          console.log(`[TournamentGlobalNotifier] startIfCountdownElapsed executado para recuperar partida ${matchId}`);
+        } catch (retryErr) {
+          console.warn('[TournamentGlobalNotifier] Falha ao recuperar partida via startIfCountdownElapsed:', retryErr);
+        }
+        // Não bloqueia com lastForcedMatchId — próxima atualização de estado vai tentar novamente.
         return;
       } else {
         console.error('[TournamentGlobalNotifier] Erro ao validar partida antes de redirecionar:', error);
