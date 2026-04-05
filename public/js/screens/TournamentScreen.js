@@ -618,6 +618,17 @@ export class TournamentScreen extends Screen {
     const status = state.status || 'waiting';
     const isJoined = !!(this.#myUid && state.enrolledUsers?.[this.#myUid]);
 
+    // Verifica se o usuário está em uma instância ATIVA diferente da exibida.
+    // Nesse caso o botão PARTICIPAR deve permanecer desabilitado para evitar loop de inscrição.
+    const myActiveElsewhere = this.#myUid
+      ? (Array.isArray(this.#currentRealtimeState?.instances)
+          ? this.#currentRealtimeState.instances : []).find((inst) => {
+          const hasMe = !!inst?.enrolledUsers?.[this.#myUid];
+          return hasMe && inst?.status === 'active' && !!inst?.activePlayers?.[this.#myUid]
+            && inst?.instanceId !== state.instanceId;
+        }) || null
+      : null;
+
     this.#tournamentCard.update({
       ...state,
       name: `Rodada ${String(state.instanceId || '').slice(-6)}`,
@@ -628,9 +639,11 @@ export class TournamentScreen extends Screen {
       ?.querySelector('.tournament-card__join-btn');
 
     if (joinBtn) {
-      joinBtn.disabled = this.#isJoiningTournament || this.#isLeavingTournament || isJoined || status === 'active';
+      joinBtn.disabled = this.#isJoiningTournament || this.#isLeavingTournament || isJoined || status === 'active' || !!myActiveElsewhere;
       joinBtn.textContent = this.#isJoiningTournament
         ? 'INSCREVENDO...'
+        : myActiveElsewhere
+        ? 'EM PARTIDA'
         : isJoined
         ? 'INSCRITO'
         : status === 'active'
@@ -902,7 +915,9 @@ export class TournamentScreen extends Screen {
 
       if (remainingMs <= 0) {
         this.#clearCountdownTicker();
-        void this.#tryStartTournament();
+        // DESABILITADO: TournamentGlobalNotifierService já cuida disso globalmente
+        // void this.#tryStartTournament();
+        console.log(`[TournamentScreen] Countdown expirou (delegando para TournamentGlobalNotifierService)`);
       }
     };
 
@@ -1028,7 +1043,9 @@ export class TournamentScreen extends Screen {
     if (!isJoined) return;
 
     if (state.status === 'countdown') {
-      void this.#tryStartTournament();
+      // DESABILITADO: TournamentGlobalNotifierService já cuida disso
+      // void this.#tryStartTournament();
+      console.log(`[TournamentScreen] Status countdown detectado (delegando para TournamentGlobalNotifierService)`);
       return;
     }
 
@@ -1133,31 +1150,47 @@ export class TournamentScreen extends Screen {
         this.#justJoinedAt = Date.now();
         this.#statusBannerEl.textContent = 'Inscricao confirmada. Aguarde os demais participantes.';
       } else if (result?.alreadyJoined) {
-        // Auto-cura: Firebase diz "já inscrito" mas a UI não mostra o usuário na instância
-        // visível (dados stale de rodada anterior). Força saída e tenta de novo.
-        const uiShowsMeEnrolled = !!(this.#currentTournament?.enrolledUsers?.[this.#myUid]);
-        if (!uiShowsMeEnrolled) {
-          console.warn('[TournamentRound] alreadyJoined=true mas UI não mostra inscrição — forçando limpeza e re-inscrição...');
-          try {
-            await this.#tournamentService.leaveCurrentTournament();
-          } catch (_) { /* ignora erro de saída */ }
-          // Garante remoção direta do índice mesmo que leaveTournament falhe
-          try {
-            const tournamentId = await this.#tournamentService.getCurrentTournamentId();
-            if (tournamentId) {
-              await TournamentRepository.getInstance().removeEnrollmentIndex(tournamentId, this.#myUid);
-            }
-          } catch (_) { /* ignora */ }
-          // Tenta nova inscrição após forçar saída
-          const retryResult = await this.#tournamentService.joinCurrentTournament();
-          if (retryResult?.joined) {
-            this.#justJoinedAt = Date.now();
-            this.#statusBannerEl.textContent = 'Inscricao confirmada. Aguarde os demais participantes.';
-          } else {
-            this.#statusBannerEl.textContent = 'Aguardando sincronizacao. Tente novamente em instantes.';
-          }
+        // Verifica se o "alreadyJoined" vem de uma instância DIFERENTE da exibida na UI.
+        // Isso acontece quando o usuário está em uma instância ACTIVE enquanto a UI mostra
+        // uma instância WAITING diferente — nesse caso NÃO deve tentar auto-heal/re-inscrição
+        // pois causaria loop infinito.
+        const isInDifferentInstance = !!(
+          result.instanceId &&
+          this.#currentTournament?.instanceId &&
+          result.instanceId !== this.#currentTournament.instanceId
+        );
+
+        if (isInDifferentInstance) {
+          // Usuário já está em outra rodada (possivelmente ativa) — sem loop
+          console.log(`[TournamentRound] alreadyJoined em instância diferente (${result.instanceId}) da exibida (${this.#currentTournament?.instanceId}) — sem auto-heal`);
+          this.#statusBannerEl.textContent = 'Voce ja esta em outra rodada do campeonato.';
         } else {
-          this.#statusBannerEl.textContent = 'Voce ja esta inscrito nesta rodada.';
+          // Auto-cura: Firebase diz "já inscrito" mas a UI não mostra o usuário na instância
+          // visível (dados stale de rodada anterior). Força saída e tenta de novo.
+          const uiShowsMeEnrolled = !!(this.#currentTournament?.enrolledUsers?.[this.#myUid]);
+          if (!uiShowsMeEnrolled) {
+            console.warn('[TournamentRound] alreadyJoined=true mas UI não mostra inscrição — forçando limpeza e re-inscrição...');
+            try {
+              await this.#tournamentService.leaveCurrentTournament();
+            } catch (_) { /* ignora erro de saída */ }
+            // Garante remoção direta do índice mesmo que leaveTournament falhe
+            try {
+              const tournamentId = await this.#tournamentService.getCurrentTournamentId();
+              if (tournamentId) {
+                await TournamentRepository.getInstance().removeEnrollmentIndex(tournamentId, this.#myUid);
+              }
+            } catch (_) { /* ignora */ }
+            // Tenta nova inscrição após forçar saída
+            const retryResult = await this.#tournamentService.joinCurrentTournament();
+            if (retryResult?.joined) {
+              this.#justJoinedAt = Date.now();
+              this.#statusBannerEl.textContent = 'Inscricao confirmada. Aguarde os demais participantes.';
+            } else {
+              this.#statusBannerEl.textContent = 'Aguardando sincronizacao. Tente novamente em instantes.';
+            }
+          } else {
+            this.#statusBannerEl.textContent = 'Voce ja esta inscrito nesta rodada.';
+          }
         }
       }
       console.log(
