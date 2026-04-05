@@ -49,6 +49,9 @@ export class TournamentGlobalNotifierService {
   /** @type {string|null} */
   #lastForcedMatchId = null;
 
+  /** @type {Map<string, number>} Contador de tentativas de criação de partida por matchId */
+  #matchCreateAttempts = new Map();
+
   /** @type {number|null} */
   #redirectTimer = null;
 
@@ -477,16 +480,28 @@ export class TournamentGlobalNotifierService {
       const errMsg = String(error?.message || error);
       const isPermissionDenied = errMsg.includes('permission_denied') || errMsg.includes('Permission denied');
       if (isPermissionDenied) {
-        // Partida não existe ainda (race condition) ou falhou ao ser criada.
-        // Tenta forçar a criação via startIfCountdownElapsed (idempotente) e aguarda.
-        console.warn(`[TournamentGlobalNotifier] Sem permissão para partida ${matchId} — tentando criar partida...`);
+        // Partida não existe ainda (ou criada com estrutura incorreta).
+        // Limita tentativas para evitar loop caso Firebase continue negando.
+        const attempts = (this.#matchCreateAttempts.get(matchId) || 0) + 1;
+        this.#matchCreateAttempts.set(matchId, attempts);
+
+        if (attempts > 3) {
+          console.error(`[TournamentGlobalNotifier] Sem permissão persistente para ${matchId} após ${attempts} tentativas — desistindo.`);
+          this.#lastForcedMatchId = matchId;
+          this.#matchCreateAttempts.delete(matchId);
+          return;
+        }
+
+        console.warn(`[TournamentGlobalNotifier] Sem permissão para partida ${matchId} (tentativa ${attempts}/3) — criando partida...`);
         try {
           await this.#tournamentService.startIfCountdownElapsed();
-          console.log(`[TournamentGlobalNotifier] startIfCountdownElapsed executado para recuperar partida ${matchId}`);
+          console.log(`[TournamentGlobalNotifier] startIfCountdownElapsed OK — retentando redirect para ${matchId}`);
+          // Reseta o guard para permitir o retry imediato
+          if (this.#lastForcedMatchId === matchId) this.#lastForcedMatchId = null;
+          await this.#forceToTournamentMatch(instance);
         } catch (retryErr) {
           console.warn('[TournamentGlobalNotifier] Falha ao recuperar partida via startIfCountdownElapsed:', retryErr);
         }
-        // Não bloqueia com lastForcedMatchId — próxima atualização de estado vai tentar novamente.
         return;
       } else {
         console.error('[TournamentGlobalNotifier] Erro ao validar partida antes de redirecionar:', error);

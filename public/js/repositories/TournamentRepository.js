@@ -1168,10 +1168,9 @@ export class TournamentRepository {
           newMatchId = current.currentMatchId;
           console.log(`[TournamentRound] 🔄 Status já active - garantindo criação da partida ${current.currentMatchId}`);
         }
-        return {
-          ...current,
-          updatedAt: now,
-        };
+        // CRÍTICO: retorna current SEM alterar updatedAt.
+        // Escrever updatedAt causaria nova atualização RTDB → novo handleTournamentState → loop infinito.
+        return current;
       }
 
       if (status !== 'countdown' || endAt <= 0 || now < endAt) {
@@ -1659,8 +1658,21 @@ export class TournamentRepository {
   async ensureTournamentMatch(matchId, data) {
     const { db, dbMod } = this.#getDbContext();
     const metaRef = dbMod.ref(db, `matches/${matchId}/meta`);
-    const metaSnap = await dbMod.get(metaRef);
-    if (metaSnap.exists()) return;
+
+    // Verifica se já existe. Se permission_denied: partida não existe ainda
+    // (usuário ainda não está em meta/players nem há tournamentInstanceId) → prossegue criando.
+    try {
+      const metaSnap = await dbMod.get(metaRef);
+      if (metaSnap.exists()) return;
+    } catch (readErr) {
+      const msg = String(readErr?.message || readErr);
+      if (msg.includes('permission_denied') || msg.includes('Permission denied')) {
+        console.log(`[TournamentRound] ensureTournamentMatch ${matchId}: sem permissão de leitura → partida não existe, criando...`);
+        // prossegue para criação
+      } else {
+        throw readErr;
+      }
+    }
 
     const now = Date.now();
     const playersMap = data?.playersMap || {};
