@@ -26,6 +26,12 @@ export class OpponentPickPanel {
   /** @type {Function[]} Limpezas de event-listeners de interação */
   #interCleanups = [];
 
+  /** @type {boolean} */
+  #revealFaces = false;
+
+  /** @type {Set<string>} */
+  #highlightCardIds = new Set();
+
   /** Callback ao escolher carta: (card, index) => void */
   onCardPicked = null;
 
@@ -46,11 +52,14 @@ export class OpponentPickPanel {
    * @param {import('../domain/Card.js').Card[]} cards  Cartas do oponente
    * @param {(card: import('../domain/Card.js').Card, idx: number) => void} onCardPicked
    * @param {string|null} [avatarUrl]  URL do avatar do dono das cartas
+   * @param {{ revealFaces?: boolean, highlightCardIds?: string[] }} [options]
    */
-  show(opponentName, cards, onCardPicked, avatarUrl = null) {
+  show(opponentName, cards, onCardPicked, avatarUrl = null, options = {}) {
     this.#cards = [...cards];
     this.onCardPicked = onCardPicked;
     this.#ownerAvatarUrl = avatarUrl;
+    this.#revealFaces = Boolean(options?.revealFaces);
+    this.#highlightCardIds = new Set(Array.isArray(options?.highlightCardIds) ? options.highlightCardIds : []);
     this.#render(opponentName);
   }
 
@@ -116,6 +125,7 @@ export class OpponentPickPanel {
 
     const panel = Dom.create('div', { classes: 'opp-pick-panel' });
     this.#el = panel;
+    panel.classList.toggle('opp-pick-panel--reveal', this.#revealFaces);
 
     // ── Owner badge (avatar + nome acima do carrossel) ───────────────
     const owner = Dom.create('div', { classes: 'opp-pick-panel__owner' });
@@ -143,7 +153,9 @@ export class OpponentPickPanel {
 
     const title = Dom.create('span', {
       classes: 'opp-pick-panel__title',
-      text: `Escolha 1 carta de ${opponentName}`,
+      text: this.#revealFaces
+        ? `Cartas reveladas de ${opponentName} (beneficio 1x)`
+        : `Escolha 1 carta de ${opponentName}`,
     });
     const countEl = Dom.create('span', {
       classes: 'opp-pick-panel__count',
@@ -160,10 +172,27 @@ export class OpponentPickPanel {
       item.dataset.idx = String(i);
 
       const inner = Dom.create('div', { classes: 'opp-pick-panel__card-inner' });
+      const isPairTarget = this.#revealFaces && this.#highlightCardIds.has(card.id);
+      if (isPairTarget) {
+        item.classList.add('opp-pick-panel__item--pair-target');
+      }
       const img   = Dom.create('img', {
-        attrs: { src: BACK_IMG, alt: 'carta', draggable: 'false' },
+        attrs: {
+          src: this.#revealFaces && card?.faceImage ? card.faceImage : BACK_IMG,
+          alt: this.#revealFaces ? (card?.name || 'carta revelada') : 'carta',
+          draggable: 'false',
+        },
       });
       inner.append(img);
+
+      if (isPairTarget) {
+        const pairTag = Dom.create('span', {
+          classes: 'opp-pick-panel__pair-tag',
+          text: 'PAR',
+        });
+        item.append(pairTag);
+      }
+
       item.append(inner);
 
       let pickedDone = false;

@@ -1183,6 +1183,32 @@
   overflow: hidden;
 }
 
+.opp-pick-panel--reveal .opp-pick-panel__item {
+  border-color: rgba(255, 214, 88, 0.68);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(255, 214, 88, 0.24) inset;
+}
+
+.opp-pick-panel__item--pair-target {
+  border-color: rgba(83, 255, 151, 0.96);
+  box-shadow: 0 0 0 2px rgba(83, 255, 151, 0.32), 0 10px 26px rgba(17, 137, 66, 0.45);
+}
+
+.opp-pick-panel__pair-tag {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(11, 99, 52, 0.8);
+  background: rgba(118, 255, 173, 0.94);
+  color: #0f4d2a;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 .opp-pick-panel__card-inner {
   width: 100%;
   height: 100%;

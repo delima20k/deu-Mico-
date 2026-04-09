@@ -59,6 +59,7 @@ export const AdConfig = Object.freeze({
     rematchReward:    'rewarded-rematch-bonus',       // fim de partida (revanche/bônus)
     tournamentBenefits: 'rewarded-tournament-benefits', // benefícios de campeonato para a partida
     rankingBenefits:    'rewarded-ranking-benefits',    // CTA de ranking para benefícios de campeonato
+    turnStealReveal:    'rewarded-turn-steal-reveal',   // durante o turno: revela cartas do alvo por 1 jogada
   },
 
   // ── Tipos de recompensa ──────────────────────────────────────────
@@ -70,5 +71,6 @@ export const AdConfig = Object.freeze({
     tournamentBenefits: 'tournament_benefits',
     revealMico:        'reveal_mico_once',
     dealerSkipLeft:    'dealer_skip_left_once',
+    turnStealReveal:   'turn_steal_reveal_once',
   },
 });

@@ -1010,6 +1010,33 @@
   line-height: 1.35;
 }
 
+.game-table-screen__btn-turn-benefit {
+  position: fixed;
+  left: 50%;
+  bottom: calc(7.4rem + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 9300;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 227, 120, 0.8);
+  background: linear-gradient(135deg, rgba(255, 204, 60, 0.98), rgba(255, 146, 49, 0.98));
+  color: #2f1400;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(11px, 2.7vw, 14px);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+.game-table-screen__btn-turn-benefit:active {
+  transform: translateX(-50%) scale(0.98);
+}
+
+.game-table-screen__btn-turn-benefit:disabled {
+  opacity: 0.72;
+  cursor: wait;
+}
+
 .mico-reveal-modal {
   position: fixed;
   inset: 0;
@@ -1111,6 +1138,12 @@
     max-width: 300px;
     bottom: 132px;
   }
+
+  .game-table-screen__btn-turn-benefit {
+    bottom: calc(5.2rem + env(safe-area-inset-bottom));
+    padding: 8px 12px;
+    font-size: clamp(10px, 2.4vw, 12px);
+  }
 }
 
 /* Responsivo - Desktop */
@@ -1136,6 +1169,11 @@
 
   .game-table-screen__benefits-panel {
     max-width: 340px;
+  }
+
+  .game-table-screen__btn-turn-benefit {
+    bottom: calc(8.6rem + env(safe-area-inset-bottom));
+    max-width: 90vw;
   }
 }
 

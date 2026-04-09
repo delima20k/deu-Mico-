@@ -210,6 +210,18 @@ export class GameTableScreen extends Screen {
   /** @type {HTMLElement|null} */
   #benefitsHintEl = null;
 
+  /** @type {HTMLButtonElement|null} */
+  #turnStealBenefitBtnEl = null;
+
+  /** @type {string|null} */
+  #currentTurnTargetUid = null;
+
+  /** @type {boolean} */
+  #stealRevealBenefitUsed = false;
+
+  /** @type {boolean} */
+  #stealRevealBenefitActiveForTurn = false;
+
   // ── Gerenciamento de turnos ────────────────────────────────────────
 
   /** @type {Map<string, import('../domain/Card.js').Card[]>} uid → cartas na mão */
@@ -288,6 +300,9 @@ export class GameTableScreen extends Screen {
     this.#generalRankingReportedForMatchId = null;
     this.#tournamentAdBenefitsMap = {};
     this.#myTournamentBenefits = null;
+    this.#currentTurnTargetUid = null;
+    this.#stealRevealBenefitUsed = this.#readStealRevealBenefitUsed();
+    this.#stealRevealBenefitActiveForTurn = false;
     if (this.#tournamentRedirectTimer !== null) {
       clearTimeout(this.#tournamentRedirectTimer);
       this.#tournamentRedirectTimer = null;
@@ -662,6 +677,9 @@ export class GameTableScreen extends Screen {
     this.#watchBenefitsBtnEl = null;
     this.#revealMicoBtnEl = null;
     this.#benefitsHintEl = null;
+    this.#removeTurnStealBenefitButton();
+    this.#currentTurnTargetUid = null;
+    this.#stealRevealBenefitActiveForTurn = false;
     document.querySelector('.mico-reveal-modal')?.remove();
 
     // Para o heartbeat Firebase (ping periódico)
@@ -2166,6 +2184,12 @@ export class GameTableScreen extends Screen {
     const env = isPWA ? 'PWA' : 'Navegador';
     console.log(`[TURNO] ▶️ onTurnStart | ativo: ${activeUid?.slice(0, 8)} | alvo: ${targetUid?.slice(0, 8)} | é minha vez: ${activeUid === this.#myUid} | ambiente: ${env}`);
 
+    this.#currentTurnTargetUid = activeUid === this.#myUid ? targetUid : null;
+    if (activeUid !== this.#myUid) {
+      this.#stealRevealBenefitActiveForTurn = false;
+    }
+    this.#refreshTurnStealBenefitButton();
+
     if (activeUid === this.#myUid) {
       // É minha vez — destaca o avatar do alvo e aguarda clique
       this.#showStealHint(targetUid);
@@ -2329,10 +2353,20 @@ export class GameTableScreen extends Screen {
       const targetName   = targetPlayer?.name ?? 'Oponente';
       const avatarUrl    = targetPlayer?.avatarUrl ?? null;
 
+      const revealFaces = this.#stealRevealBenefitActiveForTurn;
+      const suggestedIds = this.#findPairableOpponentCardIds(targetCards);
+
       if (!this.#opponentPickPanel) return;
       this.#opponentPickPanel.show(targetName, targetCards, (card) => {
         this.#onCardPickedFromOpponent(targetUid, card);
-      }, avatarUrl);
+      }, avatarUrl, {
+        revealFaces,
+        highlightCardIds: suggestedIds,
+      });
+
+      if (revealFaces) {
+        this.#showTurnToast('Beneficio ativo: cartas reveladas para esta jogada');
+      }
 
       // Animação de voo imediata ao clicar: carta sai do avatar do dono e voa ao avatar do ladrão
       this.#opponentPickPanel.onCardClick = (card, _idx, _itemRect) => {
@@ -2363,6 +2397,9 @@ export class GameTableScreen extends Screen {
           ts:        now,
         }).catch(() => {});
       };
+
+      this.#stealRevealBenefitActiveForTurn = false;
+      this.#refreshTurnStealBenefitButton();
     };
 
     badgeEl.addEventListener('click', openPanel, { once: true });
@@ -2518,6 +2555,137 @@ export class GameTableScreen extends Screen {
         await this.#broadcastNextTurn();
       });
     }, 350);
+  }
+
+  /**
+   * @returns {string}
+   * @private
+   */
+  #getStealRevealBenefitStorageKey() {
+    return `steal_reveal_benefit_used_${this.#matchId}_${this.#myUid}`;
+  }
+
+  /**
+   * @returns {boolean}
+   * @private
+   */
+  #readStealRevealBenefitUsed() {
+    try {
+      return localStorage.getItem(this.#getStealRevealBenefitStorageKey()) === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * @private
+   */
+  #markStealRevealBenefitUsed() {
+    this.#stealRevealBenefitUsed = true;
+    try {
+      localStorage.setItem(this.#getStealRevealBenefitStorageKey(), '1');
+    } catch (_) {}
+  }
+
+  /**
+   * @param {import('../domain/Card.js').Card[]} opponentCards
+   * @returns {string[]}
+   * @private
+   */
+  #findPairableOpponentCardIds(opponentCards) {
+    const myHand = this.#handMap.get(this.#myUid) ?? [];
+    if (!Array.isArray(myHand) || myHand.length === 0) return [];
+    if (!Array.isArray(opponentCards) || opponentCards.length === 0) return [];
+
+    const myPairIds = new Set(
+      myHand
+        .filter((card) => !card?.isMico && card?.pairId)
+        .map((card) => card.pairId)
+    );
+
+    return opponentCards
+      .filter((card) => !card?.isMico && card?.pairId && myPairIds.has(card.pairId))
+      .map((card) => card.id);
+  }
+
+  /**
+   * @private
+   */
+  #removeTurnStealBenefitButton() {
+    if (this.#turnStealBenefitBtnEl) {
+      this.#turnStealBenefitBtnEl.remove();
+      this.#turnStealBenefitBtnEl = null;
+    }
+  }
+
+  /**
+   * @private
+   */
+  #refreshTurnStealBenefitButton() {
+    const shouldShow = Boolean(
+      this.#currentTurnTargetUid
+      && !this.#stealRevealBenefitUsed
+      && AdConfig.enableRewarded
+    );
+
+    if (!shouldShow) {
+      this.#removeTurnStealBenefitButton();
+      return;
+    }
+
+    if (!this.#turnStealBenefitBtnEl) {
+      this.#turnStealBenefitBtnEl = Dom.create('button', {
+        classes: 'game-table-screen__btn-turn-benefit',
+        text: '🎬 Ver anuncio para revelar cartas (1x)',
+        attrs: { type: 'button' },
+      });
+
+      this.#turnStealBenefitBtnEl.addEventListener('click', () => {
+        void this.#onTurnStealBenefitRequested();
+      });
+
+      this.getElement().append(this.#turnStealBenefitBtnEl);
+    }
+
+    this.#turnStealBenefitBtnEl.disabled = false;
+  }
+
+  /**
+   * @private
+   */
+  async #onTurnStealBenefitRequested() {
+    if (!this.#currentTurnTargetUid) return;
+    if (this.#stealRevealBenefitUsed) {
+      this.#showTurnToast('Beneficio de revelar cartas ja foi usado nesta partida');
+      this.#refreshTurnStealBenefitButton();
+      return;
+    }
+
+    if (this.#turnStealBenefitBtnEl) {
+      this.#turnStealBenefitBtnEl.disabled = true;
+      this.#turnStealBenefitBtnEl.textContent = 'Carregando...';
+    }
+
+    const result = await AdService.getInstance()
+      .showRewarded(AdConfig.rewardedTriggers.turnStealReveal)
+      .catch(() => ({ rewarded: false }));
+
+    if (!result.rewarded) {
+      if (this.#turnStealBenefitBtnEl) {
+        this.#turnStealBenefitBtnEl.disabled = false;
+        this.#turnStealBenefitBtnEl.textContent = '🎬 Ver anuncio para revelar cartas (1x)';
+      }
+      this.#showTurnToast('Video nao concluido. Beneficio nao liberado.');
+      return;
+    }
+
+    this.#markStealRevealBenefitUsed();
+    this.#stealRevealBenefitActiveForTurn = true;
+
+    AdService.getInstance().grantReward(AdConfig.rewardTypes.turnStealReveal);
+
+    this.#removeTurnStealBenefitButton();
+    this.#showTurnToast('Beneficio liberado! Toque no jogador-alvo para escolher carta revelada.');
   }
 
   /**
