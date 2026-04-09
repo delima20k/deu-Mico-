@@ -395,7 +395,6 @@ export class MenuScreen extends Screen {
   }
 
   /**
-=======
    * Exibe aviso temporário de funcionalidade ainda não disponível.
    * @private
    */
@@ -403,7 +402,7 @@ export class MenuScreen extends Screen {
     const message = MenuScreen.CHAMPIONSHIP_UNAVAILABLE_MESSAGE;
 
     // Usa alerta nativo para garantir feedback imediato sem depender de CSS extra.
->>>>>>> bcafb55 (Bloqueia aba Campeonato com aviso de desenvolvimento)
+    window.alert(message);
   }
 }
 
