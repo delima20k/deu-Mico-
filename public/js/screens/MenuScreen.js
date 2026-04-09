@@ -36,6 +36,9 @@ export class MenuScreen extends Screen {
   /** @type {SideMenu} */
   #sideMenu;
 
+  /** @type {string} */
+  static CHAMPIONSHIP_UNAVAILABLE_MESSAGE = 'Campeonato está em desenvolvimento.';
+
   /** @type {TournamentService} */
   #tournamentService;
 
@@ -186,9 +189,8 @@ export class MenuScreen extends Screen {
       this.#openGeneralRankingModal();
     });
     this.#sideMenu.on('campeonato', () => {
-      console.log('[MenuScreen] Navegando para Campeonato');
-      AudioService.getInstance().stopLoop('menu-bgm');
-      this.#screenManager.show('TournamentScreen');
+      console.log('[MenuScreen] Campeonato indisponível (em desenvolvimento)');
+      this.#showFeatureInDevelopment();
     });
     this.#sideMenu.on('logout', () => {
       App.markIntentionalLogout();
@@ -236,9 +238,8 @@ export class MenuScreen extends Screen {
       text: 'CAMPEONATO',
     });
     Dom.on(btnCampeonato, 'click', () => {
-      console.log('[MenuScreen] Clicado em CAMPEONATO');
-      AudioService.getInstance().stopLoop('menu-bgm');
-      this.#screenManager.show('TournamentScreen');
+      console.log('[MenuScreen] Clicado em CAMPEONATO (indisponível)');
+      this.#showFeatureInDevelopment();
     });
 
     // Botão 3: RANKING
@@ -391,6 +392,18 @@ export class MenuScreen extends Screen {
       tr.append(Dom.create('td', { text: `${entry.avgPairs || '0.00'}` }));
       this.#generalRankingTbodyEl.append(tr);
     });
+  }
+
+  /**
+=======
+   * Exibe aviso temporário de funcionalidade ainda não disponível.
+   * @private
+   */
+  #showFeatureInDevelopment() {
+    const message = MenuScreen.CHAMPIONSHIP_UNAVAILABLE_MESSAGE;
+
+    // Usa alerta nativo para garantir feedback imediato sem depender de CSS extra.
+>>>>>>> bcafb55 (Bloqueia aba Campeonato com aviso de desenvolvimento)
   }
 }
 
