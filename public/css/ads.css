@@ -49,6 +49,38 @@
   cursor: not-allowed;
 }
 
+/* ── Variante: botão de resgatar (claim) ─────────────────── */
+.reward-slot__btn--claim {
+  background: linear-gradient(135deg, #28c76f 0%, #48e59a 100%);
+  color: #0d2b19;
+}
+
+.reward-slot__btn--claim:hover {
+  background: linear-gradient(135deg, #1da85c 0%, #28c76f 100%);
+}
+
+/* ── Texto de info sobre slots disponíveis ───────────────── */
+.reward-slot__info {
+  font-size: 0.78rem;
+  color: #c9b97f;
+  margin: 0 0 6px;
+}
+
+/* ── Texto de benefício já resgatado ─────────────────────── */
+.reward-slot__done {
+  font-size: 0.85rem;
+  color: #28c76f;
+  font-weight: 700;
+  margin: 6px 0;
+}
+
+/* ── Texto de slots esgotados ────────────────────────────── */
+.reward-slot__full {
+  font-size: 0.78rem;
+  color: #8888aa;
+  margin: 6px 0;
+}
+
 /* ── Modal de Rewarded simulado (mock web) ────────────────── */
 .ad-rewarded-overlay {
   position: fixed;

@@ -22,6 +22,7 @@ import { NavigationService } from '../services/NavigationService.js';
 import { TableLayoutService } from '../services/TableLayoutService.js';
 import { GameRoomType } from '../domain/GameRoomType.js';
 import { LobbyRepository } from '../repositories/LobbyRepository.js';
+import { MatchRepository } from '../repositories/MatchRepository.js';
 import { GameExitButton } from '../components/GameExitButton.js';
 import { AdService } from '../services/adService.js';
 import { AdConfig }  from '../services/adConfig.js';
@@ -81,6 +82,12 @@ export class MatchRoomScreen extends Screen {
   /** @type {boolean} Se o interstitial de lobby já foi exibido nesta sessão de tela */
   #lobbyInterstitialShown = false;
 
+  /** @type {boolean} Se o usuário assistiu o vídeo rewarded por completo nesta sessão de sala */
+  #waitingAdWatched = false;
+
+  /** @type {boolean} Se o usuário já reivindicou a recompensa nesta sessão de sala */
+  #waitingAdClaimed = false;
+
   /**
    * @param {import('../core/ScreenManager.js').ScreenManager} screenManager
    */
@@ -114,6 +121,8 @@ export class MatchRoomScreen extends Screen {
     this.#expectedPlayerCount = null;
     this.#rewardedFirstPlayerUsed = false;
     this.#lobbyInterstitialShown = false;
+    this.#waitingAdWatched = false;
+    this.#waitingAdClaimed = false;
     this.#clearLobbyInterstitialTimer();
 
     // 2. Obtém uid real do Firebase Auth
@@ -362,46 +371,15 @@ export class MatchRoomScreen extends Screen {
       main.append(leftSection, rightSection);
       container.append(main);
 
-      // ── Slot de recompensa para primeiro jogador ─────────────────
-      // Visível apenas quando é o primeiro jogador na sala.
-      // O listener de presença esconde quando há > 1 jogador.
-      if (AdConfig.enableFirstPlayerReward && !this.#rewardedFirstPlayerUsed) {
-        const fpSlot = Dom.create('div', {
-          classes: 'reward-slot',
-          attrs: { id: 'rewarded-first-player-slot' },
+      // ── Recompensa por assistir anúncio na sala de espera ────────
+      if (AdConfig.enableRewarded && !this.#waitingAdClaimed) {
+        const waitSlot = Dom.create('div', {
+          classes: 'reward-slot reward-slot--waiting',
+          attrs: { id: 'rewarded-waiting-room-slot' },
         });
-        const fpBtn = Dom.create('button', {
-          classes: 'reward-slot__btn',
-          text: '\uD83C\uDFAC Assistir vídeo e acelerar início',
-          attrs: { type: 'button' },
-        });
-        fpBtn.addEventListener('click', async () => {
-          if (this.#rewardedFirstPlayerUsed) return;
-          // Não pode acelerar sozinho — precisa de jogadores mínimos
-          const maxP = this.#getMaxPlayersForLobbyType(this.#lobbyType);
-          if (this.#currentPlayerCount < maxP) {
-            fpBtn.textContent = '⚠️ Aguarde mais jogadores entrarem';
-            setTimeout(() => {
-              fpBtn.textContent = '\uD83C\uDFAC Assistir vídeo e acelerar início';
-            }, 2000);
-            return;
-          }
-          fpBtn.disabled = true;
-          fpBtn.textContent = 'Carregando…';
-          const result = await AdService.getInstance()
-            .showRewarded(AdConfig.rewardedTriggers.firstPlayerBonus)
-            .catch(() => ({ rewarded: false }));
-          if (result.rewarded) {
-            this.#rewardedFirstPlayerUsed = true;
-            AdService.getInstance().grantReward(AdConfig.rewardTypes.firstPlayerBonus);
-            fpBtn.textContent = '✅ Bônus recebido!';
-          } else {
-            fpBtn.textContent = '\uD83C\uDFAC Assistir vídeo e acelerar início';
-            fpBtn.disabled = false;
-          }
-        });
-        fpSlot.append(fpBtn);
-        container.append(fpSlot);
+        container.append(waitSlot);
+        // Renderização assíncrona: verifica status no Firebase antes de exibir
+        this.#renderWaitingRoomAdSlot(waitSlot).catch(() => {});
       }
 
       // Escrever presença e iniciar listener de presença/game-table
@@ -564,6 +542,150 @@ export class MatchRoomScreen extends Screen {
         }
       }
     );
+  }
+
+  /**
+   * Retorna o limite de slots de recompensa baseado na contagem de jogadores.
+   * - 2 jogadores : 1 slot
+   * - 3-4 jogadores: 2 slots ("mais de 2 e menos de 5")
+   * - 5+ jogadores : 5 slots ("mais de 4")
+   * @param {number} playerCount
+   * @returns {number}
+   * @private
+   */
+  #getRewardSlotLimit(playerCount) {
+    if (playerCount > 4) return 5;
+    if (playerCount > 2) return 2;
+    return 1;
+  }
+
+  /**
+   * Renderiza o slot de anúncio recompensado da sala de espera.
+   * Fluxo: verificar status → mostrar botão "Assistir" → após anúncio → botão "Resgatar" → reivindicar.
+   * @param {HTMLElement} container - elemento onde montar o slot
+   * @returns {Promise<void>}
+   * @private
+   */
+  async #renderWaitingRoomAdSlot(container) {
+    if (!this.#matchId) return;
+
+    const playerCount = this.#expectedPlayerCount || this.#getMaxPlayersForLobbyType(this.#lobbyType);
+    const slotLimit = this.#getRewardSlotLimit(playerCount);
+
+    // Verifica status atual no Firebase
+    const { hasClaimed, currentCount } = await MatchRepository.getInstance()
+      .getAdRewardStatus(this.#matchId, this.#userId)
+      .catch(() => ({ hasClaimed: false, currentCount: 0 }));
+
+    if (hasClaimed) {
+      // Usuário já reivindicou neste match (pode ter saído e voltado)
+      this.#waitingAdClaimed = true;
+      const done = Dom.create('p', {
+        classes: 'reward-slot__done',
+        text: '✅ Benefício já aplicado nesta partida!',
+      });
+      container.append(done);
+      return;
+    }
+
+    if (currentCount >= slotLimit) {
+      // Slots esgotados para este match
+      const full = Dom.create('p', {
+        classes: 'reward-slot__full',
+        text: `🔒 Todos os ${slotLimit} benefício(s) desta sala já foram resgatados`,
+      });
+      container.append(full);
+      return;
+    }
+
+    const slotsLeft = slotLimit - currentCount;
+
+    // ── Estado 1: botão "Assistir vídeo" ────────────────────────
+    if (!this.#waitingAdWatched) {
+      const info = Dom.create('p', {
+        classes: 'reward-slot__info',
+        text: `🎁 ${slotsLeft} benefício(s) disponível(is) nesta sala — assista um anúncio para resgatar`,
+      });
+      const watchBtn = Dom.create('button', {
+        classes: 'reward-slot__btn reward-slot__btn--watch',
+        text: '🎬 Assistir vídeo e ganhar benefício',
+        attrs: { type: 'button' },
+      });
+
+      watchBtn.addEventListener('click', async () => {
+        if (this.#waitingAdWatched || this.#waitingAdClaimed) return;
+        watchBtn.disabled = true;
+        watchBtn.textContent = 'Carregando anúncio…';
+
+        const result = await AdService.getInstance()
+          .showRewarded(AdConfig.rewardedTriggers.waitingReward)
+          .catch(() => ({ rewarded: false }));
+
+        if (result.rewarded) {
+          this.#waitingAdWatched = true;
+          // Remove UI do estado 1 e exibe estado 2
+          container.innerHTML = '';
+          this.#renderWaitingRoomClaimStep(container, slotLimit).catch(() => {});
+        } else {
+          watchBtn.textContent = '🎬 Assistir vídeo e ganhar benefício';
+          watchBtn.disabled = false;
+        }
+      });
+
+      container.append(info, watchBtn);
+      return;
+    }
+
+    // ── Estado 2: botão "Resgatar" (usuário já assistiu nesta sessão) ─
+    this.#renderWaitingRoomClaimStep(container, slotLimit).catch(() => {});
+  }
+
+  /**
+   * Renderiza o botão de resgate após o usuário ter assistido ao vídeo.
+   * @param {HTMLElement} container
+   * @param {number} slotLimit
+   * @returns {Promise<void>}
+   * @private
+   */
+  async #renderWaitingRoomClaimStep(container, slotLimit) {
+    if (this.#waitingAdClaimed) return;
+
+    const claimBtn = Dom.create('button', {
+      classes: 'reward-slot__btn reward-slot__btn--claim',
+      text: '🎁 Resgatar benefício',
+      attrs: { type: 'button' },
+    });
+
+    claimBtn.addEventListener('click', async () => {
+      if (this.#waitingAdClaimed) return;
+      claimBtn.disabled = true;
+      claimBtn.textContent = 'Resgatando…';
+
+      const { claimed } = await MatchRepository.getInstance()
+        .claimAdReward(this.#matchId, this.#userId, slotLimit)
+        .catch(() => ({ claimed: false }));
+
+      container.innerHTML = '';
+
+      if (claimed) {
+        this.#waitingAdClaimed = true;
+        AdService.getInstance().grantReward(AdConfig.rewardTypes.waitingReward);
+        const done = Dom.create('p', {
+          classes: 'reward-slot__done',
+          text: '✅ Benefício recebido! Boa sorte na partida 🃏',
+        });
+        container.append(done);
+      } else {
+        // Slots foram esgotados por outro jogador no interim
+        const full = Dom.create('p', {
+          classes: 'reward-slot__full',
+          text: '😔 Outra pessoa resgatou o último benefício antes de você',
+        });
+        container.append(full);
+      }
+    });
+
+    container.append(claimBtn);
   }
 
   /**

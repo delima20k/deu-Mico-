@@ -823,6 +823,69 @@ export class MatchRepository {
     return { deleted, skipped, failed };
   }
 
+  // -------------------------------------------------------
+  // Recompensa de Anúncio (adRewards)
+  // -------------------------------------------------------
+
+  /**
+   * Tenta reivindicar slot de recompensa de anúncio para o usuário.
+   * Usa transação atômica: garante que no máximo `slotLimit` usuários recebam o benefício.
+   * Path: /matches/{matchId}/meta/adRewards/{uid}
+   * @param {string} matchId
+   * @param {string} uid
+   * @param {number} slotLimit - máximo de usuários que podem reivindicar
+   * @returns {Promise<{ claimed: boolean, currentCount: number }>}
+   */
+  async claimAdReward(matchId, uid, slotLimit) {
+    const db = this.#firebaseService?.getDatabase?.();
+    const dbMod = this.#firebaseService?.getDbModules?.();
+    if (!db) return { claimed: false, currentCount: 0 };
+
+    const rewardsRef = dbMod.ref(db, `matches/${matchId}/meta/adRewards`);
+    let claimed = false;
+
+    await dbMod.runTransaction(rewardsRef, (current) => {
+      const slots = current || {};
+      // Já reivindicou antes
+      if (slots[uid]) {
+        claimed = false;
+        return current;
+      }
+      // Slots esgotados
+      if (Object.keys(slots).length >= slotLimit) {
+        claimed = false;
+        return current;
+      }
+      // Reivindica slot
+      claimed = true;
+      return { ...slots, [uid]: Date.now() };
+    });
+
+    const snap = await dbMod.get(rewardsRef);
+    const finalSlots = snap.val() || {};
+    return { claimed, currentCount: Object.keys(finalSlots).length };
+  }
+
+  /**
+   * Verifica se o usuário já reivindicou recompensa de anúncio no match e quantos slots já foram usados.
+   * @param {string} matchId
+   * @param {string} uid
+   * @returns {Promise<{ hasClaimed: boolean, currentCount: number }>}
+   */
+  async getAdRewardStatus(matchId, uid) {
+    const db = this.#firebaseService?.getDatabase?.();
+    const dbMod = this.#firebaseService?.getDbModules?.();
+    if (!db) return { hasClaimed: false, currentCount: 0 };
+
+    const ref = dbMod.ref(db, `matches/${matchId}/meta/adRewards`);
+    const snap = await dbMod.get(ref);
+    const slots = snap.val() || {};
+    return {
+      hasClaimed: !!slots[uid],
+      currentCount: Object.keys(slots).length,
+    };
+  }
+
   /**
    * Deleta uma partida inteira do banco.
    * @param {string} matchId
