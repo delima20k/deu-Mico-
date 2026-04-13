@@ -3,10 +3,6 @@
   "outputDirectory": "public",
   "rewrites": [
     {
-      "source": "/icons/:icon",
-      "destination": "/img/carta_logo.png"
-    },
-    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
