@@ -1,10 +1,8 @@
 [{
-      "relation": ["delegate_permission/common.handle_all_urls"],
-      "target": {
-        "namespace": "android_app",
-        "package_name": "br.com.deu_mico.www.twa",
-        "sha256_cert_fingerprints": ["06:9B:A1:D9:33:A7:01:8C:9E:97:AB:B0:92:E7:F2:97:A2:17:51:E1:5F:7B:BF:43:96:EE:D2:C8:10:B7:90:5C",
-         "DC:4F:41:82:A4:87:DD:17:6A:BD:61:90:6F:9F:2B:EC:51:D3:B5:F0:7C:74:55:F8:63:CC:DF:15:C8:8F:AB:0A",
-          "28:B7:79:39:4A:DF:93:29:4A:EB:FB:7D:16:B7:46:73:7C:69:E8:98:27:F1:49:3E:A8:BC:17:5B:2A:6E:DA:49"]
-      }
-    }]
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.deumico.app",
+    "sha256_cert_fingerprints": []
+  }
+}]
