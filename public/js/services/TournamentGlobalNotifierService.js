@@ -460,6 +460,20 @@ export class TournamentGlobalNotifierService {
 
     if (this.#lastForcedMatchId === matchId) return;
 
+    // Verificação 0: instância iniciada há mais de 6h — dados obsoletos, ignora redirect.
+    // Evita redirecionar para partidas de torneios antigos que ficaram presos em 'active'.
+    const startedAt = Number(instance?.startedAt || 0);
+    const instanceAgeMs = startedAt > 0 ? Date.now() - startedAt : 0;
+    const MAX_INSTANCE_AGE_MS = 6 * 60 * 60 * 1000; // 6 horas
+    if (instanceAgeMs > MAX_INSTANCE_AGE_MS) {
+      console.warn(
+        `[TournamentGlobalNotifier] Instância ${instance?.instanceId} obsoleta ` +
+        `(${Math.round(instanceAgeMs / 3_600_000)}h) — ignorando redirect para ${matchId}.`
+      );
+      this.#lastForcedMatchId = matchId;
+      return;
+    }
+
     // Verificação 1: partida já foi processada/encerrada no torneio (sem I/O)
     const processedResults = instance?.processedMatchResults || {};
     if (processedResults[matchId]) {
