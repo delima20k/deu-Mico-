@@ -1,0 +1,274 @@
+/**
+ * Card Deck Pile — Monte de cartas empilhadas no centro da mesa
+ * Componente: CardDeckPile
+ * Mobile-first · responsivo vertical e horizontal
+ *
+ * Estrutura DOM gerada:
+ *   .card-deck-pile                    (raiz — dimensões de 1 carta)
+ *     ├── .card-back × N              (camadas empilhadas, position:absolute)
+ *     │     └── última = .card-back--top (topo da pilha, glow sutil)
+ *     └── .card-deck-pile__count      (badge com quantidade restante)
+ */
+
+/* ============================================
+   CONSTANTES DE LAYOUT (Custom Properties)
+   Alterar aqui propaga para todos os elementos.
+   ============================================ */
+.card-deck-pile {
+  --card-w:        clamp(58px, 10vw, 96px);
+  --card-h:        clamp(87px, 15vw, 144px);
+  --card-radius:   clamp(6px, 1.2vw, 11px);
+}
+
+/* ============================================
+   CONTAINER DO MONTE
+   ============================================ */
+
+/**
+ * .card-deck-pile
+ * Dimensão igual a 1 carta para que as camadas empilhadas
+ * (position:absolute) se alinhem naturalmente ao centro.
+ * Posicionamento gerenciado pelo pai .deck-center-stack.
+ */
+.card-deck-pile {
+  position:       relative;
+  width:          var(--card-w);
+  height:         var(--card-h);
+  flex-shrink:    0;
+  pointer-events: none;
+}
+
+/* ============================================
+   CARTA INDIVIDUAL
+   ============================================ */
+
+/**
+ * .card-back
+ * Cada elemento representa uma camada do monte (verso).
+ * O JS aplica transform: translate(dx,dy) rotate(deg) individualmente.
+ * GPU-accelerated via will-change: transform.
+ */
+.card-back {
+  position:            absolute;
+  top:                 0;
+  left:                0;
+  width:               100%;
+  height:              100%;
+
+  /* verso do baralho */
+  background-image:    url("../img/carta_verso.png");
+  background-size:     cover;
+  background-position: center;
+  background-repeat:   no-repeat;
+
+  border-radius:       var(--card-radius);
+
+  /* hint para o GPU — transitions suaves p/ animações futuras */
+  will-change:  transform, opacity;
+  transition:   transform 0.25s ease, opacity 0.2s ease;
+}
+
+/* cartas que não são o topo ficam levemente mais escuras */
+.card-back:not(.card-back--top) {
+  filter: brightness(0.91);
+}
+
+/* ── Topo da pilha — destaque visual ──────────────────────── */
+.card-back--top {
+  filter: brightness(1);
+
+  /* pulso suave para indicar que o monte está ativo */
+  animation: deck-top-pulse 3.2s ease-in-out infinite;
+}
+
+@keyframes deck-top-pulse {
+  0%,  100% { box-shadow: none; }
+  50%       { box-shadow: none; }
+}
+
+/* ============================================
+   BADGE DE CONTAGEM
+   ============================================ */
+
+/**
+ * .card-deck-pile__count
+ * Badge posicionado abaixo do monte com número de cartas restantes.
+ */
+.card-deck-pile__count {
+  position:       absolute;
+  bottom:         calc(-1 * clamp(18px, 2.8vh, 24px));
+  left:           50%;
+  transform:      translateX(-50%);
+
+  min-width:      26px;
+  padding:        2px 7px;
+
+  font-family:    'Pixelify Sans', monospace, sans-serif;
+  font-size:      clamp(9px, 1.8vw, 12px);
+  font-weight:    700;
+  color:          #fff;
+  text-align:     center;
+  white-space:    nowrap;
+  line-height:    1.4;
+
+  background:     rgba(0, 0, 0, 0.62);
+  border:         1px solid rgba(255, 255, 255, 0.16);
+  border-radius:  999px;
+  box-shadow:     0 2px 6px rgba(0, 0, 0, 0.4);
+
+  transition:     opacity 0.3s ease, content 0.3s ease;
+  pointer-events: none;
+  z-index:        200;
+}
+
+/* ── Estado vazio ─────────────────────────────────────────── */
+.card-deck-pile--empty {
+  opacity: 0.32;
+  filter:  grayscale(0.55);
+}
+
+.card-deck-pile--empty .card-deck-pile__count {
+  opacity: 0;
+}
+
+/* ============================================
+   RESPONSIVIDADE — PORTRAIT (celular vertical)
+   ============================================ */
+
+@media (orientation: portrait) and (max-width: 480px) {
+  .card-deck-pile {
+    --card-w: clamp(50px, 12.5vw, 78px);
+    --card-h: clamp(75px, 18.5vw, 117px);
+  }
+}
+
+/* ============================================
+   RESPONSIVIDADE — LANDSCAPE (celular horizontal)
+   ============================================ */
+
+@media (orientation: landscape) and (max-height: 480px) {
+  .card-deck-pile {
+    --card-w: clamp(40px, 7.5vw, 68px);
+    --card-h: clamp(60px, 11.5vw, 102px);
+  }
+
+  .card-deck-pile__count {
+    font-size: clamp(8px, 1.5vw, 10px);
+    padding:   1px 5px;
+  }
+}
+
+/* ============================================
+   RESPONSIVIDADE — TABLET (768–1024px)
+   ============================================ */
+
+@media (min-width: 768px) and (max-width: 1024px) {
+  .card-deck-pile {
+    --card-w: clamp(68px, 8.5vw, 94px);
+    --card-h: clamp(102px, 12.5vw, 141px);
+  }
+}
+
+/* ============================================
+   RESPONSIVIDADE — DESKTOP (> 1024px)
+   ============================================ */
+
+@media (min-width: 1025px) {
+  .card-deck-pile {
+    --card-w: clamp(80px, 6.5vw, 106px);
+    --card-h: clamp(120px, 9.5vw, 159px);
+  }
+}
+
+/* ============================================================
+   ANIMAÇÃO DE ENTRADA DO MONTE
+   Keyframes modulares — cada fase com responsabilidade clara.
+   ============================================================ */
+
+/**
+ * @keyframes deckEntry
+ *
+ * Fase 1  (0–35%) — surgimento: opacity + scale de longe
+ * Fase 2 (35–70%) — descida leve: translateY orgânico
+ * Fase 3 (70–88%) — assentamento: overshoot suave (scale 1.04)
+ * Fase 4 (88–100%) — repouso: retorno ao estado natural
+ *
+ * Usa apenas opacity + transform → 100% GPU, zero reflow.
+ */
+@keyframes deckEntry {
+  0%   { opacity: 0;    transform: scale(0.55) translateY(-12px) rotate(-3deg); }
+  35%  { opacity: 0.85; transform: scale(0.92) translateY(-4px)  rotate(-1deg); }
+  70%  { opacity: 1;    transform: scale(1.04) translateY(2px)   rotate(0.4deg); }
+  88%  { opacity: 1;    transform: scale(0.98) translateY(-1px)  rotate(-0.2deg); }
+  100% { opacity: 1;    transform: scale(1)    translateY(0px)   rotate(0deg); }
+}
+
+/**
+ * @keyframes deckEntryBadge
+ *
+ * Badge de contagem aparece depois do monte para não poluir
+ * a animação principal. Fade in simples com leve translação.
+ */
+@keyframes deckEntryBadge {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0);   }
+}
+
+/* ============================================================
+   CLASSE DE ATIVAÇÃO — aplicada pelo DeckEntryAnimator
+   ============================================================ */
+
+/**
+ * .deck-entry-animating
+ *
+ * Adicionada via JS ao .card-deck-pile antes de inserir no DOM.
+ * Removida pelo DeckEntryAnimator após animationend.
+ *
+ * transform-origin: center bottom → simula carta "pousando" na mesa.
+ * will-change prepara a layer de compositing antes do primeiro frame,
+ * eliminando jank de inicialização.
+ *
+ * A animação é interrompível: se removida antes do fim,
+ * o estado não fica preso — pois fill-mode é 'both' (mantém
+ * o estado final até a classe ser removida pelo JS).
+ */
+.deck-entry-animating {
+  animation:        deckEntry 0.55s cubic-bezier(0.22, 0.68, 0, 1.2) both;
+  transform-origin: center bottom;
+  will-change:      transform, opacity;
+}
+
+/**
+ * .deck-entry-animating .card-deck-pile__count
+ *
+ * O badge de contagem aparece 300ms após o início do monte,
+ * quando o assentamento já está visível.
+ */
+.deck-entry-animating .card-deck-pile__count {
+  animation:        deckEntryBadge 0.3s ease-out 0.38s both;
+}
+
+/* ── Preferência por movimento reduzido (acessibilidade) ──── */
+@media (prefers-reduced-motion: reduce) {
+  .deck-entry-animating {
+    animation: none;
+    opacity:   1;
+    transform: none;
+  }
+  .deck-entry-animating .card-deck-pile__count {
+    animation: none;
+    opacity:   1;
+    transform: translateX(-50%);
+  }
+}
+
+/* ── Portrait mobile: keyframe com translate menor ────────── */
+@media (orientation: portrait) and (max-width: 480px) {
+  @keyframes deckEntry {
+    0%   { opacity: 0;    transform: scale(0.55) translateY(-8px)  rotate(-3deg); }
+    35%  { opacity: 0.85; transform: scale(0.92) translateY(-3px)  rotate(-1deg); }
+    70%  { opacity: 1;    transform: scale(1.04) translateY(1.5px) rotate(0.4deg); }
+    88%  { opacity: 1;    transform: scale(0.98) translateY(-0.5px) rotate(-0.2deg); }
+    100% { opacity: 1;    transform: scale(1)    translateY(0px)   rotate(0deg); }
+  }
+}

@@ -1,0 +1,1447 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Hand Modal  —  carrossel de cartas na mao do jogador
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Raiz ──────────────────────────────────────────────────────────── */
+
+.hand-modal {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: linear-gradient(180deg,
+    rgba(5,18,5,0.0)   0%,
+    rgba(5,18,5,0.82) 40%,
+    rgba(5,18,5,0.97) 100%
+  );
+  border-radius: 20px 20px 0 0;
+  padding-top: 10px;
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+  transform: translateY(110%);
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  user-select: none;
+  -webkit-user-select: none;
+  /* Permite que carta selecionada sobreponha elementos acima do modal */
+  overflow: visible;
+}
+
+.hand-modal--visible {
+  transform: translateY(0);
+}
+
+/* ── Cabecalho ─────────────────────────────────────────────────────── */
+
+.hand-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px 6px;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.hand-modal__title {
+  color: rgba(168, 230, 168, 0.9);
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(11px, 3vw, 14px);
+  letter-spacing: 0.06em;
+}
+
+.hand-modal__count {
+  color: rgba(168, 230, 168, 0.45);
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(10px, 2.5vw, 13px);
+}
+
+/* ── Viewport do carrossel ─────────────────────────────────────────── */
+
+.hand-modal__viewport {
+  overflow-x: scroll;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  /* Scroll nativo no celular: browser gerencia momentum/rubber-band */
+  touch-action: pan-x;
+  /* Remove scrollbar visivelmente */
+  scrollbar-width: none;
+  cursor: grab;
+  /* Permite que os itens se sobreponham para cima (carta selecionada) */
+  overflow-clip-margin: 0;
+  padding: 4px 0 12px;
+}
+
+.hand-modal__viewport:active {
+  cursor: grabbing;
+}
+
+.hand-modal__viewport::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Chat em tempo real (abaixo da mao) ───────────────────────────── */
+
+.hand-modal__chat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  min-height: 42px;
+  padding: 0;
+  border-top: none;
+  background: transparent;
+}
+
+.hand-modal__chat-shortcuts {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 3;
+}
+
+.hand-modal__chat-shortcut-btn {
+  border: 1px solid rgba(140, 230, 140, 0.45);
+  background: linear-gradient(135deg, rgba(18, 63, 18, 0.95), rgba(31, 99, 31, 0.95));
+  color: rgba(232, 255, 232, 0.96);
+  border-radius: 999px;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.45);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.hand-modal__chat-shortcut-btn:active {
+  transform: scale(0.95);
+}
+
+.hand-modal__chat-shortcut-btn--active {
+  border-color: rgba(255, 228, 145, 0.68);
+  box-shadow: 0 4px 14px rgba(86, 63, 18, 0.55);
+}
+
+.hand-modal__chat-toggle {
+  min-width: 108px;
+  height: 32px;
+  padding: 6px 14px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.hand-modal__chat-quick-toggle {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hand-modal__chat-composer {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 42px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(168, 230, 168, 0.18);
+  background: linear-gradient(180deg, rgba(7, 24, 7, 0.92) 0%, rgba(7, 24, 7, 0.98) 100%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(8px);
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.hand-modal__chat-composer[data-mode='none'] {
+  pointer-events: none;
+}
+
+.hand-modal__chat-panel {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hand-modal__chat-composer[data-mode='chat'] .hand-modal__chat-panel--chat {
+  display: flex;
+}
+
+.hand-modal__chat-composer[data-mode='quick'] .hand-modal__chat-panel--quick {
+  display: flex;
+}
+
+.hand-modal__chat--open .hand-modal__chat-composer {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.hand-modal__chat-messages {
+  max-height: 120px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(168, 230, 168, 0.15);
+  background: rgba(5, 18, 5, 0.55);
+}
+
+.hand-modal__chat-message {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hand-modal__chat-message--mine {
+  align-items: flex-end;
+}
+
+.hand-modal__chat-message--other {
+  align-items: flex-start;
+}
+
+.hand-modal__chat-message-author {
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 10px;
+  color: rgba(185, 236, 185, 0.78);
+}
+
+.hand-modal__chat-message-bubble {
+  max-width: min(260px, 100%);
+  border-radius: 8px;
+  border: 1px solid rgba(146, 220, 146, 0.25);
+  background: rgba(18, 60, 18, 0.86);
+  color: #f3fff3;
+  padding: 6px 8px;
+}
+
+.hand-modal__chat-message-bubble--audio {
+  width: min(260px, 100%);
+  border-radius: 10px;
+  padding: 7px 8px;
+}
+
+.hand-modal__chat-message--mine .hand-modal__chat-message-bubble {
+  background: rgba(54, 122, 54, 0.9);
+}
+
+.hand-modal__chat-message-text {
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 12px;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.hand-modal__chat-message-audio {
+  width: 100%;
+  height: 32px;
+}
+
+.hand-modal__chat-message-audio--hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hand-modal__chat-audio-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 5px;
+}
+
+.hand-modal__chat-audio-avatar {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(170, 235, 170, 0.5);
+  background: rgba(9, 33, 9, 0.88);
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hand-modal__chat-audio-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.hand-modal__chat-audio-avatar-fallback {
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 10px;
+  color: rgba(223, 248, 223, 0.96);
+}
+
+.hand-modal__chat-audio-name {
+  flex: 1;
+  min-width: 0;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 11px;
+  color: rgba(230, 252, 230, 0.92);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hand-modal__chat-audio-indicator {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  color: rgba(232, 252, 232, 0.86);
+}
+
+.hand-modal__chat-audio-indicator-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.hand-modal__chat-audio-indicator-wave {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 9px;
+}
+
+.hand-modal__chat-audio-indicator-wave-bar {
+  width: 2px;
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(225, 246, 225, 0.92);
+  opacity: 0.36;
+  transform-origin: center bottom;
+}
+
+.hand-modal__chat-audio-indicator-wave-bar:nth-child(2) {
+  height: 6px;
+}
+
+.hand-modal__chat-audio-indicator-wave-bar:nth-child(3) {
+  height: 8px;
+}
+
+.hand-modal__chat-audio-indicator--speaking .hand-modal__chat-audio-indicator-icon {
+  animation: hmAudioPulse 0.72s ease-in-out infinite;
+}
+
+.hand-modal__chat-audio-indicator--speaking .hand-modal__chat-audio-indicator-wave-bar {
+  animation: hmAudioWave 0.62s ease-in-out infinite;
+  opacity: 1;
+}
+
+.hand-modal__chat-audio-indicator--speaking .hand-modal__chat-audio-indicator-wave-bar:nth-child(2) {
+  animation-delay: 0.08s;
+}
+
+.hand-modal__chat-audio-indicator--speaking .hand-modal__chat-audio-indicator-wave-bar:nth-child(3) {
+  animation-delay: 0.16s;
+}
+
+.hand-modal__chat-audio-playback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hand-modal__chat-audio-play-btn {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  border: 1px solid rgba(170, 235, 170, 0.45);
+  border-radius: 999px;
+  background: rgba(20, 72, 20, 0.9);
+  color: rgba(237, 253, 237, 0.96);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+
+.hand-modal__chat-audio-play-btn:active {
+  transform: scale(0.94);
+}
+
+.hand-modal__chat-audio-play-btn[aria-pressed="true"] {
+  background: rgba(44, 128, 44, 0.92);
+}
+
+.hand-modal__chat-audio-play-btn-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+@keyframes hmAudioPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+
+@keyframes hmAudioWave {
+  0%, 100% {
+    transform: scaleY(0.45);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.hand-modal__chat-message-meta {
+  display: inline-block;
+  margin-top: 0;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 10px;
+  color: rgba(208, 244, 208, 0.85);
+}
+
+.hand-modal__chat-phrases {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.hand-modal__chat-phrases::-webkit-scrollbar {
+  display: none;
+}
+
+.hand-modal__chat-chip {
+  border: 1px solid rgba(110, 200, 110, 0.38);
+  background: rgba(14, 49, 14, 0.82);
+  color: rgba(205, 245, 205, 0.96);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.hand-modal__chat-chip:active {
+  transform: scale(0.96);
+}
+
+.hand-modal__chat-emojis {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.hand-modal__chat-emoji {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(110, 200, 110, 0.4);
+  background: rgba(12, 44, 12, 0.86);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.hand-modal__chat-emoji:active {
+  transform: scale(0.92);
+}
+
+.hand-modal__chat-input-row {
+  display: flex;
+  gap: 6px;
+}
+
+.hand-modal__chat-input {
+  flex: 1;
+  min-width: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(110, 200, 110, 0.36);
+  background: rgba(8, 29, 8, 0.9);
+  color: #eaffea;
+  padding: 7px 10px;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 12px;
+  outline: none;
+}
+
+.hand-modal__chat-input::placeholder {
+  color: rgba(190, 235, 190, 0.5);
+}
+
+.hand-modal__chat-send,
+.hand-modal__chat-send-btn {
+  border: 1px solid rgba(132, 228, 132, 0.5);
+  background: linear-gradient(135deg, rgba(28, 110, 28, 0.95), rgba(50, 150, 50, 0.95));
+  color: #fff;
+  border-radius: 10px;
+  width: 36px;
+  min-width: 36px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.hand-modal__chat-send-icon {
+  line-height: 1;
+}
+
+.hand-modal__chat-send:active,
+.hand-modal__chat-send-btn:active {
+  transform: scale(0.95);
+}
+
+.hand-modal__chat-send-btn[hidden] {
+  display: none;
+}
+
+.hand-modal__chat-audio-btn {
+  border: 1px solid rgba(140, 230, 140, 0.45);
+  background: linear-gradient(135deg, rgba(17, 62, 17, 0.95), rgba(28, 96, 28, 0.95));
+  color: rgba(232, 255, 232, 0.96);
+  border-radius: 999px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 13px;
+}
+
+.hand-modal__chat-audio-btn:active {
+  transform: scale(0.95);
+}
+
+.hand-modal__chat-audio-btn--recording {
+  border-color: rgba(255, 110, 110, 0.85);
+  background: linear-gradient(135deg, rgba(115, 28, 28, 0.95), rgba(158, 42, 42, 0.95));
+}
+
+.hand-modal__chat-audio-btn--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hand-modal__chat-audio-btn--disabled:active {
+  transform: none;
+}
+
+.hand-modal__chat-audio-icon {
+  line-height: 1;
+}
+
+.hand-modal__chat-audio-btn[hidden] {
+  display: none;
+}
+
+.hand-modal__chat-status {
+  min-height: 14px;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: rgba(168, 230, 168, 0.72);
+  padding: 0 2px;
+}
+
+.hand-modal__chat-status--warn {
+  color: rgba(255, 225, 120, 0.96);
+}
+
+.hand-modal__chat--cooldown .hand-modal__chat-input,
+.hand-modal__chat--cooldown .hand-modal__chat-send,
+.hand-modal__chat--cooldown .hand-modal__chat-send-btn,
+.hand-modal__chat--cooldown .hand-modal__chat-audio-btn,
+.hand-modal__chat--cooldown .hand-modal__chat-chip,
+.hand-modal__chat--cooldown .hand-modal__chat-emoji,
+.hand-modal__chat--cooldown .hand-modal__chat-shortcut-btn {
+  opacity: 0.6;
+}
+
+/* ── Track (flex de itens) ─────────────────────────────────────────── */
+
+.hand-modal__track {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: clamp(6px, 2vw, 10px);
+  padding: 0 20px 2px;
+  /* Largura minima para forcar scroll quando necessario */
+  width: max-content;
+  min-width: 100%;
+}
+
+/* ── Item de carta ─────────────────────────────────────────────────── */
+
+.hand-modal__item {
+  flex-shrink: 0;
+  scroll-snap-align: center;
+  /* Cartas maiores para mobile: ~22vw em portrait, min 88px, max 130px */
+  width:  clamp(88px, 22vw, 130px);
+  height: clamp(132px, 33vw, 195px);
+  border-radius: clamp(8px, 1.8vw, 12px);
+  /* Perspectiva para o flip 3D */
+  perspective: 700px;
+  cursor: pointer;
+  transition: transform 0.18s ease;
+  will-change: transform;
+  position: relative;
+  /* Garante que a carção selecionada sobreponha as vizinhas */
+  z-index: 1;
+}
+
+@media (orientation: landscape) and (max-height: 500px) and (hover: none) and (pointer: coarse) {
+  .hand-modal__item {
+    width: clamp(44px, 11vw, 65px);
+    height: clamp(66px, 16.5vw, 98px);
+  }
+}
+
+/* Hover: levanta a carta */
+.hand-modal__item:hover {
+  transform: translateY(-16px);
+  z-index: 10;
+}
+
+/* Selecionada para par — sobe bastante e fica acima de tudo */
+.hand-modal__item--selected {
+  transform: translateY(-48px) scale(1.12) !important;
+  filter: drop-shadow(0 0 10px rgba(255, 220, 0, 0.9));
+  outline: 3px solid #ffe000;
+  outline-offset: 2px;
+  border-radius: clamp(7px, 1.6vw, 11px);
+  animation: hm-pulse-selected 0.9s ease infinite;
+  /* z-index alto garante sobreposição sobre avatares, badges e demais UI */
+  z-index: 99999 !important;
+  position: relative !important;
+}
+
+@keyframes hm-pulse-selected {
+  0%, 100% { outline-color: #ffe000; filter: drop-shadow(0 0 10px rgba(255,224,0,0.9)); }
+  50%       { outline-color: #ff8c00; filter: drop-shadow(0 0 14px rgba(255,140,0,0.9)); }
+}
+
+/* Carta sem par disponivel — pisca vermelho rapido */
+.hand-modal__item--nopair {
+  animation: hm-nopair 0.45s ease both !important;
+}
+
+@keyframes hm-nopair {
+  0%,100% { filter: none; }
+  40%     { filter: drop-shadow(0 0 8px rgba(255,50,50,0.9)) brightness(1.15); }
+}
+
+/* Saindo do tray (remoção normal de par) */
+.hand-modal__item--removing {
+  transition: transform 0.28s ease, opacity 0.28s ease !important;
+  transform: translateY(30px) scale(0.7) !important;
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+/* Carta roubada pelo oponente: voa para cima e desaparece */
+.hand-modal__item--stolen {
+  pointer-events: none;
+  animation: hm-card-stolen 0.52s cubic-bezier(0.25, 0.8, 0.55, 1.3) both;
+}
+
+@keyframes hm-card-stolen {
+  0%   { transform: translateY(0)       scale(1);    opacity: 1;   filter: brightness(1);   }
+  30%  { transform: translateY(-40px)   scale(1.15); opacity: 1;   filter: brightness(1.5); }
+  100% { transform: translateY(-220px)  scale(0.5);  opacity: 0;   filter: brightness(1.8); }
+}
+
+/* ── Flip 3-D ──────────────────────────────────────────────────────── */
+
+.hand-modal__card-inner {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+  /* Animacao de flip: inicia no verso, vira para a frente */
+  transition: transform 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: inherit;
+}
+
+/* Ao receber esta classe, a carta revela a frente */
+.hand-modal__card-inner--flipped {
+  transform: rotateY(180deg);
+}
+
+/* Face generica */
+.hand-modal__card-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: inherit;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+}
+
+/* Frente (animal) — inicialmente voltada para tras */
+.hand-modal__card-face--front {
+  transform: rotateY(180deg);
+}
+
+/* Imagens dentro de cada face */
+.hand-modal__card-face img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Modal de confirmacao de par  (centrado na tela)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.hm-pair-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.68);
+  animation: hm-fade-in 0.2s ease both;
+  padding: 16px;
+}
+
+.hm-pair-modal__box {
+  background: linear-gradient(155deg, #091a09 0%, #0d280d 100%);
+  border: 2px solid rgba(80, 200, 80, 0.5);
+  border-radius: 20px;
+  padding: 22px 24px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: min(94vw, 340px);
+  max-height: 82vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(80,180,80,0.3) transparent;
+  box-shadow: 0 16px 56px rgba(0,0,0,0.85),
+              0 0 0 1px rgba(100,220,100,0.12);
+  animation: hm-box-in 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes hm-box-in {
+  from { transform: scale(0.5) translateY(30px); opacity: 0; }
+  to   { transform: scale(1)   translateY(0);    opacity: 1; }
+}
+
+.hm-pair-modal__title {
+  color: #7eff7e;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(15px, 4.5vw, 22px);
+  margin: 0;
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+/* Secao do novo par */
+.hm-pair-modal__new-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: rgba(80, 200, 80, 0.07);
+  border: 1.5px solid rgba(80, 200, 80, 0.3);
+  border-radius: 14px;
+  padding: 14px 18px;
+}
+
+.hm-pair-modal__lbl--new {
+  color: rgba(168,230,168,0.8);
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(10px, 2.8vw, 13px);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.hm-pair-modal__cards {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+}
+
+.hm-pair-modal__card {
+  width: clamp(60px, 20vw, 96px);
+  aspect-ratio: 2 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow:
+    0 4px 18px rgba(0,0,0,0.65),
+    0 0 0 3px rgba(100,255,100,0.75);
+  animation: hm-glow-pair 1.3s ease infinite;
+}
+
+.hm-pair-modal__card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+@keyframes hm-glow-pair {
+  0%,100% { box-shadow: 0 4px 18px rgba(0,0,0,0.65), 0 0 0 3px rgba(100,255,100,0.75); }
+  50%     { box-shadow: 0 4px 22px rgba(0,0,0,0.65), 0 0 0 4px rgba(100,255,100,1), 0 0 22px rgba(100,255,100,0.35); }
+}
+
+/* Pares anteriores */
+.hm-pair-modal__prev {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.hm-pair-modal__lbl--prev {
+  color: rgba(168,230,168,0.45);
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(9px, 2.4vw, 12px);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.hm-pair-modal__prev-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+.hm-pair-modal__prev-pair {
+  display: flex;
+  gap: 2px;
+  opacity: 0.6;
+}
+
+.hm-pair-modal__prev-img {
+  width: 28px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.45);
+}
+
+/* Botoes */
+.hm-pair-modal__btns {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  padding-top: 2px;
+}
+
+.hm-pair-modal__btn {
+  flex: 1;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: none;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(13px, 3.4vw, 16px);
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+.hm-pair-modal__btn:active {
+  transform: scale(0.92);
+}
+
+.hm-pair-modal__btn--ok {
+  background: linear-gradient(135deg, #1c7a1c, #2ec02e);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0,160,0,0.4);
+}
+
+.hm-pair-modal__btn--ok:hover {
+  filter: brightness(1.12);
+}
+
+.hm-pair-modal__btn--cancel {
+  background: rgba(255,255,255,0.06);
+  color: rgba(200,240,200,0.55);
+  border: 1px solid rgba(200,240,200,0.12);
+}
+
+.hm-pair-modal__btn--cancel:hover {
+  background: rgba(255,255,255,0.11);
+}
+
+/* ── Animacoes utilitarias ─────────────────────────────────────────── */
+
+@keyframes hm-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Pairs Badge  (sobre avatar na mesa)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.pairs-badge {
+  position: relative;
+  z-index: 200;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 14px;
+  border-radius: 20px;
+  background: rgba(10, 40, 10, 0.88);
+  border: 2px solid rgba(80, 200, 80, 0.55);
+  color: #7eff7e;
+  font-size: clamp(11px, 2.8vw, 14px);
+  font-family: 'Pixelify Sans', sans-serif;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.55);
+  margin-top: 4px;
+}
+
+.pairs-badge:hover {
+  transform: scale(1.08);
+  background: rgba(20, 70, 20, 0.95);
+  border-color: rgba(120, 240, 120, 0.8);
+}
+
+/* Badge do jogador local (bottom) fica ACIMA do avatar */
+.player-badge--bottom .pairs-badge {
+  order: -1;
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+/* Glow sutil ao ganhar par (mantido como fallback sem animação JS) */
+.pairs-badge--new-pair {
+  animation: pb-new-pair 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes pb-new-pair {
+  0%   { box-shadow: 0 2px 6px rgba(0,0,0,0.5); }
+  45%  { box-shadow: 0 0 18px rgba(255,210,0,0.75); border-color: rgba(255,210,0,0.9); }
+  100% { box-shadow: 0 2px 6px rgba(0,0,0,0.5); }
+}
+
+/* ── Pairs modal (popover do badge) ─────────────────────────────────── */
+
+.pairs-modal {
+  position: fixed;
+  z-index: 100001;
+  background: #0e2a0e;
+  border: 2px solid rgba(80,180,80,0.4);
+  border-radius: 14px;
+  padding: 14px 16px;
+  width: min(80vw, 260px);
+  max-height: 60vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.7);
+  animation: hm-box-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.pairs-modal__title {
+  color: #a8e6a8;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(12px, 3vw, 15px);
+  margin: 0 0 10px;
+  text-align: center;
+}
+
+.pairs-modal__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
+  gap: 8px;
+}
+
+.pairs-modal__pair {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.pairs-modal__pair-imgs {
+  display: flex;
+  gap: 2px;
+}
+
+.pairs-modal__pair-img {
+  width: 28px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+}
+
+.pairs-modal__pair-name {
+  color: rgba(200,240,200,0.6);
+  font-size: 9px;
+  font-family: 'Pixelify Sans', sans-serif;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 62px;
+}
+
+/* ── Carta voadora (distribuicao) ──────────────────────────────────── */
+
+.deal-fly-card {
+  position: fixed;
+  border-radius: clamp(4px, 1vw, 7px);
+  background-image: url('../img/carta_verso.png');
+  background-size: cover;
+  background-position: center;
+  z-index: 8500;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+  will-change: transform, opacity;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Painel de escolha de carta do oponente (OpponentPickPanel)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.opp-pick-panel {
+  position: fixed;
+  /* bottom é calculado pelo JS: offsetHeight(hand-modal) + 5rem */
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 9100;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: linear-gradient(180deg,
+    rgba(10, 28, 60, 0.0)   0%,
+    rgba(10, 28, 60, 0.88) 30%,
+    rgba(10, 28, 60, 0.97) 100%
+  );
+  border-radius: 20px;
+  border: 1.5px solid rgba(80, 160, 255, 0.32);
+  padding-top: 10px;
+  padding-bottom: 12px;
+  margin: 0 4px;
+  transform: translateY(calc(100% + 120px));
+  transition: transform 0.40s cubic-bezier(0.22, 1, 0.36, 1);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.opp-pick-panel--visible {
+  transform: translateY(0);
+}
+
+/* ── Owner badge (avatar + nome do dono das cartas) ────────────── */
+
+.opp-pick-panel__owner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 18px 8px;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.opp-pick-panel__owner-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid rgba(80, 160, 255, 0.55);
+  flex-shrink: 0;
+}
+
+.opp-pick-panel__owner-avatar--initials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(40, 100, 200, 0.55);
+  color: rgba(200, 230, 255, 0.95);
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.opp-pick-panel__owner-name {
+  color: rgba(200, 230, 255, 0.92);
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Cabeçalho ──────────────────────────────────────────────────── */
+
+.opp-pick-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px 6px;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.opp-pick-panel__title {
+  color: rgba(140, 200, 255, 0.9);
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(11px, 3vw, 14px);
+  letter-spacing: 0.06em;
+}
+
+.opp-pick-panel__count {
+  color: rgba(140, 200, 255, 0.45);
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(10px, 2.5vw, 13px);
+}
+
+/* ── Carrossel ───────────────────────────────────────────────────── */
+
+.opp-pick-panel__viewport {
+  overflow-x: scroll;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  cursor: grab;
+  padding: 4px 0 14px;
+}
+.opp-pick-panel__viewport:active { cursor: grabbing; }
+.opp-pick-panel__viewport::-webkit-scrollbar { display: none; }
+
+.opp-pick-panel__track {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: clamp(6px, 1.6vw, 10px);
+  padding: 0 clamp(10px, 3vw, 20px);
+  width: max-content;
+}
+
+/* ── Item (carta virada) ─────────────────────────────────────────── */
+
+.opp-pick-panel__item {
+  flex-shrink: 0;
+  width: clamp(72px, 18vw, 108px);
+  aspect-ratio: 2 / 3;
+  border-radius: clamp(6px, 1.4vw, 10px);
+  overflow: visible;
+  scroll-snap-align: center;
+  cursor: pointer;
+  border: 2px solid rgba(80, 160, 255, 0.25);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.55);
+  /* Transform controlado em tempo real pelo JS via --opp-lift */
+  transform: translateY(calc(-1 * var(--opp-lift, 0px)));
+  transition: transform 0.07s ease-out, border-color 0.10s ease, box-shadow 0.10s ease;
+  will-change: transform;
+  /* overflow: visible para que a carta saia acima sem corte */
+  overflow: hidden;
+}
+
+.opp-pick-panel--reveal .opp-pick-panel__item {
+  border-color: rgba(255, 214, 88, 0.68);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(255, 214, 88, 0.24) inset;
+}
+
+.opp-pick-panel__item--pair-target {
+  border-color: rgba(83, 255, 151, 0.96);
+  box-shadow: 0 0 0 2px rgba(83, 255, 151, 0.32), 0 10px 26px rgba(17, 137, 66, 0.45);
+}
+
+.opp-pick-panel__pair-tag {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(11, 99, 52, 0.8);
+  background: rgba(118, 255, 173, 0.94);
+  color: #0f4d2a;
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.opp-pick-panel__card-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+.opp-pick-panel__card-inner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+/* Estado de hover reativo: borda iluminada quando levantada pelo JS */
+.opp-pick-panel__item[style*="--opp-lift"] {
+  border-color: rgba(100, 200, 255, 0.7);
+  box-shadow: 0 10px 28px rgba(50, 140, 255, 0.5);
+}
+
+/* Carta escolhida: voa para cima e desaparece */
+.opp-pick-panel__item--picked {
+  pointer-events: none;
+  animation: opp-card-fly-out 0.48s cubic-bezier(0.25, 0.8, 0.55, 1.3) both;
+}
+
+/* Mobile em landscape: painel mais compacto e carta visual 35% menor. */
+@media (orientation: landscape) and (max-width: 960px) and (max-height: 560px) {
+  .opp-pick-panel {
+    margin: 0 2px;
+    border-radius: 14px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .opp-pick-panel__owner {
+    padding: 0 10px 4px;
+    gap: 6px;
+  }
+
+  .opp-pick-panel__owner-avatar {
+    width: 26px;
+    height: 26px;
+  }
+
+  .opp-pick-panel__header {
+    padding: 0 10px 4px;
+  }
+
+  .opp-pick-panel__title,
+  .opp-pick-panel__count,
+  .opp-pick-panel__owner-name {
+    font-size: clamp(10px, 2.2vw, 12px);
+  }
+
+  .opp-pick-panel__viewport {
+    padding: 2px 0 8px;
+  }
+
+  .opp-pick-panel__track {
+    gap: clamp(4px, 1.2vw, 8px);
+    padding: 0 clamp(6px, 2vw, 12px);
+  }
+
+  .opp-pick-panel__item {
+    width: clamp(62px, 13vw, 86px);
+    border-width: 1.5px;
+  }
+
+  .opp-pick-panel__card-inner {
+    transform: scale(0.65);
+    transform-origin: center center;
+  }
+}
+
+@keyframes opp-card-fly-out {
+  0%   { transform: translateY(0)      scale(1);    opacity: 1;   filter: brightness(1);   }
+  35%  { transform: translateY(-55px)  scale(1.18); opacity: 1;   filter: brightness(1.4); }
+  100% { transform: translateY(-200px) scale(0.55); opacity: 0;   filter: brightness(1.6); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .opp-pick-panel__item--picked {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Modal de revelação de carta (CardRevealModal)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.card-reveal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+  animation: cro-in 0.22s ease both;
+}
+
+.card-reveal-overlay--closing {
+  animation: cro-out 0.28s ease both;
+}
+
+@keyframes cro-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cro-out { from { opacity: 1; } to { opacity: 0; } }
+
+.card-reveal-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(160deg, #0d2a10, #08180a);
+  border: 2px solid rgba(80, 200, 80, 0.35);
+  border-radius: 20px;
+  padding: 24px 28px 20px;
+  min-width: 200px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.75);
+  animation: crb-in 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes crb-in {
+  from { transform: scale(0.7) translateY(30px); opacity: 0; }
+  to   { transform: scale(1) translateY(0);      opacity: 1; }
+}
+
+/* ── Flip 3-D ────────────────────────────────────────────────────── */
+
+.card-reveal-flip {
+  width: clamp(80px, 22vw, 110px);
+  aspect-ratio: 2 / 3;
+  perspective: 700px;
+}
+
+.card-reveal-flip__inner {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.55s cubic-bezier(0.4, 0.2, 0.2, 1.4);
+}
+
+.card-reveal-flip__inner--flipped {
+  transform: rotateY(180deg);
+}
+
+.card-reveal-flip__face {
+  position: absolute;
+  inset: 0;
+  border-radius: clamp(6px, 1.5vw, 10px);
+  overflow: hidden;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+}
+
+.card-reveal-flip__face--back  { transform: rotateY(0deg);   }
+.card-reveal-flip__face--front { transform: rotateY(180deg); }
+
+.card-reveal-flip__face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ── Texto de resultado ──────────────────────────────────────────── */
+
+.card-reveal-box__name {
+  color: rgba(200, 240, 200, 0.85);
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(13px, 3.5vw, 17px);
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+.card-reveal-box__result {
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(12px, 3vw, 15px);
+  text-align: center;
+  letter-spacing: 0.03em;
+}
+
+.card-reveal-box__result--pair    { color: #7eff7e; }
+.card-reveal-box__result--no-pair { color: rgba(160, 200, 255, 0.75); }
+
+.card-reveal-box__close {
+  margin-top: 4px;
+  padding: 8px 28px;
+  background: rgba(80, 200, 80, 0.18);
+  border: 1.5px solid rgba(80, 200, 80, 0.45);
+  border-radius: 20px;
+  color: rgba(180, 255, 180, 0.9);
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(12px, 3vw, 14px);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.12s ease;
+}
+
+.card-reveal-box__close:hover {
+  background: rgba(80, 200, 80, 0.32);
+  transform: scale(1.04);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Toast de turno (TurnToast)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.turn-toast {
+  position: fixed;
+  top: 58px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-12px);
+  z-index: 9200;
+  background: rgba(8, 20, 40, 0.88);
+  border: 1.5px solid rgba(80, 160, 255, 0.45);
+  border-radius: 20px;
+  color: rgba(140, 200, 255, 0.9);
+  font-family: 'Pixelify Sans', sans-serif;
+  font-size: clamp(11px, 3vw, 14px);
+  padding: 7px 20px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  white-space: nowrap;
+}
+
+.turn-toast--visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+

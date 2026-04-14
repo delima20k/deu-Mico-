@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin — Reset Campeonato</title>
+  <style>
+    body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+    h1 { color: #ff0; }
+    button { background: #c00; color: #fff; border: none; padding: 12px 24px; font-size: 16px; cursor: pointer; border-radius: 6px; margin: 8px 0; display: block; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.ok { background: #060; }
+    #log { white-space: pre-wrap; margin-top: 20px; border: 1px solid #0f0; padding: 12px; min-height: 200px; max-height: 500px; overflow-y: auto; }
+    .warn { color: #f90; }
+    .err  { color: #f44; }
+    .ok   { color: #0f0; }
+    #auth-section { margin-bottom: 20px; }
+    input { background: #222; color: #0f0; border: 1px solid #0f0; padding: 8px; font-size: 14px; margin: 4px 0; display: block; width: 300px; }
+  </style>
+</head>
+<body>
+  <h1>🔧 Admin — Reset Campeonato</h1>
+
+  <div id="auth-section">
+    <p class="warn">⚠️  Esta página só funciona para o administrador do sistema.</p>
+    <p id="uid-display">Verificando autenticação...</p>
+  </div>
+
+  <div id="actions" style="display:none">
+    <button id="btn-reset">🗑️  RESETAR CAMPEONATO (apagar instâncias + enrollmentIndex)</button>
+    <button id="btn-status" class="ok">📋  Ver status atual do Firebase</button>
+  </div>
+
+  <div id="log">Aguardando...</div>
+
+  <script type="module">
+    // UID(s) autorizados a usar esta página
+    const ADMIN_UIDS = ['MenvuXVYxqPN1eHgpGJKMWEcWjD3', 'LKCO870YxqPN1eHgpGJKMWEcWjD3'];
+    // Ajuste se necessário — o UID completo aparece no log de debug quando você abre o app
+
+    const TOURNAMENT_ID = '2026_march_1';
+    const MAX_PARTICIPANTS = 6;
+    const DB_URL = 'https://deu-mico-pwa-default-rtdb.firebaseio.com';
+    const FB_CDN = 'https://www.gstatic.com/firebasejs/10.11.1';
+
+    const logEl = document.getElementById('log');
+    const uidEl = document.getElementById('uid-display');
+    const actionsEl = document.getElementById('actions');
+
+    function log(msg, type = '') {
+      const line = document.createElement('div');
+      line.className = type;
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    logEl.textContent = '';
+
+    const [appMod, authMod, dbMod] = await Promise.all([
+      import(`${FB_CDN}/firebase-app.js`),
+      import(`${FB_CDN}/firebase-auth.js`),
+      import(`${FB_CDN}/firebase-database.js`),
+    ]);
+
+    const app = appMod.initializeApp({
+      apiKey:            'AIzaSyDwWmb4j8Qt_Inxf-fCGGxw1bBLvkYNMzg',
+      authDomain:        'deu-mico-pwa.firebaseapp.com',
+      projectId:         'deu-mico-pwa',
+      storageBucket:     'deu-mico-pwa.firebasestorage.app',
+      messagingSenderId: '472057932287',
+      appId:             '1:472057932287:web:2aa0b8dec8ef42cabfdfca',
+      databaseURL:       DB_URL,
+    }, 'admin-reset-app');
+
+    const auth = authMod.getAuth(app);
+    const db = dbMod.getDatabase(app);
+
+    authMod.onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        uidEl.textContent = '❌ Não autenticado. Faça login no app principal primeiro.';
+        uidEl.style.color = '#f44';
+        log('Usuário não autenticado.', 'err');
+        return;
+      }
+
+      const uid = user.uid;
+      uidEl.textContent = `✅ Logado como: ${user.email} (UID: ${uid})`;
+      uidEl.style.color = '#0f0';
+
+      // Verifica se é admin — aceita qualquer UID que COMECE com os prefixos encontrados
+      const isAdmin = ADMIN_UIDS.some(a => a === uid) 
+                   || uid.startsWith('MenvuXVY') 
+                   || uid.startsWith('LKCO870Y');
+
+      if (!isAdmin) {
+        uidEl.textContent += ' — ⛔ UID não autorizado';
+        uidEl.style.color = '#f44';
+        log(`UID não autorizado: ${uid}`, 'err');
+        return;
+      }
+
+      log(`Admin autenticado: ${user.email} (${uid})`, 'ok');
+      actionsEl.style.display = 'block';
+    });
+
+    document.getElementById('btn-status').addEventListener('click', async () => {
+      log('--- STATUS ATUAL ---');
+      try {
+        const snap = await dbMod.get(dbMod.ref(db, 'tournaments/instances'));
+        const all = snap.val() || {};
+        const mine = Object.entries(all)
+          .filter(([, v]) => v?.tournamentId === TOURNAMENT_ID)
+          .map(([id, v]) => ({ id, status: v.status, enrolledCount: v.enrolledCount }));
+
+        log(`Total de instâncias do torneio ${TOURNAMENT_ID}: ${mine.length}`);
+        for (const inst of mine) {
+          log(`  → ${inst.id.slice(-20)}  status=${inst.status}  enrolled=${inst.enrolledCount}`);
+        }
+
+        const idxSnap = await dbMod.get(dbMod.ref(db, `tournaments/enrollmentIndex/${TOURNAMENT_ID}`));
+        const idx = idxSnap.val() || {};
+        log(`enrollmentIndex: ${Object.keys(idx).length} usuário(s) mapeado(s)`);
+        for (const uid of Object.keys(idx)) {
+          const inst = idx[uid]?.instanceId || 'sem instanceId';
+          log(`  → uid=${uid.slice(0, 8)}...  instanceId=${String(inst).slice(-16)}`);
+        }
+      } catch (e) {
+        log(`Erro ao buscar status: ${e.message}`, 'err');
+      }
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-reset');
+      btn.disabled = true;
+
+      log('🗑️  Iniciando reset do campeonato...');
+
+      try {
+        // 1. Buscar instâncias
+        const snap = await dbMod.get(dbMod.ref(db, 'tournaments/instances'));
+        const all = snap.val() || {};
+        const mine = Object.entries(all)
+          .filter(([, v]) => v?.tournamentId === TOURNAMENT_ID);
+
+        log(`${mine.length} instância(s) encontrada(s).`);
+        const updates = {};
+        const enrolledUids = new Set();
+
+        // 2. Marcar todas como finished e coletar UIDs
+        for (const [instanceId, v] of mine) {
+          const st = v.status;
+          if (st !== 'finished') {
+            log(`  Encerrando: ${instanceId.slice(-16)}  (${st})`, 'warn');
+            updates[`tournaments/instances/${instanceId}/status`] = 'finished';
+            updates[`tournaments/instances/${instanceId}/finishedAt`] = Date.now();
+            updates[`tournaments/instances/${instanceId}/updatedAt`] = Date.now();
+          } else {
+            log(`  Já finalizada: ${instanceId.slice(-16)}`);
+          }
+
+          for (const uid of [
+            ...Object.keys(v.enrolledUsers || {}),
+            ...Object.keys(v.activePlayers || {}),
+            ...Object.keys(v.eliminatedPlayers || {}),
+          ]) enrolledUids.add(uid);
+        }
+
+        // 3. Limpar enrollmentIndex
+        log(`\nLimpando enrollmentIndex (${enrolledUids.size} uid(s))...`, 'warn');
+        for (const uid of enrolledUids) {
+          updates[`tournaments/enrollmentIndex/${TOURNAMENT_ID}/${uid}`] = null;
+          log(`  → uid: ${uid.slice(0, 8)}...`);
+        }
+
+        // 4. Limpar pointer
+        updates[`tournaments/currentJoinableInstanceId/${TOURNAMENT_ID}`] = null;
+
+        // Aplica
+        if (Object.keys(updates).length > 0) {
+          await dbMod.update(dbMod.ref(db, '/'), updates);
+          log('\n✅ Instâncias encerradas e índices limpos.', 'ok');
+        }
+
+        // 5. Criar nova instância waiting 0/6
+        const now = Date.now();
+        const suffix = `${now}_${Math.random().toString(36).slice(2, 8)}`;
+        const newId = `${TOURNAMENT_ID}_${suffix}`;
+        const newInst = {
+          instanceId: newId,
+          tournamentId: TOURNAMENT_ID,
+          status: 'waiting',
+          phase: 'waiting',
+          maxParticipants: MAX_PARTICIPANTS,
+          enrolledCount: 0,
+          enrolledUsers: {},
+          activePlayers: {},
+          eliminatedPlayers: {},
+          currentMatchId: null,
+          currentMatchNumber: 0,
+          countdownStartAt: null,
+          countdownEndsAt: null,
+          startedAt: null,
+          finishedAt: null,
+          championUid: null,
+          processedMatchResults: {},
+          lastJoinEvent: null,
+          lastSystemNotice: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        await dbMod.set(dbMod.ref(db, `tournaments/instances/${newId}`), newInst);
+        await dbMod.set(dbMod.ref(db, `tournaments/currentJoinableInstanceId/${TOURNAMENT_ID}`), newId);
+
+        log(`\n🎉 RESET CONCLUÍDO!`, 'ok');
+        log(`Nova instância: ${newId.slice(-20)}`, 'ok');
+        log(`Status: waiting  |  Contador: 0/${MAX_PARTICIPANTS}`, 'ok');
+        log('\nPode fechar esta aba e abrir o campeonato normalmente.', 'ok');
+      } catch (e) {
+        log(`❌ Erro durante reset: ${e.message}`, 'err');
+        console.error(e);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
