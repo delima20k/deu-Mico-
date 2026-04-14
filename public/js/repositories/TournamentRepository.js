@@ -1714,10 +1714,20 @@ export class TournamentRepository {
     // !data.exists() && newData.child('players').hasChildren()
     metaPayload.players = playersPayload;
 
-    await dbMod.update(dbMod.ref(db), {
-      [`matches/${matchId}/meta`]: metaPayload,
-      [`matches/${matchId}/state`]: 'pending',
-    });
+    // IMPORTANTE: escrita em duas etapas porque a regra do Firebase avalia o estado
+    // atual do banco, não o que está sendo escrito junto.
+    // - meta: permitido porque !data.exists() && newData.child('players').hasChildren()
+    // - state: exige que meta/players/${uid} JÁ EXISTA → precisa escrever meta primeiro.
+    await dbMod.set(metaRef, metaPayload);
+
+    try {
+      const stateRef = dbMod.ref(db, `matches/${matchId}/state`);
+      await dbMod.set(stateRef, 'pending');
+    } catch (stateErr) {
+      // Estado já existe ou chamador não é player (caso raro). Meta já foi criado
+      // com meta.state='pending', então o jogo consegue iniciar normalmente.
+      console.warn(`[TournamentRound] ensureTournamentMatch: falha ao escrever state para ${matchId} — ignorando:`, stateErr?.message);
+    }
   }
 
   // -------------------------------------------------------
